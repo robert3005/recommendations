@@ -1,0 +1,82 @@
+# Tech Stack
+
+The stack favors fast web delivery, open data, local ownership, and explicit provider boundaries.
+Specific vendors are replaceable through contracts; place identity and publication semantics are
+not.
+
+## Web client
+
+| Concern | Choice | Notes |
+|---|---|---|
+| Language | TypeScript | Shared portable domain types |
+| Framework | React + Vite | Responsive SPA and PWA shell |
+| Map | MapLibre GL JS | Open-source vector rendering |
+| Tiles | Contracted hosted OSM vectors | Protomaps PMTiles independence path |
+| Search | Managed/self-hosted Photon; Nominatim where appropriate | Public/demo services are development-only |
+| POI resolver | Managed resolver/cache or owned Overpass-compatible service | Exact OSM lookup and evidence search |
+| Local data | IndexedDB via Dexie | Durable primary repository and outboxes |
+| State | Lightweight UI store such as Zustand | Domain truth stays in repository/entities |
+| Markdown | CommonMark + GFM parser and sanitizer | Same safe pipeline in app/public viewer |
+| PWA | Vite PWA plugin | Offline app shell from the local-first milestone |
+
+IndexedDB stores places and OSM evidence, saves, tags/assignments, notes/media, lists/blocks/note
+attachments, publications, credentials, and mutation/publication outboxes. Binary media is separate
+from portable domain metadata.
+
+## Domain packages
+
+Plain TypeScript packages contain durable place identity, resolver scoring/state transitions,
+guide construction, public projection, and publication state. They have no direct dependency on
+React, IndexedDB, `Blob`, DOM parsing, MapLibre, or `fetch`.
+
+## OSM resolver path
+
+Public Nominatim, Photon demo, and public Overpass may support manual development within their
+policies. They are not production dependencies. A production release has a selected managed or
+self-hosted path with:
+
+- typed node/way/relation lookup and representative centers;
+- request coalescing, cache/negative cache, retry/backoff, and circuit breaking;
+- bounded evidence-based candidate search;
+- provider monitoring, quotas, attribution, privacy documentation, and a switch plan.
+
+## Share and media services
+
+| Concern | Choice | Notes |
+|---|---|---|
+| Runtime | Small Node/TypeScript service or edge function | Same schemas as public projections |
+| Document storage | KV, object store, SQLite, or Postgres | Versioned guide/note JSON and slug tombstones |
+| Public API | REST | Public `GET`; Bearer-authorized conditional mutations |
+| Concurrency | ETag / `If-Match` + idempotency keys | Prevent stale/out-of-order publication |
+| Write ownership | Random device-held editor bearer token; hash server-side | No account and no token in public link |
+| Media | Validating image pipeline + cookieless object storage/CDN | Server-issued ids; quotas and lifecycle cleanup |
+
+The public URL is always read-only. The creator's local `Publication.credentialId` points to the
+secret required to update or revoke it.
+
+## Optional sync backend
+
+| Concern | Choice | Notes |
+|---|---|---|
+| API | TypeScript REST | Idempotent mutation push + cursor pull |
+| Database | Postgres | PostGIS optional for server-side geo use cases |
+| Auth | Email link / OAuth | Deferred until multi-device sync |
+| Ordering | Mutation id + actor + HLC/server cursor | Client wall clock is not conflict order |
+| Merge | Per entity/edge with tombstones | Conflicting Markdown bodies preserve a copy |
+
+Sync transport is separate from `LocalRepository`; application reads and writes stay local.
+
+## Self-hosting and independence
+
+- **Tiles:** Protomaps PMTiles from OSM extracts on static storage/CDN.
+- **Search:** self-hosted Photon and/or Nominatim.
+- **POI resolution:** owned Overpass-compatible instance or an extract-backed resolver/cache.
+- **Shares:** small document/media service with editor-token hashes and versioned backups.
+
+## Explicitly deferred
+
+- Native app, after the web core loop is validated.
+- Accounts and multi-device sync; backup/restore and read-only public shares come first.
+- Collaborative guide editing and any CRDT work.
+- Routing beyond external deep-links.
+- Direct in-app OSM editing; v1 opens the OSM website/editor with explicit user control.

@@ -1,0 +1,10 @@
+[book]
+title = "Placemarks — Design Docs"
+description = "Design documentation for an open-data location recommendation app"
+authors = ["Robert Kruszewski"]
+language = "en"
+src = "src"
+
+[output.html]
+default-theme = "rust"
+git-repository-url = "https://github.com/rkruszewski/recommendations"
