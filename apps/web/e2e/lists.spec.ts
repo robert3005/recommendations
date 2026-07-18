@@ -61,6 +61,56 @@ test("adding to a list saves the place; the Lists tab reads the marked list", as
   await expect(page.getByTestId("place-item")).toHaveCount(2);
 });
 
+test("Edit mode reorders, renames, recolours, and removes; reading stays read-only", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+
+  // Two places into a fresh list.
+  await openPlace(page, /Café Central/);
+  const placeSheet = page.getByTestId("place-sheet");
+  await placeSheet.getByTestId("add-to-list").selectOption("__new__");
+  await placeSheet.getByLabel("New list name").fill("Curation");
+  await placeSheet.getByTestId("create-list-and-add").click();
+  const details = page.getByTestId("place-details");
+  await details.getByRole("button", { name: "Close" }).click();
+  await openPlace(page, /Café do Rio/);
+  await placeSheet.getByTestId("add-to-list").selectOption({ label: "Curation" });
+  await details.getByRole("button", { name: "Close" }).click();
+
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("link", { name: "Lists" })
+    .click();
+  await page.getByRole("link", { name: /Curation/ }).click();
+  // Read view: no edit affordances.
+  await expect(page.getByRole("button", { name: "Move up" })).toHaveCount(0);
+
+  // Edit mode: reorder, rename, recolour.
+  await page.getByTestId("edit-list").click();
+  const items = page.getByTestId("place-item");
+  await expect(items.nth(0)).toContainText("Café Central");
+  await items.nth(1).getByRole("button", { name: "Move up" }).click();
+  await expect(items.nth(0)).toContainText("Café do Rio");
+
+  await page.getByTestId("list-name-input").fill("Curated Lisbon");
+  // The radio itself is sr-only; its swatch label is the click target.
+  await page.locator('label:has([data-testid="marker-#2563eb"])').click();
+  await expect(page.getByTestId("marker-#2563eb")).toBeChecked();
+  await page.getByTestId("edit-list").click(); // Done
+  await expect(page.getByTestId("list-page")).toContainText("Curated Lisbon");
+  await expect(page.getByTestId("list-marker")).toHaveAttribute("data-color", "#2563eb");
+
+  // Removing the last remaining membership removes the place (membership is existence).
+  await page.getByTestId("edit-list").click();
+  await items.nth(1).getByTestId("remove-from-list").click();
+  await expect(items).toHaveCount(1);
+  await page.getByTestId("edit-list").click();
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Map" }).click();
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "1");
+});
+
 test("a list created on the Lists tab is offered on the place card", async ({ page }) => {
   // Lists exist on their own (2026-07-18): created here, before any place joins.
   await page.goto("/lists");

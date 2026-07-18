@@ -9,7 +9,8 @@ import type {
   Tag,
 } from "@placemarks/domain";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useRepo } from "./RepoContext";
+import type { ImportItemRow } from "./db";
+import { useDexieRepo, useRepo } from "./RepoContext";
 
 /** Every place in the library — i.e. every place in at least one list. */
 export function useLibraryPlaces(): PlaceView[] | undefined {
@@ -70,4 +71,13 @@ export function useGuide(listId: string | undefined): List | undefined {
 export function useGuideBlocks(listId: string | undefined): GuideBlockView[] | undefined {
   const repo = useRepo();
   return useLiveQuery(() => (listId ? repo.getGuideBlocks(listId) : []), [repo, listId]);
+}
+
+/** Import rows waiting in the review queue (book/src/interop.md). */
+export function useReviewItems(): ImportItemRow[] | undefined {
+  const repo = useDexieRepo();
+  return useLiveQuery(
+    () => repo.db.importItems.filter((i) => i.status === "review").toArray(),
+    [repo],
+  );
 }

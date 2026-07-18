@@ -110,7 +110,9 @@ async function materialize(
 async function geocode(
   deps: ImportDeps,
   item: ParsedItem,
-): Promise<{ kind: "auto"; result: SearchResult } | { kind: "review"; candidates: SearchResult[] }> {
+): Promise<
+  { kind: "auto"; result: SearchResult } | { kind: "review"; candidates: SearchResult[] }
+> {
   const query = [item.title, item.address].filter(Boolean).join(", ");
   let results: SearchResult[] = [];
   try {
@@ -268,7 +270,7 @@ export async function resolveReviewItem(
   now: string,
 ): Promise<void> {
   const row = await repo.db.importItems.get(itemId);
-  if (!row || row.status !== "review") return;
+  if (row?.status !== "review") return;
   const item: ParsedItem = { ...row.raw };
 
   if (choice.kind === "skip") {

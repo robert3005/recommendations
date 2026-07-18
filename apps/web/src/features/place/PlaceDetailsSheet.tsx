@@ -15,6 +15,7 @@ import { useUiStore } from "../../state/ui";
 import { NoteEditor } from "../notes/NoteEditor";
 import { CandidatePicker } from "../picker/CandidatePicker";
 import { AddToList } from "./AddToList";
+import { NavLinks } from "./NavLinks";
 import { OsmLink } from "./OsmLink";
 import { PlaceFields } from "./PlaceFields";
 import { TagEditor } from "./TagEditor";
@@ -71,6 +72,16 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+        {facts ? (
+          <NavLinks
+            lat={facts.lat}
+            lng={facts.lng}
+            {...(facts.name ? { name: facts.name } : {})}
+            {...(view.place.externalRefs?.[0]?.url
+              ? { externalUrl: view.place.externalRefs[0].url }
+              : {})}
+          />
+        ) : null}
         {view.place.currentOsmRef ? <OsmLink osmRef={view.place.currentOsmRef} /> : null}
         {view.place.resolutionState === "unlinked" ? (
           <button

@@ -1,8 +1,9 @@
-/** Settings: backup export/import, storage persistence, licensing (Phase 2). */
+/** Settings: backup export/import, places import (Phase 3), storage, licensing. */
 import { useRef, useState } from "react";
 import { getDefaultRepo, useRepo } from "../../data/RepoContext";
 import type { DexieRepository } from "../../data/repo";
 import { nowIso } from "../../lib/time";
+import { ImportSection } from "../interop/ImportSection";
 import { exportBackup, importBackup } from "./backup";
 
 export function SettingsPage() {
@@ -105,6 +106,8 @@ export function SettingsPage() {
           />
         </div>
       </section>
+
+      <ImportSection />
 
       <section className="mt-6">
         <h2 className="text-sm font-semibold text-stone-700">Storage</h2>

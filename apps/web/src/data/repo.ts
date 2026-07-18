@@ -19,17 +19,17 @@ import {
   createOsmPlace,
   displayFacts,
   distanceMeters,
-  evidenceFromPoi,
   type ExternalRef,
+  evidenceFromPoi,
   type GuideBlockView,
   hasExternalRef,
   type List,
   type ListBlock,
   type ManualFacts,
   type MediaAsset,
+  type Note,
   normalizeName,
   normalizeTagName,
-  type Note,
   noteTargetKey,
   type OsmElementRef,
   type Place,
@@ -452,9 +452,7 @@ export class DexieRepository implements PlacemarksRepository {
             (source.externalRef ? await this.findByExternalRef(source.externalRef) : undefined) ??
             (await this.findByNameNearby(source.facts));
           if (found) {
-            place = source.externalRef
-              ? withExternalRef(found, source.externalRef, now)
-              : found;
+            place = source.externalRef ? withExternalRef(found, source.externalRef, now) : found;
             if (place !== found) await this.db.places.put(toPlaceRow(place));
           } else {
             place = createImportedPlace(newId(), source.facts, source.externalRef, now);

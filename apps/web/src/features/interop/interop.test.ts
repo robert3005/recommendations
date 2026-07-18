@@ -158,9 +158,7 @@ describe("import pipeline", () => {
   it("review items resolve by candidate pick, manual coords, or skip", async () => {
     try {
       await runImport(repo, takeout(), deps(), NOW);
-      const reviewItems = await repo.db.importItems
-        .filter((i) => i.status === "review")
-        .toArray();
+      const reviewItems = await repo.db.importItems.filter((i) => i.status === "review").toArray();
       expect(reviewItems).toHaveLength(1);
       const mystery = reviewItems[0];
       if (!mystery) throw new Error("missing review item");
@@ -198,13 +196,21 @@ describe("import dedup in the repository", () => {
       await repo.createList({ id: "b", name: "B", createdAt: NOW, updatedAt: NOW });
       const first = await repo.addToList(
         "a",
-        { kind: "import", facts: { name: "Café Central", lat: 38.7139, lng: -9.1394 }, externalRef: ref },
+        {
+          kind: "import",
+          facts: { name: "Café Central", lat: 38.7139, lng: -9.1394 },
+          externalRef: ref,
+        },
         NOW,
       );
       const second = await repo.addToList(
         "b",
         // Slightly different facts — the external ref still wins.
-        { kind: "import", facts: { name: "Cafe Central", lat: 38.7141, lng: -9.1392 }, externalRef: ref },
+        {
+          kind: "import",
+          facts: { name: "Cafe Central", lat: 38.7141, lng: -9.1392 },
+          externalRef: ref,
+        },
         NOW,
       );
       expect(second.place.id).toBe(first.place.id);

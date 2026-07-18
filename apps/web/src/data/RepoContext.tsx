@@ -27,3 +27,13 @@ export function useRepo(): PlacemarksRepository {
   if (!repo) throw new Error("RepoProvider missing");
   return repo;
 }
+
+/**
+ * The concrete Dexie repository — for surfaces that need beyond-the-port state
+ * (backup archives, the import review queue). Falls back to the default
+ * singleton when the provided repository is a test double without a db.
+ */
+export function useDexieRepo(): DexieRepository {
+  const repo = useRepo();
+  return (repo as DexieRepository).db ? (repo as DexieRepository) : getDefaultRepo();
+}

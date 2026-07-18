@@ -4,13 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { DISCOVER_MIN_ZOOM, MAP_STYLE_URL } from "../../config";
 import { useLibraryPlaces, useListMembership, useLists } from "../../data/hooks";
-import { useRepo } from "../../data/RepoContext";
+import { useDexieRepo, useRepo } from "../../data/RepoContext";
 import { newId } from "../../lib/id";
 import { pinColorForLists } from "../../lib/markers";
 import { nowIso } from "../../lib/time";
 import { MapView, type PlacePinFeature, type PoiPinFeature } from "../../map/MapView";
-import { poiResolver } from "../../providers";
+import { poiResolver, searchProvider } from "../../providers";
 import { useUiStore } from "../../state/ui";
+import { resolveReviewItem } from "../interop/importer";
 import { CandidatePicker } from "../picker/CandidatePicker";
 import { ManualPinDialog } from "../picker/ManualPinDialog";
 import { PlaceSheet } from "../place/PlaceSheet";
@@ -27,6 +28,7 @@ function roundBbox(bbox: BBox): string {
 
 export function MapPage() {
   const repo = useRepo();
+  const dexieRepo = useDexieRepo();
   const selection = useUiStore((s) => s.selection);
   const flyTo = useUiStore((s) => s.flyTo);
   const pickerAt = useUiStore((s) => s.pickerAt);
@@ -35,6 +37,8 @@ export function MapPage() {
   const openPicker = useUiStore((s) => s.openPicker);
   const closePicker = useUiStore((s) => s.closePicker);
   const requestFlyTo = useUiStore((s) => s.requestFlyTo);
+  const placingImportItemId = useUiStore((s) => s.placingImportItemId);
+  const stopPlacingImportItem = useUiStore((s) => s.stopPlacingImportItem);
 
   const libraryPlaces = useLibraryPlaces();
   const lists = useLists();
@@ -108,9 +112,37 @@ export function MapPage() {
         onSelectPoi={(pin) =>
           selectOsm(pin.ref, { name: pin.name, lat: pin.lat, lng: pin.lng, category: pin.category })
         }
-        onLongPress={(pos) => openPicker(pos)}
+        onLongPress={(pos) => {
+          // Placing a review-queue import item: the long-press IS the placement.
+          if (placingImportItemId) {
+            const itemId = placingImportItemId;
+            stopPlacingImportItem();
+            void (async () => {
+              const item = await dexieRepo.db.importItems.get(itemId);
+              await resolveReviewItem(
+                dexieRepo,
+                { search: searchProvider, resolver: poiResolver },
+                itemId,
+                { kind: "coords", lat: pos.lat, lng: pos.lng },
+                nowIso(),
+              );
+              const placed = item ? await dexieRepo.db.importItems.get(itemId) : undefined;
+              if (placed?.placeId) selectPlace(placed.placeId);
+            })();
+            return;
+          }
+          openPicker(pos);
+        }}
         onViewportChange={(view) => setViewport(view)}
       />
+      {placingImportItemId ? (
+        <output
+          className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-orange-700/90 px-3 py-1 text-xs text-white"
+          data-testid="placing-import-hint"
+        >
+          Long-press (or right-click) the map to place the imported item
+        </output>
+      ) : null}
       <div className="absolute top-3 left-1/2 z-10 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2">
         <SearchBar
           onSelect={(result) => {
