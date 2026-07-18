@@ -7,24 +7,42 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: [["list"]],
   use: {
-    baseURL: "http://localhost:4318",
     trace: "retain-on-failure",
   },
   projects: [
     {
+      // Dev server + MSW fixtures: map display, save flows, guides, backup, repair.
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      testIgnore: /offline/,
+      use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:4318" },
+    },
+    {
+      // Production build + service worker: the offline-shell guarantee (Phase 0).
+      name: "offline-preview",
+      testMatch: /offline/,
+      use: { ...devices["Desktop Chrome"], baseURL: "http://localhost:4319" },
     },
   ],
-  webServer: {
-    command: "pnpm dev --port 4318 --strictPort",
-    url: "http://localhost:4318",
-    reuseExistingServer: !process.env.CI,
-    env: {
-      // Deterministic, network-free basemap for map-display tests.
-      VITE_MAP_STYLE_URL: "/test-style.json",
-      // OSM/Photon/Overpass served by MSW fixtures — e2e never hits public services.
-      VITE_ENABLE_MSW: "true",
+  webServer: [
+    {
+      command: "pnpm dev --port 4318 --strictPort",
+      url: "http://localhost:4318",
+      reuseExistingServer: !process.env.CI,
+      env: {
+        // Deterministic, network-free basemap for map-display tests.
+        VITE_MAP_STYLE_URL: "/test-style.json",
+        // OSM/Photon/Overpass served by MSW fixtures — e2e never hits public services.
+        VITE_ENABLE_MSW: "true",
+      },
     },
-  },
+    {
+      command: "pnpm build && pnpm preview --port 4319 --strictPort",
+      url: "http://localhost:4319",
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+      env: {
+        VITE_MAP_STYLE_URL: "/test-style.json",
+      },
+    },
+  ],
 });

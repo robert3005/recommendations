@@ -134,3 +134,69 @@ export const overpassNearby = {
 };
 
 export const overpassDiscover = overpassNearby;
+
+/**
+ * The node→way replacement scenario (book/src/place-identity.md recovery):
+ * node/599 "Café Migrado" resolves once, then is deleted upstream (410).
+ * Its real-world place was redrawn as way/777 with the same identity.
+ */
+export const photonMigradoResponse = {
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [-9.16, 38.72] },
+      properties: {
+        osm_type: "N",
+        osm_id: 599,
+        osm_key: "amenity",
+        osm_value: "cafe",
+        name: "Café Migrado",
+        city: "Lisboa",
+        countrycode: "PT",
+      },
+    },
+  ],
+};
+
+export const osmNode599 = {
+  version: "0.6",
+  elements: [
+    {
+      type: "node",
+      id: 599,
+      lat: 38.72,
+      lon: -9.16,
+      version: 4,
+      tags: {
+        name: "Café Migrado",
+        amenity: "cafe",
+        website: "https://cafemigrado.pt",
+      },
+    },
+  ],
+};
+
+/** Recovery candidates near the vanished node: the replacement way + a stranger. */
+export const overpassMigradoRecovery = {
+  version: 0.6,
+  elements: [
+    {
+      type: "way",
+      id: 777,
+      center: { lat: 38.72005, lon: -9.16005 },
+      tags: {
+        name: "Café Migrado",
+        amenity: "cafe",
+        website: "https://cafemigrado.pt",
+      },
+    },
+    {
+      type: "node",
+      id: 888,
+      lat: 38.7202,
+      lon: -9.1603,
+      tags: { name: "Farmácia Vizinha", amenity: "pharmacy" },
+    },
+  ],
+};
