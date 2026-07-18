@@ -48,11 +48,16 @@ const hasOsmDerived = (views: ExportPlaceView[]): boolean =>
   views.some((v) => v.place.lastVerified !== undefined);
 
 function xmlEscape(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
+  return (
+    value
+      // Control characters are unrepresentable in XML 1.0 — strip, don't escape.
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: that is the point
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+  );
 }
 
 /** #rrggbb → KML's aabbggrr. */
@@ -98,15 +103,20 @@ function urlFor(row: ExportRow): string {
   return `https://www.google.com/maps/search/?api=1&query=${row.facts.lat},${row.facts.lng}`;
 }
 
+/** Spreadsheets execute cells starting with = + - @ — quote them defensively. */
+function formulaEscape(value: string): string {
+  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
 export function exportListCsv(_list: List, views: ExportPlaceView[]): string {
   return `${Papa.unparse(
     {
       fields: ["Title", "Note", "URL", "Address"],
       data: rows(views).map((row) => [
-        row.facts.name ?? "Unnamed place",
-        row.note ?? "",
+        formulaEscape(row.facts.name ?? "Unnamed place"),
+        formulaEscape(row.note ?? ""),
         urlFor(row),
-        row.facts.address ?? "",
+        formulaEscape(row.facts.address ?? ""),
       ]),
     },
     { newline: "\n" },

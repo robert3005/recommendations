@@ -33,7 +33,7 @@ const manifestSchema = z.object({
 
 // Structural validation; domain invariants are enforced by the repository layer.
 const dataSchema = z.object({
-  places: z.array(z.object({ ...entityBase, origin: z.enum(["osm", "manual"]) }).loose()),
+  places: z.array(z.object({ ...entityBase, origin: z.enum(["osm", "manual", "import"]) }).loose()),
   tags: z.array(z.object({ ...entityBase, name: z.string(), nameNorm: z.string() }).loose()),
   tagAssignments: z.array(
     z.object({ ...entityBase, placeId: z.string(), tagId: z.string() }).loose(),

@@ -227,6 +227,9 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
         <CandidatePicker
           lat={view.place.manual.lat}
           lng={view.place.manual.lng}
+          // Imported coordinates are Google-derived: linking to an existing OSM
+          // element is fine, but they must never pre-fill an OSM contribution.
+          allowOsmAdd={view.place.origin !== "import"}
           onSelect={(candidate) => {
             const linked = linkPlaceToOsm(view.place, candidate, nowIso(), "owner-confirmed");
             void repo.updatePlace(linked);

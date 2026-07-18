@@ -14,6 +14,12 @@ export interface CandidatePickerProps {
   onClose: () => void;
   /** Wired in Phase 2 — saving a coordinate-only pin. */
   onSaveManual?: (pos: { lat: number; lng: number }) => void;
+  /**
+   * The OSM-editor handoff. Off for imported places: their coordinates are
+   * Google-derived and must never pre-fill an OSM contribution
+   * (book/src/interop.md §Licensing hygiene).
+   */
+  allowOsmAdd?: boolean;
 }
 
 export function CandidatePicker({
@@ -22,6 +28,7 @@ export function CandidatePicker({
   onSelect,
   onClose,
   onSaveManual,
+  allowOsmAdd = true,
 }: CandidatePickerProps) {
   const nearbyQuery = useQuery({
     queryKey: ["nearby", lat.toFixed(5), lng.toFixed(5)],
@@ -90,14 +97,16 @@ export function CandidatePicker({
           </ul>
         )}
         <div className="mt-4 flex flex-wrap gap-2 border-t border-stone-100 pt-3">
-          <a
-            href={osmEditAtUrl(lat, lng)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded border border-stone-300 px-2 py-1 text-xs font-medium text-stone-700 hover:bg-stone-100"
-          >
-            Add it on OpenStreetMap
-          </a>
+          {allowOsmAdd ? (
+            <a
+              href={osmEditAtUrl(lat, lng)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded border border-stone-300 px-2 py-1 text-xs font-medium text-stone-700 hover:bg-stone-100"
+            >
+              Add it on OpenStreetMap
+            </a>
+          ) : null}
           {onSaveManual ? (
             <button
               type="button"

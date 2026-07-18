@@ -12,10 +12,27 @@ export interface NavLinksProps {
   externalUrl?: string;
 }
 
+/** Only a genuine https Google Maps host may be opened from a stored URL. */
+const GOOGLE_HOSTS =
+  /^((www\.)?google\.[a-z]{2,3}(\.[a-z]{2})?|maps\.google\.com|maps\.app\.goo\.gl)$/;
+
+function safeExternalUrl(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === "https:" && GOOGLE_HOSTS.test(parsed.hostname)) return url;
+  } catch {
+    // fall through to the safe search fallback
+  }
+  return undefined;
+}
+
 export function NavLinks({ lat, lng, name, externalUrl }: NavLinksProps) {
   const google =
-    externalUrl ??
-    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lat},${lng}`)}`;
+    safeExternalUrl(externalUrl) ??
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      `${name ? `${name} ` : ""}${lat},${lng}`,
+    )}`;
   const apple = `https://maps.apple.com/?ll=${lat},${lng}${
     name ? `&q=${encodeURIComponent(name)}` : ""
   }`;

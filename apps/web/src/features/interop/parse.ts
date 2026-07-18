@@ -1,9 +1,8 @@
 /**
  * Import parsers (book/src/interop.md §Import pipeline): Takeout archives,
  * standalone CSV, KML/KMZ, GPX, and GeoJSON — parsed locally, never fetched.
- * Every source row becomes a ParsedItem; each source list (CSV file, KML
- * document) proposes a list. Rows are never silently dropped: a row that can't
- * be placed still reaches the review queue downstream.
+ * Every source row becomes a ParsedItem or an explicit `unusable` entry; rows
+ * are never silently dropped.
  */
 import { gpx as gpxToGeoJson, kml as kmlToGeoJson } from "@tmcw/togeojson";
 import { strFromU8, unzipSync } from "fflate";
@@ -19,11 +18,18 @@ export interface ParsedItem {
   coords?: { lat: number; lng: number };
 }
 
+export interface UnusableRow {
+  title: string;
+  note?: string;
+  url?: string;
+  address?: string;
+}
+
 export interface ParsedList {
   name: string;
   items: ParsedItem[];
   /** Source rows that could not become items (no title / no point geometry) — reported, never silent. */
-  dropped: number;
+  unusable: UnusableRow[];
 }
 
 export interface ParsedImport {
@@ -42,9 +48,7 @@ const coordsValid = (lat: number, lng: number): boolean =>
   lat >= -90 &&
   lat <= 90 &&
   lng >= -180 &&
-  lng <= 180 &&
-  // Google's Saved Places.json has a known [0, 0] bug (book/src/interop.md).
-  !(lat === 0 && lng === 0);
+  lng <= 180;
 
 // ---------- CSV (Takeout "Saved": Title, Note, URL, Address — no coordinates) ----------
 
@@ -55,53 +59,68 @@ export function parseSavedCsv(text: string, listName: string): ParsedList {
     transformHeader: (h) => h.trim().toLowerCase(),
   });
   const items: ParsedItem[] = [];
-  let dropped = 0;
+  const unusable: UnusableRow[] = [];
   for (const row of parsed.data) {
     const title = row.title?.trim();
+    const url = row.url?.trim() || undefined;
+    // The note is the user's own writing — preserved exactly, never trimmed.
+    const note = row.note ? row.note : undefined;
+    const address = row.address?.trim() || undefined;
     if (!title) {
-      dropped += 1;
+      unusable.push({
+        title: row.title ?? "",
+        ...(note ? { note } : {}),
+        ...(url ? { url } : {}),
+        ...(address ? { address } : {}),
+      });
       continue;
     }
-    const url = row.url?.trim() || undefined;
     const coords = googleUrlCoords(url);
     items.push({
       title,
-      ...(row.note?.trim() ? { note: row.note.trim() } : {}),
+      ...(note ? { note } : {}),
       ...(url ? { url } : {}),
-      ...(row.address?.trim() ? { address: row.address.trim() } : {}),
+      ...(address ? { address } : {}),
       ...(coords ? { coords } : {}),
     });
   }
-  return { name: listName, items, dropped };
+  return { name: listName, items, unusable };
 }
 
-// ---------- GeoJSON (generic, and Google's Saved Places.json shape) ----------
+// ---------- GeoJSON (generic, Google's Saved Places.json shape, and our own export) ----------
 
 interface GeoJsonFeature {
   geometry?: { type?: string; coordinates?: number[] };
   properties?: Record<string, unknown>;
 }
 
-function featureToItem(feature: GeoJsonFeature): ParsedItem | undefined {
+interface FeatureOptions {
+  /** Google's Saved Places.json has a known [0, 0] bug; generic GeoJSON does not. */
+  zeroIsBug?: boolean;
+}
+
+const str = (value: unknown): string | undefined =>
+  typeof value === "string" && value !== "" ? value : undefined;
+
+function featureToItem(
+  feature: GeoJsonFeature,
+  options: FeatureOptions = {},
+): ParsedItem | undefined {
   if (feature.geometry?.type !== "Point") return undefined;
   const [lng, lat] = feature.geometry.coordinates ?? [];
   const props = feature.properties ?? {};
   const location = (props.Location ?? {}) as Record<string, unknown>;
-  const title =
-    (typeof props.Title === "string" && props.Title) ||
-    (typeof props.name === "string" && props.name) ||
-    (typeof location["Business Name"] === "string" && (location["Business Name"] as string)) ||
-    undefined;
+  const title = str(props.Title) ?? str(props.name) ?? str(location["Business Name"]);
   if (!title) return undefined;
-  const url =
-    (typeof props["Google Maps URL"] === "string" && (props["Google Maps URL"] as string)) ||
-    undefined;
-  const address =
-    (typeof props.address === "string" && props.address) ||
-    (typeof location.Address === "string" && (location.Address as string)) ||
-    undefined;
-  const note = typeof props.description === "string" ? props.description : undefined;
-  const hasCoords = typeof lat === "number" && typeof lng === "number" && coordsValid(lat, lng);
+  const externalUrls = Array.isArray(props.externalUrls) ? props.externalUrls : [];
+  const url = str(props["Google Maps URL"]) ?? str(props.url) ?? str(externalUrls[0]);
+  const address = str(props.address) ?? str(location.Address);
+  const note = str(props.description) ?? str(props.note) ?? str(props.desc);
+  const hasCoords =
+    typeof lat === "number" &&
+    typeof lng === "number" &&
+    coordsValid(lat, lng) &&
+    !(options.zeroIsBug === true && lat === 0 && lng === 0);
   return {
     title,
     ...(note ? { note } : {}),
@@ -111,20 +130,28 @@ function featureToItem(feature: GeoJsonFeature): ParsedItem | undefined {
   };
 }
 
-function collectFeatures(features: GeoJsonFeature[], listName: string): ParsedList {
+function collectFeatures(
+  features: GeoJsonFeature[],
+  listName: string,
+  options: FeatureOptions = {},
+): ParsedList {
   const items: ParsedItem[] = [];
-  let dropped = 0;
+  const unusable: UnusableRow[] = [];
   for (const feature of features) {
-    const item = featureToItem(feature);
+    const item = featureToItem(feature, options);
     if (item) items.push(item);
-    else dropped += 1;
+    else unusable.push({ title: str(feature.properties?.name) ?? "" });
   }
-  return { name: listName, items, dropped };
+  return { name: listName, items, unusable };
 }
 
-export function parseGeoJson(text: string, listName: string): ParsedList {
+export function parseGeoJson(
+  text: string,
+  listName: string,
+  options: FeatureOptions = {},
+): ParsedList {
   const body = JSON.parse(text) as { features?: GeoJsonFeature[] };
-  return collectFeatures(body.features ?? [], listName);
+  return collectFeatures(body.features ?? [], listName, options);
 }
 
 // ---------- KML / KMZ / GPX (coordinates included) ----------
@@ -149,42 +176,73 @@ export function parseGpx(text: string, fallbackName: string): ParsedList {
 
 /**
  * The CSVs have list structure but no geometry; `Saved Places.json` has
- * geometry but no list structure. Joined by Google feature id (then title),
- * each source compensates for the other (book/src/interop.md).
+ * geometry but no list structure. Rows are joined **by Google feature id**; a
+ * title join is only trusted when the row carries no id at all and the title
+ * is unique in the geometry file. Geometry rows no CSV references remain their
+ * own "Saved places" list — never silently lost (book/src/interop.md).
  */
 export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
   const entries = unzipSync(bytes);
   const lists: ParsedList[] = [];
   const coordsByFid = new Map<string, { lat: number; lng: number }>();
-  const coordsByTitle = new Map<string, { lat: number; lng: number }>();
+  const titleCounts = new Map<string, number>();
+  const coordsByUniqueTitle = new Map<string, { lat: number; lng: number }>();
   let savedPlaces: ParsedList | undefined;
+  /** Every fid a CSV row carries — referenced geometry is not "leftover" even without coords. */
+  const referencedFids = new Set<string>();
+  const consumedTitles = new Set<string>();
 
   for (const [path, fileBytes] of Object.entries(entries)) {
     if (!/saved places\.json$/i.test(path)) continue;
-    savedPlaces = parseGeoJson(strFromU8(fileBytes), "Saved places");
+    savedPlaces = parseGeoJson(strFromU8(fileBytes), "Saved places", { zeroIsBug: true });
+    for (const item of savedPlaces.items) {
+      const key = item.title.toLowerCase();
+      titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1);
+    }
     for (const item of savedPlaces.items) {
       if (!item.coords) continue;
       const fid = googleFeatureId(item.url);
       if (fid) coordsByFid.set(fid, item.coords);
-      coordsByTitle.set(item.title.toLowerCase(), item.coords);
+      const key = item.title.toLowerCase();
+      if (titleCounts.get(key) === 1) coordsByUniqueTitle.set(key, item.coords);
     }
   }
 
   for (const [path, fileBytes] of Object.entries(entries)) {
-    if (!/\.csv$/i.test(path)) continue;
+    // Takeout archives contain CSVs for many products; only Saved lists count.
+    if (!/(^|\/)Saved\/[^/]+\.csv$/i.test(path)) continue;
     const list = parseSavedCsv(strFromU8(fileBytes), baseName(path));
     for (const item of list.items) {
-      if (item.coords) continue;
       const fid = googleFeatureId(item.url);
-      const coords =
-        (fid ? coordsByFid.get(fid) : undefined) ?? coordsByTitle.get(item.title.toLowerCase());
-      if (coords) item.coords = coords;
+      if (fid) referencedFids.add(fid);
+      if (item.coords) continue;
+      if (fid) {
+        // A row with an id joins by id only — same names are not the same place.
+        const coords = coordsByFid.get(fid);
+        if (coords) item.coords = coords;
+        continue;
+      }
+      const key = item.title.toLowerCase();
+      const coords = coordsByUniqueTitle.get(key);
+      if (coords) {
+        item.coords = coords;
+        consumedTitles.add(key);
+      }
     }
     lists.push(list);
   }
 
-  // Without CSVs, the starred GeoJSON is the only structure — import it as a list.
-  if (lists.length === 0 && savedPlaces && savedPlaces.items.length > 0) lists.push(savedPlaces);
+  // Geometry rows nothing referenced keep their own list (also the no-CSVs case).
+  if (savedPlaces) {
+    const leftover = savedPlaces.items.filter((item) => {
+      const fid = googleFeatureId(item.url);
+      if (fid && referencedFids.has(fid)) return false;
+      return !consumedTitles.has(item.title.toLowerCase());
+    });
+    if (leftover.length > 0 || (lists.length === 0 && savedPlaces.unusable.length > 0)) {
+      lists.push({ name: savedPlaces.name, items: leftover, unusable: savedPlaces.unusable });
+    }
+  }
 
   return { source: "google-takeout", lists };
 }

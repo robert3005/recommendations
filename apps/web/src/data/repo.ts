@@ -25,6 +25,7 @@ import {
   hasExternalRef,
   type List,
   type ListBlock,
+  linkPlaceToOsm,
   type ManualFacts,
   type MediaAsset,
   type Note,
@@ -94,6 +95,28 @@ export class DexieRepository implements PlacemarksRepository {
   private async findByExternalRef(ref: ExternalRef): Promise<Place | undefined> {
     const rows = await this.db.places.toArray();
     return rows.find((row) => !row.deleted && hasExternalRef(row, ref));
+  }
+
+  /** The place an import row would converge on, if any (importer probe). */
+  async findImportTarget(
+    facts: ManualFacts,
+    externalRef?: ExternalRef,
+  ): Promise<Place | undefined> {
+    return (
+      (externalRef ? await this.findByExternalRef(externalRef) : undefined) ??
+      (await this.findByNameNearby(facts))
+    );
+  }
+
+  /**
+   * Link an unlinked imported/manual place to its OSM match — origin, imported
+   * facts, and external refs stay (book/src/interop.md: linkage is an upgrade,
+   * never a new identity).
+   */
+  async linkImportedPlace(place: Place, poi: ResolvedPoi, now: string): Promise<Place> {
+    const linked = place.currentOsmRef ? place : linkPlaceToOsm(place, poi, now, "resolver-match");
+    await this.db.places.put(toPlaceRow(linked));
+    return linked;
   }
 
   /**
@@ -447,15 +470,25 @@ export class DexieRepository implements PlacemarksRepository {
           await this.db.places.put(toPlaceRow(place));
         } else if (source.kind === "import") {
           // Idempotent re-import (book/src/interop.md): external-ref id first,
-          // then name+proximity — the same row converges on the same place.
+          // then the OSM match's ref, then name+proximity — the same row
+          // converges on the same place. An OSM match links the place but never
+          // changes its import identity (origin, facts, external refs).
           const found =
             (source.externalRef ? await this.findByExternalRef(source.externalRef) : undefined) ??
+            (source.poi ? await this.findPlaceByOsmRef(source.poi.osmRef) : undefined) ??
             (await this.findByNameNearby(source.facts));
           if (found) {
-            place = source.externalRef ? withExternalRef(found, source.externalRef, now) : found;
-            if (place !== found) await this.db.places.put(toPlaceRow(place));
+            let merged = source.externalRef
+              ? withExternalRef(found, source.externalRef, now)
+              : found;
+            if (source.poi && !merged.currentOsmRef) {
+              merged = linkPlaceToOsm(merged, source.poi, now, "resolver-match");
+            }
+            if (merged !== found) await this.db.places.put(toPlaceRow(merged));
+            place = merged;
           } else {
             place = createImportedPlace(newId(), source.facts, source.externalRef, now);
+            if (source.poi) place = linkPlaceToOsm(place, source.poi, now, "resolver-match");
             await this.db.places.put(toPlaceRow(place));
           }
         } else {

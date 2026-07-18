@@ -62,7 +62,7 @@ describe("takeout parsers", () => {
       note: "Great bica, sit outside",
       address: "Rua Example 12, Lisboa",
     });
-    expect(list.dropped).toBe(1);
+    expect(list.unusable).toHaveLength(1);
   });
 
   it("cross-references CSV rows with Saved Places.json and skips the [0,0] bug", () => {

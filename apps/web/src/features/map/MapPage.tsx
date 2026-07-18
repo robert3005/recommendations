@@ -86,7 +86,9 @@ export function MapPage() {
         name: facts.name ?? "Place",
         lat: facts.lat,
         lng: facts.lng,
-        unlinked: view.place.resolutionState === "unlinked",
+        // Only deliberate manual pins keep the distinct orange marker; an
+        // imported-but-unlinked place wears its list colour like any other.
+        unlinked: view.place.resolutionState === "unlinked" && view.place.origin === "manual",
         color: pinColorForLists(memberLists),
       },
     ];

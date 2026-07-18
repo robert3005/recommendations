@@ -31,14 +31,15 @@ export interface GuideBlockView {
 
 /**
  * What is being added to a list — adding IS how a place comes to exist.
- * `poi` may carry an external ref (an import that OSM-matched); `import` is a
- * placed-but-unlinked import row (book/src/interop.md). Import dedup order:
- * external-ref id first, then name+proximity against existing places.
+ * An `import` row keeps its identity as an import even when OSM-matched: the
+ * optional `poi` links the created/reused place without changing its origin,
+ * imported facts, or retained external ref (book/src/interop.md). Import dedup
+ * order: external-ref id, then the poi's OSM ref, then name+proximity.
  */
 export type AddToListSource =
   | { kind: "poi"; poi: ResolvedPoi; externalRef?: ExternalRef }
   | { kind: "manual"; facts: ManualFacts }
-  | { kind: "import"; facts: ManualFacts; externalRef?: ExternalRef }
+  | { kind: "import"; facts: ManualFacts; externalRef?: ExternalRef; poi?: ResolvedPoi }
   | { kind: "existing"; placeId: PlaceId };
 
 export interface PlacemarksRepository {

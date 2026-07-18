@@ -116,7 +116,7 @@ Dropped pin,,"https://www.google.com/maps/search/38.71,-9.15",
     const reparsed = parseSavedCsv(csv, "Round trip");
     expect(reparsed.items).toHaveLength(2);
     expect(reparsed.items[1]?.coords).toEqual({ lat: 38.71, lng: -9.15 });
-    expect(reparsed.dropped).toBe(0);
+    expect(reparsed.unusable).toHaveLength(0);
   });
 
   it("GeoJSON carries refs, notes, and attribution as metadata", () => {
