@@ -1,0 +1,218 @@
+/**
+ * Durable place identity — an immutable app-owned PlaceId over a repairable OSM binding.
+ * See book/src/place-identity.md.
+ */
+import { type OsmElementRef, refKey } from "./osm";
+import type { ResolvedPoi } from "./poi";
+
+export type PlaceId = string;
+
+export type ResolutionState =
+  | "resolved"
+  | "stale"
+  | "unavailable"
+  | "missing"
+  | "needs-review"
+  | "unlinked";
+
+export interface OsmEvidence {
+  ref: OsmElementRef;
+  osmVersion?: number;
+  source: "OpenStreetMap";
+  license: "ODbL-1.0";
+  attribution: "© OpenStreetMap contributors";
+  name?: string;
+  category: string;
+  lat: number;
+  lng: number;
+  address?: string;
+  website?: string;
+  phone?: string;
+  openingHours?: string;
+  identityTags: Record<string, string>;
+  observedAt: string;
+}
+
+export type RelinkReason = "replaced" | "merged" | "owner-confirmed" | "resolver-match";
+
+export interface OsmLinkHistoryEntry {
+  ref: OsmElementRef;
+  linkedAt: string;
+  unlinkedAt?: string;
+  reason?: RelinkReason;
+}
+
+export interface ManualFacts {
+  name: string;
+  lat: number;
+  lng: number;
+  category?: string;
+}
+
+export interface Place {
+  id: PlaceId;
+  origin: "osm" | "manual";
+  currentOsmRef?: OsmElementRef; // absent on an unlinked manual place
+  currentOsmLinkedAt?: string;
+  osmRefHistory: OsmLinkHistoryEntry[];
+  firstSeen?: OsmEvidence; // immutable recovery evidence, set when first OSM-linked
+  lastVerified?: OsmEvidence; // last successfully resolved observation
+  manual?: ManualFacts;
+  resolutionState: ResolutionState;
+  lastResolutionAttemptAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  deleted?: boolean;
+}
+
+export function evidenceFromPoi(poi: ResolvedPoi): OsmEvidence {
+  return {
+    ref: poi.osmRef,
+    ...(poi.osmVersion !== undefined ? { osmVersion: poi.osmVersion } : {}),
+    source: "OpenStreetMap",
+    license: "ODbL-1.0",
+    attribution: "© OpenStreetMap contributors",
+    ...(poi.name ? { name: poi.name } : {}),
+    category: poi.category,
+    lat: poi.lat,
+    lng: poi.lng,
+    ...(poi.address ? { address: poi.address } : {}),
+    ...(poi.website ? { website: poi.website } : {}),
+    ...(poi.phone ? { phone: poi.phone } : {}),
+    ...(poi.openingHours ? { openingHours: poi.openingHours } : {}),
+    identityTags: poi.identityTags,
+    observedAt: poi.resolvedAt,
+  };
+}
+
+/** An OSM-origin place has a binding and firstSeen evidence from creation. */
+export function createOsmPlace(id: PlaceId, poi: ResolvedPoi, now: string): Place {
+  const evidence = evidenceFromPoi(poi);
+  return {
+    id,
+    origin: "osm",
+    currentOsmRef: poi.osmRef,
+    currentOsmLinkedAt: now,
+    osmRefHistory: [],
+    firstSeen: evidence,
+    lastVerified: evidence,
+    resolutionState: "resolved",
+    lastResolutionAttemptAt: now,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** A manual place starts unlinked with owner-provided facts (book/src/place-identity.md). */
+export function createManualPlace(id: PlaceId, facts: ManualFacts, now: string): Place {
+  return {
+    id,
+    origin: "manual",
+    osmRefHistory: [],
+    manual: facts,
+    resolutionState: "unlinked",
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Link an unlinked manual place, or relink an OSM-bound one to a replacement element.
+ * Relinking appends one immutable completed interval to history and never rewrites entries.
+ */
+export function linkPlaceToOsm(
+  place: Place,
+  poi: ResolvedPoi,
+  now: string,
+  reason: RelinkReason,
+): Place {
+  const evidence = evidenceFromPoi(poi);
+  const history = place.currentOsmRef
+    ? [
+        ...place.osmRefHistory,
+        {
+          ref: place.currentOsmRef,
+          linkedAt: place.currentOsmLinkedAt ?? place.createdAt,
+          unlinkedAt: now,
+          reason,
+        },
+      ]
+    : place.osmRefHistory;
+  return {
+    ...place,
+    currentOsmRef: poi.osmRef,
+    currentOsmLinkedAt: now,
+    osmRefHistory: history,
+    firstSeen: place.firstSeen ?? evidence, // firstSeen is never overwritten
+    lastVerified: evidence,
+    resolutionState: "resolved",
+    lastResolutionAttemptAt: now,
+    updatedAt: now,
+  };
+}
+
+export interface DisplayFacts {
+  name?: string;
+  category?: string;
+  lat: number;
+  lng: number;
+  address?: string;
+  website?: string;
+  phone?: string;
+  openingHours?: string;
+  /** Where these facts come from — the UI must label evidence and manual facts as non-live. */
+  source: "osm-evidence" | "manual";
+  observedAt?: string;
+}
+
+/** The durable display fallback: lastVerified evidence, or manual facts for unlinked pins. */
+export function displayFacts(place: Place): DisplayFacts | undefined {
+  if (place.lastVerified) {
+    const ev = place.lastVerified;
+    return {
+      ...(ev.name ? { name: ev.name } : {}),
+      category: ev.category,
+      lat: ev.lat,
+      lng: ev.lng,
+      ...(ev.address ? { address: ev.address } : {}),
+      ...(ev.website ? { website: ev.website } : {}),
+      ...(ev.phone ? { phone: ev.phone } : {}),
+      ...(ev.openingHours ? { openingHours: ev.openingHours } : {}),
+      source: "osm-evidence",
+      observedAt: ev.observedAt,
+    };
+  }
+  if (place.manual) {
+    return {
+      name: place.manual.name,
+      ...(place.manual.category ? { category: place.manual.category } : {}),
+      lat: place.manual.lat,
+      lng: place.manual.lng,
+      source: "manual",
+    };
+  }
+  return undefined;
+}
+
+export const DEFAULT_RESOLUTION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** A resolved observation older than its TTL becomes stale (book/src/storage-sync.md). */
+export function isResolutionExpired(
+  place: Place,
+  nowIso: string,
+  ttlMs: number = DEFAULT_RESOLUTION_TTL_MS,
+): boolean {
+  if (place.resolutionState !== "resolved" || !place.lastVerified) return false;
+  const observed = Date.parse(place.lastVerified.observedAt);
+  const now = Date.parse(nowIso);
+  if (Number.isNaN(observed) || Number.isNaN(now)) return false;
+  return now - observed > ttlMs;
+}
+
+/** Every ref this place has ever been bound to — the index for exact-ref deduplication. */
+export function allRefKeys(place: Place): string[] {
+  const keys = new Set<string>();
+  if (place.currentOsmRef) keys.add(refKey(place.currentOsmRef));
+  for (const entry of place.osmRefHistory) keys.add(refKey(entry.ref));
+  return [...keys];
+}
