@@ -86,6 +86,10 @@ backup. It never bulk-prefetches map tiles unless the selected provider explicit
 
 ## OSM freshness and identity repair
 
+> **Deferred for now (2026-07-18):** the freshness UI (TTL refresh, Check for OSM updates,
+> stale/review states) is out of the v1 surface — see [The Map View](./map-view.md). The rules
+> below describe the design of record for when it returns.
+
 OSM refresh is independent of private-data sync:
 
 - A `resolved` observation older than its TTL becomes `stale` and refreshes in the background.

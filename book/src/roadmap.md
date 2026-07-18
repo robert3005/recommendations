@@ -26,8 +26,8 @@ provider failures produce designed states rather than blank screens.
 - Tap/search result → exact POI resolution with name, category, address, normalized website, phone,
   hours, OSM version, and representative point.
 - Bounded live-POI discovery, preferably from compatible vector tiles with selected-item hydration.
-- Place sheet actions: **View/Edit on OpenStreetMap**, **Report a map issue**, and
-  **Check for OSM updates**.
+- Place sheet: a single small **View on OpenStreetMap** portal link (in-app edit/report/refresh
+  actions and the freshness surface are deferred — see book/src/map-view.md).
 - Long press → nearby OSM candidate picker. If absent, **Add it on OpenStreetMap**, then retry after
   downstream services update — or keep the spot as an **unlinked manual pin** (saved once the
   library lands in Phase 2).
@@ -42,7 +42,8 @@ off to OpenStreetMap without creating a second public correction record.
   with the save.
 - **Unlinked manual pins**: offline-capable `origin: "manual"` places with owner-provided facts, a
   distinct badge, and a **Link to OpenStreetMap** upgrade via the candidate picker.
-- Implement `resolved`, `stale`, `unavailable`, `missing`, `needs-review`, and `unlinked` states.
+- Implement `resolved`, `stale`, `unavailable`, `missing`, `needs-review`, and `unlinked` states
+  (domain model; the freshness UI surface is deferred — book/src/map-view.md).
 - Exact-ref refresh followed only on confirmed disappearance/repurposing by conservative evidence
   matching; ambiguous candidates require owner review.
 - Saved-place and clustered map layers; save/unsave; tags through `TagAssignment` edges.

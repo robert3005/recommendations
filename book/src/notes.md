@@ -18,6 +18,12 @@ We store CommonMark + GFM Markdown, not HTML.
 GFM headings, emphasis, lists, task lists, tables, blockquotes, code, links, and images cover the
 guide-writing use case without inventing a proprietary document format.
 
+## Authoring
+
+Notes are edited in a **full-screen editor** (2026-07-18): a Markdown writing surface beside a
+live, sanitized preview — never a cramped inline box. The editor's output *is* the persisted
+Markdown source; a future WYSIWYG upgrade must keep serializing to Markdown.
+
 ## Rendering pipeline
 
 ```text

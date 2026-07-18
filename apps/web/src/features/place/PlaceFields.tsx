@@ -1,6 +1,6 @@
 /**
- * Pure display of a place's fields. The `source` label matters: copied evidence and
- * manual facts are never presented as live data (book/src/place-identity.md).
+ * Pure display of a place's fields. Manual pins are labeled as owner-provided;
+ * healthy OSM-backed places carry no state marker (book/src/map-view.md).
  */
 import type { ResolutionState } from "@placemarks/domain";
 import { OpenNow } from "./OpenNow";
@@ -14,18 +14,16 @@ export interface PlaceFieldsProps {
   phone?: string;
   openingHours?: string;
   source: "live" | "osm-evidence" | "manual";
-  observedAt?: string;
   state?: ResolutionState;
   /** Fixed clock for stories/tests so open-now rendering is deterministic. */
   now?: Date;
 }
 
 export function PlaceFields(props: PlaceFieldsProps) {
-  const { name, category, address, website, phone, openingHours, source, observedAt, state, now } =
-    props;
+  const { name, category, address, website, phone, openingHours, source, state, now } = props;
   return (
     <div data-testid="place-fields">
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-start justify-between gap-2 pr-7">
         <h2 className="text-lg font-semibold text-stone-900">{name ?? "Unnamed place"}</h2>
         {state ? <StateBadge state={state} /> : null}
       </div>
@@ -35,11 +33,6 @@ export function PlaceFields(props: PlaceFieldsProps) {
           <OpenNow openingHours={openingHours} {...(now ? { at: now } : {})} />
         ) : null}
       </div>
-      {source === "osm-evidence" && observedAt ? (
-        <p className="mt-1 text-xs text-stone-500" data-testid="evidence-note">
-          Showing saved OSM data from {new Date(observedAt).toLocaleDateString()}
-        </p>
-      ) : null}
       {source === "manual" ? (
         <p className="mt-1 text-xs text-orange-700" data-testid="manual-note">
           Owner-provided details — not linked to OpenStreetMap

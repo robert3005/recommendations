@@ -1,7 +1,7 @@
 /**
- * Place detail sheet for a selected OSM element: exact resolution with live fields,
- * designed failure states, and upstream-correction actions. Saved-place details
- * (tags, notes, guides) build on this in Phase 2.
+ * Place detail sheet for a selected OSM element: exact resolution with live
+ * fields, designed failure states, and a single OSM portal link
+ * (book/src/map-view.md).
  */
 import { refKey } from "@placemarks/domain";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -10,7 +10,7 @@ import { useRepo } from "../../data/RepoContext";
 import { nowIso } from "../../lib/time";
 import { poiResolver } from "../../providers";
 import { type Selection, useUiStore } from "../../state/ui";
-import { OsmActions } from "./OsmActions";
+import { OsmLink } from "./OsmLink";
 import { PlaceFields } from "./PlaceFields";
 import { SavedPlaceSheet } from "./SavedPlaceSheet";
 
@@ -93,7 +93,6 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
         <p className="mt-2 text-sm text-red-700" data-testid="sheet-gone">
           This element no longer exists on OpenStreetMap.
         </p>
-        {hint ? <OsmActions lat={hint.lat} lng={hint.lng} /> : null}
       </SheetShell>
     );
   }
@@ -132,7 +131,9 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
           </button>
         )}
       </div>
-      <OsmActions osmRef={poi.osmRef} lat={poi.lat} lng={poi.lng} />
+      <div className="mt-3">
+        <OsmLink osmRef={poi.osmRef} />
+      </div>
     </SheetShell>
   );
 }

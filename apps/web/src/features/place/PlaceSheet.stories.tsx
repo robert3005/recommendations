@@ -28,15 +28,10 @@ export const ResolvedFromOsm: Story = {
     const link = await canvas.findByTestId("website-link");
     await expect(link).toHaveAttribute("href", "https://cafecentral.pt/");
     await expect(canvas.getByText("Café Central")).toBeInTheDocument();
-    // Source actions route corrections upstream to OSM.
-    const actions = canvas.getByTestId("osm-actions");
-    await expect(within(actions).getByText("View on OpenStreetMap")).toHaveAttribute(
+    // The single OSM affordance: a small portal link.
+    await expect(canvas.getByTestId("osm-link")).toHaveAttribute(
       "href",
       "https://www.openstreetmap.org/node/101",
-    );
-    await expect(within(actions).getByText("Edit on OpenStreetMap")).toHaveAttribute(
-      "href",
-      "https://www.openstreetmap.org/edit?node=101",
     );
   },
 };
@@ -46,9 +41,9 @@ export const NoWebsiteOnOsm: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByText("Quiosque Sem Site");
-    // No website tag → no link fabricated; the fix path is editing OSM.
+    // No website tag → no link fabricated; the portal is where fixes happen.
     await expect(canvas.queryByTestId("website-link")).not.toBeInTheDocument();
-    await expect(canvas.getByText("Edit on OpenStreetMap")).toBeInTheDocument();
+    await expect(canvas.getByTestId("osm-link")).toBeInTheDocument();
   },
 };
 

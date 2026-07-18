@@ -25,7 +25,8 @@ test.describe("saving places", () => {
     await sheet.getByTestId("save-place").click();
     const savedSheet = page.getByTestId("saved-place-sheet");
     await expect(savedSheet).toBeVisible();
-    await expect(savedSheet.getByTestId("state-badge")).toHaveAttribute("data-state", "resolved");
+    // Healthy places show no state marker (freshness UI deferred).
+    await expect(savedSheet.getByTestId("state-badge")).toHaveCount(0);
 
     // Tag it.
     await savedSheet.getByLabel("Add tag").fill("coffee");

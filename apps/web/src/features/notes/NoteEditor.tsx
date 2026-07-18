@@ -1,4 +1,8 @@
-/** Markdown note editor with live preview, image import, and the shareable flag. */
+/**
+ * Full-screen Markdown note editor (book/src/map-view.md): a writing surface
+ * with a live sanitized preview. Markdown source is what gets persisted
+ * (book/src/notes.md — Markdown is the source of truth).
+ */
 import type { Note } from "@placemarks/domain";
 import { useRef, useState } from "react";
 import { useRepo } from "../../data/RepoContext";
@@ -19,7 +23,6 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
   const [body, setBody] = useState(note.body);
   const [shareable, setShareable] = useState(note.shareable);
   const [mediaIds, setMediaIds] = useState(note.mediaIds);
-  const [preview, setPreview] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -48,86 +51,37 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
   };
 
   return (
-    <div className="rounded-xl border border-stone-200 bg-white p-3" data-testid="note-editor">
-      <input
-        type="text"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Title (optional)"
-        aria-label="Note title"
-        className="w-full rounded border border-stone-200 px-2 py-1 text-sm font-medium"
-      />
-      <div className="mt-2 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setPreview(false)}
-          aria-pressed={!preview}
-          className={`rounded px-2 py-0.5 text-xs font-medium ${!preview ? "bg-stone-800 text-white" : "text-stone-600"}`}
-        >
-          Write
-        </button>
-        <button
-          type="button"
-          onClick={() => setPreview(true)}
-          aria-pressed={preview}
-          className={`rounded px-2 py-0.5 text-xs font-medium ${preview ? "bg-stone-800 text-white" : "text-stone-600"}`}
-        >
-          Preview
-        </button>
-        <button
-          type="button"
-          onClick={() => fileRef.current?.click()}
-          className="ml-auto rounded border border-stone-300 px-2 py-0.5 text-xs font-medium text-stone-700"
-        >
-          Add image
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="hidden"
-          aria-label="Import image"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void insertImage(file);
-            e.target.value = "";
-          }}
-        />
-      </div>
-      {preview ? (
-        <div
-          className="mt-2 min-h-24 rounded border border-stone-100 bg-stone-50 p-2"
-          data-testid="note-preview"
-        >
-          <Markdown body={body} />
-        </div>
-      ) : (
-        <textarea
-          ref={textareaRef}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          aria-label="Note body (Markdown)"
-          placeholder="Write in Markdown — **bold**, lists, tables…"
-          rows={6}
-          className="mt-2 w-full rounded border border-stone-200 p-2 font-mono text-sm"
-        />
-      )}
-      <label className="mt-2 flex items-center gap-2 text-xs text-stone-600">
-        <input
-          type="checkbox"
-          checked={shareable}
-          onChange={(e) => setShareable(e.target.checked)}
-        />
-        Shareable — may be selected when publishing a guide (off = always private)
-      </label>
-      <div className="mt-3 flex justify-end gap-2">
+    <div
+      className="fixed inset-0 z-50 flex flex-col bg-white"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Edit note"
+      data-testid="note-editor"
+    >
+      <header className="flex shrink-0 items-center gap-3 border-b border-stone-200 px-4 py-2">
         <button
           type="button"
           onClick={onCancel}
-          className="rounded px-3 py-1 text-sm text-stone-600 hover:bg-stone-100"
+          className="rounded px-2 py-1 text-sm text-stone-600 hover:bg-stone-100"
         >
           Cancel
         </button>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Note title (optional)"
+          aria-label="Note title"
+          className="min-w-0 flex-1 rounded border border-transparent px-2 py-1 text-base font-medium focus:border-stone-300 focus:outline-none"
+        />
+        <label className="flex shrink-0 items-center gap-1.5 text-xs text-stone-600">
+          <input
+            type="checkbox"
+            checked={shareable}
+            onChange={(e) => setShareable(e.target.checked)}
+          />
+          Shareable
+        </label>
         <button
           type="button"
           onClick={() =>
@@ -140,10 +94,58 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
               updatedAt: nowIso(),
             })
           }
-          className="rounded bg-stone-800 px-3 py-1 text-sm font-medium text-white"
+          className="shrink-0 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
         >
           Save note
         </button>
+      </header>
+      <div className="grid min-h-0 flex-1 grid-rows-2 md:grid-cols-2 md:grid-rows-1">
+        <div className="flex min-h-0 flex-col border-b border-stone-200 md:border-r md:border-b-0">
+          <div className="flex shrink-0 items-center justify-between px-4 pt-2">
+            <span className="text-[11px] font-semibold tracking-wide text-stone-400 uppercase">
+              Markdown
+            </span>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              className="rounded border border-stone-200 px-2 py-0.5 text-xs font-medium text-stone-600 hover:bg-stone-100"
+            >
+              Add image
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              aria-label="Import image"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void insertImage(file);
+                e.target.value = "";
+              }}
+            />
+          </div>
+          <textarea
+            ref={textareaRef}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            aria-label="Note body (Markdown)"
+            placeholder={"Write in Markdown — **bold**, lists, tables, images…"}
+            className="min-h-0 flex-1 resize-none p-4 font-mono text-sm focus:outline-none"
+          />
+        </div>
+        <div className="min-h-0 overflow-y-auto p-4" data-testid="note-preview">
+          <span className="text-[11px] font-semibold tracking-wide text-stone-400 uppercase">
+            Preview
+          </span>
+          <div className="mt-2">
+            {body.trim() === "" ? (
+              <p className="text-sm text-stone-400">Nothing to preview yet.</p>
+            ) : (
+              <Markdown body={body} />
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

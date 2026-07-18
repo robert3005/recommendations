@@ -5,6 +5,7 @@ import { NoteEditor } from "./NoteEditor";
 const meta = {
   title: "Notes/NoteEditor",
   component: NoteEditor,
+  parameters: { layout: "fullscreen" },
   args: {
     note: {
       id: "n1",
@@ -23,13 +24,13 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const WriteAndPreview: Story = {
+export const LivePreview: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const body = canvas.getByLabelText("Note body (Markdown)");
     await userEvent.type(body, "The **espresso** here is superb");
-    await userEvent.click(canvas.getByRole("button", { name: "Preview" }));
-    const preview = await canvas.findByTestId("note-preview");
+    // The preview pane renders sanitized Markdown as you type.
+    const preview = canvas.getByTestId("note-preview");
     await expect(within(preview).getByText("espresso")).toBeInTheDocument();
     await expect(preview.querySelector("strong")).not.toBeNull();
   },
@@ -42,6 +43,7 @@ export const SaveWithShareableFlag: Story = {
     await userEvent.type(canvas.getByLabelText("Note body (Markdown)"), "Great crema.");
     await userEvent.click(canvas.getByRole("checkbox"));
     await userEvent.click(canvas.getByRole("button", { name: "Save note" }));
+    // What persists is the Markdown source.
     await expect(args.onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "Espresso notes",

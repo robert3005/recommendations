@@ -1,48 +1,21 @@
 import type { ResolutionState } from "@placemarks/domain";
 
-const STATES: Record<ResolutionState, { label: string; className: string; title: string }> = {
-  resolved: {
-    label: "Up to date",
-    className: "bg-emerald-100 text-emerald-800",
-    title: "Successfully resolved against OpenStreetMap",
-  },
-  stale: {
-    label: "Stale",
-    className: "bg-amber-100 text-amber-800",
-    title: "Shown from saved OSM data; refresh has not completed",
-  },
-  unavailable: {
-    label: "OSM unreachable",
-    className: "bg-stone-200 text-stone-700",
-    title: "Provider failure — showing saved data; this is not evidence the place is gone",
-  },
-  missing: {
-    label: "Missing from OSM",
-    className: "bg-red-100 text-red-800",
-    title: "The OSM element disappeared and no replacement was found",
-  },
-  "needs-review": {
-    label: "Needs review",
-    className: "bg-violet-100 text-violet-800",
-    title: "The OSM link changed ambiguously — confirm the right place",
-  },
-  unlinked: {
-    label: "Not linked to OSM",
-    className: "bg-orange-100 text-orange-800",
-    title: "A manual pin with owner-provided details",
-  },
-};
-
+/**
+ * The only state a place advertises is "not linked to OSM" (manual pins).
+ * Freshness/recovery badges (stale, unavailable, missing, needs-review) are
+ * deferred along with the freshness UI (book/src/map-view.md); a healthy place
+ * shows no marker at all.
+ */
 export function StateBadge({ state }: { state: ResolutionState }) {
-  const meta = STATES[state];
+  if (state !== "unlinked") return null;
   return (
     <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${meta.className}`}
-      title={meta.title}
+      className="inline-block rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800"
+      title="A manual pin with owner-provided details"
       data-testid="state-badge"
-      data-state={state}
+      data-state="unlinked"
     >
-      {meta.label}
+      Not linked to OSM
     </span>
   );
 }

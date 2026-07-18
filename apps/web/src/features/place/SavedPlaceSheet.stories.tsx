@@ -58,8 +58,12 @@ export const SavedOsmPlace: Story = {
       "href",
       "https://cafecentral.pt/",
     );
-    // Saved data is labeled as evidence, never as live.
-    await expect(canvas.getByTestId("evidence-note")).toBeInTheDocument();
+    // Healthy places show no state marker; the OSM affordance is one portal link.
+    await expect(canvas.queryByTestId("state-badge")).not.toBeInTheDocument();
+    await expect(canvas.getByTestId("osm-link")).toHaveAttribute(
+      "href",
+      "https://www.openstreetmap.org/node/101",
+    );
     await expect(await canvas.findByText("coffee")).toBeInTheDocument();
   },
 };

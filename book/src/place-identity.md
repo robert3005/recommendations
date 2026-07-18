@@ -116,6 +116,11 @@ attribution.
 
 ## Refresh and re-resolution
 
+> **Deferred for now (2026-07-18):** the user-facing freshness surface — automatic TTL refresh,
+> the Check-for-OSM-updates action, evidence timestamps, and the stale/review badges — is removed
+> from the v1 UI. The rules below remain the design of record for when it returns; the domain
+> state machine is implemented and tested.
+
 Resolution is conservative because attaching a person's notes to the wrong business is worse than
 showing stale data.
 

@@ -19,6 +19,7 @@ export const LiveWithWebsite: Story = {
     phone: "+351 21 000 0000",
     openingHours: "Mo-Fr 08:00-18:00; Sa 09:00-14:00",
     source: "live",
+    state: "resolved",
     // Friday 10:00 UTC — inside opening hours, deterministic for tests.
     now: new Date("2026-07-17T10:00:00Z"),
   },
@@ -30,6 +31,8 @@ export const LiveWithWebsite: Story = {
     await expect(link).toHaveAttribute("rel", "noopener noreferrer nofollow ugc");
     await expect(link).toHaveAttribute("target", "_blank");
     await expect(canvas.getByText("Open now")).toBeInTheDocument();
+    // Healthy places carry no state marker.
+    await expect(canvas.queryByTestId("state-badge")).not.toBeInTheDocument();
   },
 };
 
@@ -40,23 +43,6 @@ export const ClosedNow: Story = {
   },
   play: async ({ canvasElement }) => {
     await expect(within(canvasElement).getByText("Closed")).toBeInTheDocument();
-  },
-};
-
-export const EvidenceFallback: Story = {
-  args: {
-    name: "Café Central",
-    category: "cafe",
-    website: "https://cafecentral.pt/",
-    source: "osm-evidence",
-    observedAt: "2026-06-01T00:00:00.000Z",
-    state: "unavailable",
-  },
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    // Copied evidence is labeled with its observation time, never shown as live.
-    await expect(canvas.getByTestId("evidence-note")).toHaveTextContent("Showing saved OSM data");
-    await expect(canvas.getByTestId("state-badge")).toHaveTextContent("OSM unreachable");
   },
 };
 

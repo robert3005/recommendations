@@ -50,23 +50,31 @@ own immutable `PlaceId`; manual pins begin `unlinked` with owner-provided facts 
 
 ## Place detail sheet
 
-The mobile sheet / desktop panel shows:
+The mobile sheet / desktop panel shows (decisions of 2026-07-18):
 
-- Name, category, distance, address, normalized website link, phone, and opening-hours state.
-- OSM source type/id, last verified time, and `resolved`, `stale`, `unavailable`, `missing`, or
-  `needs-review` state.
-- Personal actions: **Save**, **Add tag**, **Add to guide**, and **Add note**.
-- Travel action: **Directions**, deep-linking to an external maps app in v1.
-- Source actions: **View on OpenStreetMap**, **Edit on OpenStreetMap**, **Report a map issue**, and
-  **Check for OSM updates**. An unlinked manual pin instead shows its owner-provided facts, an
-  "unlinked" badge, and a **Link to OpenStreetMap** action.
+- Name, category, address, normalized website link, phone, and opening-hours state.
+- **No state marker on healthy places.** The only badge is "Not linked to OSM" on unlinked manual
+  pins; freshness/recovery badges are deferred with the freshness UI (below).
+- Personal actions: **Save**, **Add tag**, and **Add note**. There is deliberately **no
+  add-to-guide action here**: guides link to places from the guide editor, never the reverse.
+  A place → guides reverse lookup may come later.
+- The **single OSM affordance is a small "View on OpenStreetMap" portal link.** In-app
+  Edit/Report/Directions/Check-for-updates actions are removed — the portal itself offers editing
+  and issue reporting. An unlinked manual pin shows its owner-provided facts and a
+  **Link to OpenStreetMap** action instead.
+- **Notes open a full-screen editing experience**: a Markdown writing surface with a live
+  sanitized preview. The persisted format is the Markdown source (book/src/notes.md).
 
-The public OSM website/phone/hours are never silently overridden inside Placemarks. If they are
-wrong, the source action explains that the correction is public and opens OSM. Personal notes stay
-private unless deliberately attached to a publication.
+The public OSM website/phone/hours are never silently overridden inside Placemarks; wrong facts
+are corrected on the OSM portal.
 
-For `needs-review`, the sheet compares candidate name, category, address, distance, and strong ids
-before the owner confirms a relink. It never moves notes to a candidate on proximity alone.
+### Deferred for now: OSM data freshness (2026-07-18)
+
+The freshness surface — TTL-driven refresh, **Check for OSM updates**, evidence timestamps
+("showing saved data from…"), and the stale/unavailable/missing/needs-review badges and review
+panel — is removed from the UI for now. The durable-identity model and conservative resolution
+rules ([Durable Place Identity](./place-identity.md)) remain the design of record for when this
+surface returns; saved places simply display their stored facts until then.
 
 ## Layers and rendering
 
