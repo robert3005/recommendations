@@ -217,9 +217,10 @@ normalized for uniqueness while preserving the user's display casing.
 ## List (a named group of places)
 
 A list is a **named, ordered group of places — nothing more** (2026-07-18: descriptions were
-removed; lists have names). A **guide is an editorialised list**: the same list enriched with the
-editorial layer — prose descriptions, interleaved narrative sections, attached notes, a reading
-experience. That layer arrives at the guide milestone; descriptive text belongs to it, not to the
+removed; lists have names). A list may be **empty**: membership-is-existence constrains places,
+not lists — a list created on the Lists tab exists before any place joins it. A **guide is an
+editorialised list**: the same list enriched with the editorial layer — prose descriptions,
+interleaved narrative sections, attached notes, a reading experience. That layer arrives at the guide milestone; descriptive text belongs to it, not to the
 list. Blocks are their own entities so adding, removing, or reordering one item does not replace
 a whole array during future sync.
 

@@ -63,8 +63,10 @@ The mobile sheet / desktop panel shows (decisions of 2026-07-18):
   create a new one inline right on the card. **There is no Save button** (2026-07-18: membership
   is existence): adding a place to a list is the only way it enters the library, and **Remove
   place** takes it out of every list—which removes it entirely. Creating a list picks its **marker
-  colour** from a swatch row (default: the next unused palette colour). The place card is the write
-  surface for list *membership*; the default list view stays read-only for reading and navigation.
+  colour** from a swatch row (default: the next unused palette colour); lists are also created
+  **directly on the Lists tab** (2026-07-18, late — a list may exist before any place joins it).
+  The place card is the write surface for list *membership*; the default list view stays
+  read-only for reading and navigation.
   Reordering, removal, renaming, and
   recolouring return with the interop milestone as a **deliberate Edit mode on the list page**
   (2026-07-18 — imported lists are too large for place-card-only curation; see

@@ -26,9 +26,10 @@ A responsive web app with:
   copied evidence, then carries free-form tags and personal notes. **Membership is existence** —
   a place removed from its last list is gone.
 - **Lists first** (flow inverted 2026-07-18) — group places into named **lists**. A list
-  is a name plus a **user-selected marker colour** over an ordered set of places: created and
-  populated **from a place's card** ("add to new list" — membership is how the place persists),
-  read on the **read-only Lists tab**. Its places wear the marker on the map. **Guides come
+  is a name plus a **user-selected marker colour** over an ordered set of places: created
+  **directly on the Lists tab** (a list may exist before any place joins it — 2026-07-18, late)
+  or inline **from a place's card** ("add to new list" — membership is how the place persists).
+  The Lists tab reads list contents; its places wear the marker on the map. **Guides come
   later as editorialised lists** — the same list enriched with prose, interleaved Markdown
   sections, and a reading experience. Descriptive text belongs to the guide layer, not the
   list.
