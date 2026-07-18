@@ -7,11 +7,16 @@ import { composeStories, setProjectAnnotations } from "@storybook/react";
 import { act, render } from "@testing-library/react";
 import { describe, test } from "vitest";
 import { withProviders } from "../../.storybook/decorators";
+import * as NoteEditorStories from "../features/notes/NoteEditor.stories";
 import * as CandidatePickerStories from "../features/picker/CandidatePicker.stories";
+import * as ManualPinDialogStories from "../features/picker/ManualPinDialog.stories";
 import * as PlaceFieldsStories from "../features/place/PlaceFields.stories";
 import * as PlaceSheetStories from "../features/place/PlaceSheet.stories";
+import * as SavedPlaceSheetStories from "../features/place/SavedPlaceSheet.stories";
 import * as StateBadgeStories from "../features/place/StateBadge.stories";
+import * as TagEditorStories from "../features/place/TagEditor.stories";
 import * as SearchBarStories from "../features/search/SearchBar.stories";
+import * as MarkdownStories from "../markdown/Markdown.stories";
 
 setProjectAnnotations([{ decorators: [withProviders] }]);
 
@@ -19,8 +24,13 @@ const modules = [
   ["StateBadge", StateBadgeStories],
   ["PlaceFields", PlaceFieldsStories],
   ["PlaceSheet", PlaceSheetStories],
+  ["SavedPlaceSheet", SavedPlaceSheetStories],
   ["SearchBar", SearchBarStories],
   ["CandidatePicker", CandidatePickerStories],
+  ["ManualPinDialog", ManualPinDialogStories],
+  ["TagEditor", TagEditorStories],
+  ["NoteEditor", NoteEditorStories],
+  ["Markdown", MarkdownStories],
 ] as const;
 
 type RunnableStory = React.ComponentType & {
@@ -32,6 +42,14 @@ for (const [name, module] of modules) {
     const composed = composeStories(module as never) as unknown as Record<string, RunnableStory>;
     for (const [storyName, Story] of Object.entries(composed)) {
       test(storyName, async () => {
+        // Meta-level fn() spies are shared across a file's stories — reset them so
+        // one story's interactions never leak into another's assertions.
+        const args = (Story as unknown as { args?: Record<string, unknown> }).args ?? {};
+        for (const value of Object.values(args)) {
+          if (typeof value === "function" && "mockClear" in value) {
+            (value as { mockClear: () => void }).mockClear();
+          }
+        }
         const { container } = await act(async () => render(<Story />));
         await Story.play?.({ canvasElement: container });
       });

@@ -4,11 +4,15 @@
  * (tags, notes, guides) build on this in Phase 2.
  */
 import { refKey } from "@placemarks/domain";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { useRepo } from "../../data/RepoContext";
+import { useSavedPlaceForRef } from "../../data/hooks";
+import { nowIso } from "../../lib/time";
 import { poiResolver } from "../../providers";
 import { type Selection, useUiStore } from "../../state/ui";
 import { OsmActions } from "./OsmActions";
 import { PlaceFields } from "./PlaceFields";
+import { SavedPlaceSheet } from "./SavedPlaceSheet";
 
 function SheetShell({ children, label }: { children: React.ReactNode; label: string }) {
   const clearSelection = useUiStore((s) => s.clearSelection);
@@ -34,9 +38,20 @@ function SheetShell({ children, label }: { children: React.ReactNode; label: str
 
 function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind: "osm" }> }) {
   const { ref, hint } = selection;
+  const repo = useRepo();
+  const selectSaved = useUiStore((s) => s.selectSaved);
+  const existingSave = useSavedPlaceForRef(ref);
   const resolveQuery = useQuery({
     queryKey: ["resolve", refKey(ref)],
     queryFn: ({ signal }) => poiResolver.resolveExact(ref, { signal }),
+  });
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const outcome = resolveQuery.data;
+      if (!outcome || outcome.type !== "ok") throw new Error("not resolved");
+      return repo.savePoi(outcome.poi, nowIso());
+    },
+    onSuccess: (view) => selectSaved(view.savedPlace.id),
   });
 
   const outcome = resolveQuery.data;
@@ -95,6 +110,28 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
         {...(poi.openingHours ? { openingHours: poi.openingHours } : {})}
         source="live"
       />
+      <div className="mt-3">
+        {existingSave ? (
+          <button
+            type="button"
+            onClick={() => selectSaved(existingSave.id)}
+            className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
+            data-testid="open-saved"
+          >
+            Open saved place
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+            className="rounded bg-rose-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+            data-testid="save-place"
+          >
+            {saveMutation.isPending ? "Saving…" : "Save"}
+          </button>
+        )}
+      </div>
       <OsmActions osmRef={poi.osmRef} lat={poi.lat} lng={poi.lng} />
     </SheetShell>
   );
@@ -104,6 +141,5 @@ export function PlaceSheet() {
   const selection = useUiStore((s) => s.selection);
   if (!selection) return null;
   if (selection.kind === "osm") return <OsmSelectionSheet selection={selection} />;
-  // kind === "saved" arrives with the Phase 2 library.
-  return null;
+  return <SavedPlaceSheet savedPlaceId={selection.savedPlaceId} />;
 }

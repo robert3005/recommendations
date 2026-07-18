@@ -23,6 +23,8 @@ export default defineConfig({
     env: {
       // Deterministic, network-free basemap for map-display tests.
       VITE_MAP_STYLE_URL: "/test-style.json",
+      // OSM/Photon/Overpass served by MSW fixtures — e2e never hits public services.
+      VITE_ENABLE_MSW: "true",
     },
   },
 });

@@ -1,5 +1,13 @@
 /** Reactive reads over the local repository via Dexie liveQuery. */
-import type { GuideBlockView, List, Note, PlaceId, SavedPlaceView, Tag } from "@placemarks/domain";
+import type {
+  GuideBlockView,
+  List,
+  Note,
+  OsmElementRef,
+  PlaceId,
+  SavedPlaceView,
+  Tag,
+} from "@placemarks/domain";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useRepo } from "./RepoContext";
 
@@ -22,6 +30,17 @@ export function useNotesForPlace(placeId: PlaceId | undefined): Note[] | undefin
     () => (placeId ? repo.listNotesForPlace(placeId) : []),
     [repo, placeId],
   );
+}
+
+/** The live SavedPlace for an OSM ref (current or historical), if any. */
+export function useSavedPlaceForRef(ref: OsmElementRef | undefined) {
+  const repo = useRepo();
+  return useLiveQuery(async () => {
+    if (!ref) return undefined;
+    const place = await repo.findPlaceByOsmRef(ref);
+    if (!place) return undefined;
+    return repo.findSavedPlaceByPlaceId(place.id);
+  }, [repo, ref?.type, ref?.id]);
 }
 
 export function useTags(): Tag[] | undefined {

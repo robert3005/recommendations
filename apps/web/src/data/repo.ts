@@ -72,8 +72,14 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async findPlaceByOsmRef(ref: OsmElementRef): Promise<Place | undefined> {
-    const row = await this.db.places.where("refKeys").equals(refKey(ref)).first();
-    return live(row);
+    // Never .first() + live(): a tombstoned row can shadow the live one.
+    const rows = await this.db.places.where("refKeys").equals(refKey(ref)).toArray();
+    return rows.find((row) => !row.deleted);
+  }
+
+  private async liveSaveForPlace(placeId: PlaceId): Promise<SavedPlace | undefined> {
+    const rows = await this.db.savedPlaces.where("placeId").equals(placeId).toArray();
+    return rows.find((row) => !row.deleted);
   }
 
   async updatePlace(place: Place): Promise<void> {
@@ -94,27 +100,30 @@ export class DexieRepository implements PlacemarksRepository {
 
   async savePoi(poi: ResolvedPoi, now: string): Promise<SavedPlaceView> {
     return this.db.transaction("rw", [this.db.places, this.db.savedPlaces, this.db.tagAssignments, this.db.tags], async () => {
-      let place = live(await this.db.places.where("refKeys").equals(refKey(poi.osmRef)).first());
-      if (place) {
+      const found = (
+        await this.db.places.where("refKeys").equals(refKey(poi.osmRef)).toArray()
+      ).find((row) => !row.deleted);
+      let place: Place;
+      if (found) {
         // Current-ref match refreshes evidence; a historical-ref match means this
         // element was already replaced — reuse the place, keep the newer binding.
-        if (place.currentOsmRef && sameRef(place.currentOsmRef, poi.osmRef)) {
+        if (found.currentOsmRef && sameRef(found.currentOsmRef, poi.osmRef)) {
           place = {
-            ...place,
+            ...found,
             lastVerified: evidenceFromPoi(poi),
             resolutionState: "resolved",
             lastResolutionAttemptAt: now,
             updatedAt: now,
           };
           await this.db.places.put(toPlaceRow(place));
+        } else {
+          place = found;
         }
       } else {
         place = createOsmPlace(newId(), poi, now);
         await this.db.places.put(toPlaceRow(place));
       }
-      const existingSave = live(
-        await this.db.savedPlaces.where("placeId").equals(place.id).first(),
-      );
+      const existingSave = await this.liveSaveForPlace(place.id);
       if (existingSave) return this.viewOf(existingSave);
       const savedPlace: SavedPlace = {
         id: newId(),
@@ -154,7 +163,7 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async findSavedPlaceByPlaceId(placeId: PlaceId): Promise<SavedPlace | undefined> {
-    return live(await this.db.savedPlaces.where("placeId").equals(placeId).first());
+    return this.liveSaveForPlace(placeId);
   }
 
   async unsave(savedPlaceId: string, now: string): Promise<void> {
@@ -392,10 +401,14 @@ export class DexieRepository implements PlacemarksRepository {
           .sort(compareByRank);
         const attachments = (
           await Promise.all(
-            attachmentRows.map(async (attachment) => {
-              const note = live(await this.db.notes.get(attachment.noteId));
-              return note ? { attachment, note } : undefined;
-            }),
+            attachmentRows.map(
+              async (
+                attachment,
+              ): Promise<{ attachment: BlockNoteAttachment; note: Note } | undefined> => {
+                const note = live(await this.db.notes.get(attachment.noteId));
+                return note ? { attachment, note } : undefined;
+              },
+            ),
           )
         ).filter((x): x is { attachment: BlockNoteAttachment; note: Note } => x !== undefined);
         return {

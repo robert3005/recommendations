@@ -1,12 +1,16 @@
 import type { BBox, ResolvedPoi } from "@placemarks/domain";
-import { refKey } from "@placemarks/domain";
+import { displayFacts, refKey } from "@placemarks/domain";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { DISCOVER_MIN_ZOOM, MAP_STYLE_URL } from "../../config";
-import { MapView, type PoiPinFeature } from "../../map/MapView";
+import { useRepo } from "../../data/RepoContext";
+import { useSavedPlaceViews } from "../../data/hooks";
+import { nowIso } from "../../lib/time";
+import { MapView, type PoiPinFeature, type SavedPinFeature } from "../../map/MapView";
 import { poiResolver } from "../../providers";
 import { useUiStore } from "../../state/ui";
 import { CandidatePicker } from "../picker/CandidatePicker";
+import { ManualPinDialog } from "../picker/ManualPinDialog";
 import { PlaceSheet } from "../place/PlaceSheet";
 import { SearchBar } from "../search/SearchBar";
 
@@ -20,14 +24,18 @@ function roundBbox(bbox: BBox): string {
 }
 
 export function MapPage() {
+  const repo = useRepo();
   const selection = useUiStore((s) => s.selection);
   const flyTo = useUiStore((s) => s.flyTo);
   const pickerAt = useUiStore((s) => s.pickerAt);
   const selectOsm = useUiStore((s) => s.selectOsm);
+  const selectSaved = useUiStore((s) => s.selectSaved);
   const openPicker = useUiStore((s) => s.openPicker);
   const closePicker = useUiStore((s) => s.closePicker);
   const requestFlyTo = useUiStore((s) => s.requestFlyTo);
 
+  const savedViews = useSavedPlaceViews();
+  const [manualAt, setManualAt] = useState<{ lat: number; lng: number } | null>(null);
   const [viewport, setViewport] = useState<Viewport | null>(null);
   const discoverEnabled = viewport !== null && viewport.zoom >= DISCOVER_MIN_ZOOM;
 
@@ -53,13 +61,28 @@ export function MapPage() {
       }))
     : [];
 
+  const savedPins: SavedPinFeature[] = (savedViews ?? []).flatMap((view) => {
+    const facts = displayFacts(view.place);
+    if (!facts) return [];
+    return [
+      {
+        savedPlaceId: view.savedPlace.id,
+        name: facts.name ?? "Saved place",
+        lat: facts.lat,
+        lng: facts.lng,
+        unlinked: view.place.resolutionState === "unlinked",
+      },
+    ];
+  });
+
   return (
     <div className="relative h-full" data-testid="map-page">
       <MapView
         styleUrl={MAP_STYLE_URL}
-        savedPins={[]}
+        savedPins={savedPins}
         poiPins={poiPins}
         flyTo={flyTo}
+        onSelectSaved={selectSaved}
         onSelectPoi={(pin) =>
           selectOsm(pin.ref, { name: pin.name, lat: pin.lat, lng: pin.lng, category: pin.category })
         }
@@ -99,6 +122,21 @@ export function MapPage() {
             });
           }}
           onClose={closePicker}
+          onSaveManual={(pos) => {
+            closePicker();
+            setManualAt(pos);
+          }}
+        />
+      ) : null}
+      {manualAt ? (
+        <ManualPinDialog
+          lat={manualAt.lat}
+          lng={manualAt.lng}
+          onSave={(facts) => {
+            setManualAt(null);
+            void repo.saveManual(facts, nowIso()).then((view) => selectSaved(view.savedPlace.id));
+          }}
+          onCancel={() => setManualAt(null)}
         />
       ) : null}
     </div>
