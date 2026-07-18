@@ -23,8 +23,6 @@ interface OverpassElement {
 }
 
 const MAX_DISCOVER_AREA_KM2 = 4;
-const POI_FILTER = `["name"]["amenity"!~"^$"],["name"]["shop"],["name"]["tourism"],["name"]["leisure"]`;
-
 function toPoi(element: OverpassElement, resolvedAt: string): ResolvedPoi | undefined {
   if (!element.tags || !["node", "way", "relation"].includes(element.type)) return undefined;
   const lat = element.lat ?? element.center?.lat;

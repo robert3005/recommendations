@@ -1,5 +1,5 @@
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Decorator } from "@storybook/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RepoProvider } from "../src/data/RepoContext";
 import { DexieRepository } from "../src/data/repo";
 

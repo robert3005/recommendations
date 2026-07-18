@@ -31,7 +31,8 @@ export function SearchBar({ onSelect, bias }: SearchBarProps) {
 
   const searchQuery = useQuery({
     queryKey: ["search", debouncedQuery, bias?.lat, bias?.lng],
-    queryFn: ({ signal }) => searchProvider.search(debouncedQuery, { signal, ...(bias ? { bias } : {}) }),
+    queryFn: ({ signal }) =>
+      searchProvider.search(debouncedQuery, { signal, ...(bias ? { bias } : {}) }),
     enabled: debouncedQuery.length >= 2,
     placeholderData: (prev) => prev,
   });
@@ -90,6 +91,7 @@ export function SearchBar({ onSelect, bias }: SearchBarProps) {
       {open && debouncedQuery.length >= 2 ? (
         <ul
           id={listboxId}
+          // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: ul[role=listbox] with option children is the standard ARIA combobox pattern
           role="listbox"
           aria-label="Search results"
           className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg"
@@ -97,9 +99,7 @@ export function SearchBar({ onSelect, bias }: SearchBarProps) {
           {searchQuery.isPending ? (
             <li className="px-4 py-2 text-sm text-stone-500">Searching…</li>
           ) : searchQuery.isError ? (
-            <li className="px-4 py-2 text-sm text-red-700">
-              Search is unavailable right now.
-            </li>
+            <li className="px-4 py-2 text-sm text-red-700">Search is unavailable right now.</li>
           ) : results.length === 0 ? (
             <li className="px-4 py-2 text-sm text-stone-500">No places found.</li>
           ) : (
@@ -117,7 +117,9 @@ export function SearchBar({ onSelect, bias }: SearchBarProps) {
                 >
                   <span className="font-medium text-stone-900">{result.name}</span>
                   {result.category ? (
-                    <span className="ml-2 text-xs capitalize text-stone-500">{result.category}</span>
+                    <span className="ml-2 text-xs capitalize text-stone-500">
+                      {result.category}
+                    </span>
                   ) : null}
                   {result.address ? (
                     <span className="block text-xs text-stone-500">{result.address}</span>

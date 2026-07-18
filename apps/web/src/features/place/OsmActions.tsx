@@ -14,7 +14,15 @@ function ExternalAction({ href, label }: { href: string; label: string }) {
   );
 }
 
-export function OsmActions({ osmRef, lat, lng }: { osmRef?: OsmElementRef; lat: number; lng: number }) {
+export function OsmActions({
+  osmRef,
+  lat,
+  lng,
+}: {
+  osmRef?: OsmElementRef;
+  lat: number;
+  lng: number;
+}) {
   return (
     <div className="mt-3 flex flex-wrap gap-1.5" data-testid="osm-actions">
       {osmRef ? (

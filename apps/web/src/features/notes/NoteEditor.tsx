@@ -95,7 +95,10 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
         />
       </div>
       {preview ? (
-        <div className="mt-2 min-h-24 rounded border border-stone-100 bg-stone-50 p-2" data-testid="note-preview">
+        <div
+          className="mt-2 min-h-24 rounded border border-stone-100 bg-stone-50 p-2"
+          data-testid="note-preview"
+        >
           <Markdown body={body} />
         </div>
       ) : (

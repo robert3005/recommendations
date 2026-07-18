@@ -65,9 +65,7 @@ export const SavedOsmPlace: Story = {
 };
 
 export const TaggingRoundTrip: Story = {
-  render: () => (
-    <Seeded seed={async (repo) => (await repo.savePoi(cafePoi, NOW)).savedPlace.id} />
-  ),
+  render: () => <Seeded seed={async (repo) => (await repo.savePoi(cafePoi, NOW)).savedPlace.id} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByTestId("saved-place-sheet");
@@ -105,9 +103,7 @@ export const ManualUnlinkedPin: Story = {
 };
 
 export const NoteLifecycle: Story = {
-  render: () => (
-    <Seeded seed={async (repo) => (await repo.savePoi(cafePoi, NOW)).savedPlace.id} />
-  ),
+  render: () => <Seeded seed={async (repo) => (await repo.savePoi(cafePoi, NOW)).savedPlace.id} />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByTestId("saved-place-sheet");

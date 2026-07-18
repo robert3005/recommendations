@@ -6,8 +6,7 @@
 export const MAP_STYLE_URL: string =
   import.meta.env.VITE_MAP_STYLE_URL ?? "https://demotiles.maplibre.org/style.json";
 
-export const PHOTON_URL: string =
-  import.meta.env.VITE_PHOTON_URL ?? "https://photon.komoot.io";
+export const PHOTON_URL: string = import.meta.env.VITE_PHOTON_URL ?? "https://photon.komoot.io";
 
 export const OSM_API_URL: string =
   import.meta.env.VITE_OSM_API_URL ?? "https://api.openstreetmap.org";

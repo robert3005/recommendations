@@ -53,8 +53,8 @@ export function SettingsPage() {
       <section className="mt-4">
         <h2 className="text-sm font-semibold text-stone-700">Backup</h2>
         <p className="mt-1 text-xs text-stone-500">
-          A versioned ZIP with your places, tags, notes, guides, media, and the OSM evidence
-          needed to preserve place identity. Data is device-local — back up regularly.
+          A versioned ZIP with your places, tags, notes, guides, media, and the OSM evidence needed
+          to preserve place identity. Data is device-local — back up regularly.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
@@ -118,7 +118,10 @@ export function SettingsPage() {
       </section>
 
       {message ? (
-        <p className="mt-4 rounded bg-stone-100 p-2 text-sm text-stone-700" data-testid="settings-message">
+        <p
+          className="mt-4 rounded bg-stone-100 p-2 text-sm text-stone-700"
+          data-testid="settings-message"
+        >
           {message}
         </p>
       ) : null}
@@ -126,8 +129,8 @@ export function SettingsPage() {
       <section className="mt-6 text-xs text-stone-500">
         <h2 className="text-sm font-semibold text-stone-700">Data sources</h2>
         <p className="mt-1">
-          Map and place data © OpenStreetMap contributors, ODbL. Corrections to public place
-          facts belong upstream on openstreetmap.org.
+          Map and place data © OpenStreetMap contributors, ODbL. Corrections to public place facts
+          belong upstream on openstreetmap.org.
         </p>
       </section>
     </div>

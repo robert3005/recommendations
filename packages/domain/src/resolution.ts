@@ -20,7 +20,8 @@ export type ExactOutcome =
 export function plausiblySameElement(prev: OsmEvidence, next: ResolvedPoi): boolean {
   const moved = distanceMeters(prev.lat, prev.lng, next.lat, next.lng);
   const nameMatches =
-    (normalizeName(prev.name) !== undefined && normalizeName(prev.name) === normalizeName(next.name)) ||
+    (normalizeName(prev.name) !== undefined &&
+      normalizeName(prev.name) === normalizeName(next.name)) ||
     (prev.identityTags.brand !== undefined && prev.identityTags.brand === next.identityTags.brand);
   const categoryCompatible = prev.category === next.category;
   if (moved <= 150) return true;
@@ -36,7 +37,11 @@ export type ExactResolutionResult =
  * Step 1+2 of refresh: resolve the current reference first; distinguish unavailability
  * from disappearance. Provider failure never triggers relinking.
  */
-export function applyExactOutcome(place: Place, outcome: ExactOutcome, now: string): ExactResolutionResult {
+export function applyExactOutcome(
+  place: Place,
+  outcome: ExactOutcome,
+  now: string,
+): ExactResolutionResult {
   if (!place.currentOsmRef) {
     // Unlinked manual places are never resolved.
     return { kind: "updated", place };
@@ -95,7 +100,12 @@ export function applyRecovery(place: Place, candidates: ResolvedPoi[], now: stri
     return linkPlaceToOsm(place, classification.best.candidate, now, "resolver-match");
   }
   if (classification.kind === "review") {
-    return { ...place, resolutionState: "needs-review", lastResolutionAttemptAt: now, updatedAt: now };
+    return {
+      ...place,
+      resolutionState: "needs-review",
+      lastResolutionAttemptAt: now,
+      updatedAt: now,
+    };
   }
   return { ...place, resolutionState: "missing", lastResolutionAttemptAt: now, updatedAt: now };
 }

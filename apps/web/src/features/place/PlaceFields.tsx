@@ -31,7 +31,9 @@ export function PlaceFields(props: PlaceFieldsProps) {
       </div>
       <div className="mt-0.5 flex items-center gap-2">
         {category ? <span className="text-sm capitalize text-stone-500">{category}</span> : null}
-        {openingHours ? <OpenNow openingHours={openingHours} {...(now ? { at: now } : {})} /> : null}
+        {openingHours ? (
+          <OpenNow openingHours={openingHours} {...(now ? { at: now } : {})} />
+        ) : null}
       </div>
       {source === "osm-evidence" && observedAt ? (
         <p className="mt-1 text-xs text-stone-500" data-testid="evidence-note">

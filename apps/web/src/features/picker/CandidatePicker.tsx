@@ -16,7 +16,13 @@ export interface CandidatePickerProps {
   onSaveManual?: (pos: { lat: number; lng: number }) => void;
 }
 
-export function CandidatePicker({ lat, lng, onSelect, onClose, onSaveManual }: CandidatePickerProps) {
+export function CandidatePicker({
+  lat,
+  lng,
+  onSelect,
+  onClose,
+  onSaveManual,
+}: CandidatePickerProps) {
   const nearbyQuery = useQuery({
     queryKey: ["nearby", lat.toFixed(5), lng.toFixed(5)],
     queryFn: ({ signal }) => poiResolver.searchNearby({ lat, lng, radiusM: 80, signal }),
@@ -31,6 +37,7 @@ export function CandidatePicker({ lat, lng, onSelect, onClose, onSaveManual }: C
   }, [onClose]);
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop click-to-dismiss is supplementary; Escape and the Cancel button are the accessible paths
     <div
       className="absolute inset-0 z-30 flex items-end justify-center bg-black/30 md:items-center"
       onClick={onClose}

@@ -45,7 +45,11 @@ describe("place creation", () => {
   });
 
   it("linking a manual place sets firstSeen once and enters the normal lifecycle", () => {
-    const manual = createManualPlace("p3", { name: "Café Central", lat: 38.7139, lng: -9.1394 }, NOW);
+    const manual = createManualPlace(
+      "p3",
+      { name: "Café Central", lat: 38.7139, lng: -9.1394 },
+      NOW,
+    );
     const linked = linkPlaceToOsm(manual, poi(), LATER, "owner-confirmed");
     expect(linked.resolutionState).toBe("resolved");
     expect(linked.origin).toBe("manual"); // origin is provenance and never changes
@@ -159,7 +163,10 @@ describe("plausiblySameElement", () => {
   it("accepts a rename at the same location", () => {
     if (!prev) throw new Error("no evidence");
     expect(
-      plausiblySameElement(prev, poi({ name: "New Owner Café", identityTags: { name: "New Owner Café" } })),
+      plausiblySameElement(
+        prev,
+        poi({ name: "New Owner Café", identityTags: { name: "New Owner Café" } }),
+      ),
     ).toBe(true);
   });
   it("rejects a radical move with incompatible identity", () => {

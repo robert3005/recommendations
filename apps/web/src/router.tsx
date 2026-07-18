@@ -1,10 +1,4 @@
-import {
-  createRootRoute,
-  createRoute,
-  createRouter,
-  Link,
-  Outlet,
-} from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, Link, Outlet } from "@tanstack/react-router";
 import { SettingsPage } from "./features/backup/SettingsPage";
 import { GuidePage } from "./features/guides/GuidePage";
 import { GuidesPage } from "./features/guides/GuidesPage";

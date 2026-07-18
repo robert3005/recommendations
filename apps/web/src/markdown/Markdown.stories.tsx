@@ -38,7 +38,7 @@ export const SanitizedContent: Story = {
     body: [
       "Safe text",
       "",
-      '<script>window.hacked = true;</script>',
+      "<script>window.hacked = true;</script>",
       "",
       '<img src="https://tracker.example/pixel.png">',
       "",

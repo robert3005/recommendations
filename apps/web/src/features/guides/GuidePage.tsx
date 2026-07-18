@@ -6,8 +6,8 @@
 import { displayFacts, type GuideBlockView } from "@placemarks/domain";
 import { useParams } from "@tanstack/react-router";
 import { useState } from "react";
-import { useRepo } from "../../data/RepoContext";
 import { useGuide, useGuideBlocks, useNotesForPlace, useSavedPlaceViews } from "../../data/hooks";
+import { useRepo } from "../../data/RepoContext";
 import { nowIso } from "../../lib/time";
 import { Markdown } from "../../markdown/Markdown";
 import { StateBadge } from "../place/StateBadge";
@@ -55,8 +55,22 @@ function BlockCard({
 
   const controls = editing ? (
     <span className="flex shrink-0 gap-1">
-      <button type="button" aria-label="Move up" onClick={onMoveUp} className="rounded px-1.5 text-xs text-stone-500 hover:bg-stone-200">↑</button>
-      <button type="button" aria-label="Move down" onClick={onMoveDown} className="rounded px-1.5 text-xs text-stone-500 hover:bg-stone-200">↓</button>
+      <button
+        type="button"
+        aria-label="Move up"
+        onClick={onMoveUp}
+        className="rounded px-1.5 text-xs text-stone-500 hover:bg-stone-200"
+      >
+        ↑
+      </button>
+      <button
+        type="button"
+        aria-label="Move down"
+        onClick={onMoveDown}
+        className="rounded px-1.5 text-xs text-stone-500 hover:bg-stone-200"
+      >
+        ↓
+      </button>
       <button
         type="button"
         aria-label="Remove block"
@@ -86,7 +100,13 @@ function BlockCard({
               className="w-full rounded border border-stone-200 p-2 font-mono text-sm"
             />
             <div className="mt-1 flex justify-end gap-2">
-              <button type="button" onClick={() => setEditingSection(false)} className="rounded px-2 py-0.5 text-xs text-stone-600">Cancel</button>
+              <button
+                type="button"
+                onClick={() => setEditingSection(false)}
+                className="rounded px-2 py-0.5 text-xs text-stone-600"
+              >
+                Cancel
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -197,7 +217,8 @@ export function GuidePage() {
     if (!target) return;
     const swapWith = index + direction;
     if (swapWith < 0 || swapWith >= list.length) return;
-    const before = direction === -1 ? list[swapWith]?.block.id : (list[swapWith + 1]?.block.id ?? null);
+    const before =
+      direction === -1 ? list[swapWith]?.block.id : (list[swapWith + 1]?.block.id ?? null);
     void repo.moveBlock(target.block.id, before ?? null, nowIso());
   };
 
@@ -215,7 +236,9 @@ export function GuidePage() {
           {editing ? "Reading view" : "Edit guide"}
         </button>
       </div>
-      {guide.description ? <p className="mt-1 text-sm text-stone-600">{guide.description}</p> : null}
+      {guide.description ? (
+        <p className="mt-1 text-sm text-stone-600">{guide.description}</p>
+      ) : null}
 
       <div className="mt-4 space-y-3">
         {(blocks ?? []).map((view, index) => (

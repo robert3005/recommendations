@@ -5,8 +5,8 @@
  */
 import { refKey } from "@placemarks/domain";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useRepo } from "../../data/RepoContext";
 import { useSavedPlaceForRef } from "../../data/hooks";
+import { useRepo } from "../../data/RepoContext";
 import { nowIso } from "../../lib/time";
 import { poiResolver } from "../../providers";
 import { type Selection, useUiStore } from "../../state/ui";
@@ -48,7 +48,7 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
   const saveMutation = useMutation({
     mutationFn: async () => {
       const outcome = resolveQuery.data;
-      if (!outcome || outcome.type !== "ok") throw new Error("not resolved");
+      if (outcome?.type !== "ok") throw new Error("not resolved");
       return repo.savePoi(outcome.poi, nowIso());
     },
     onSuccess: (view) => selectSaved(view.savedPlace.id),

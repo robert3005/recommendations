@@ -28,9 +28,9 @@ describe("websiteFromTags", () => {
   });
 
   it("falls through invalid values to the next key", () => {
-    expect(
-      websiteFromTags({ website: "javascript:alert(1)", url: "cafe.example" }),
-    ).toBe("https://cafe.example/");
+    expect(websiteFromTags({ website: "javascript:alert(1)", url: "cafe.example" })).toBe(
+      "https://cafe.example/",
+    );
   });
 });
 

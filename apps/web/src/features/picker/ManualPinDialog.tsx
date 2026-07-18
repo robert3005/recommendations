@@ -13,6 +13,7 @@ export function ManualPinDialog({ lat, lng, onSave, onCancel }: ManualPinDialogP
   const [category, setCategory] = useState("");
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: backdrop click-to-dismiss is supplementary; the Cancel button is the accessible path
     <div
       className="absolute inset-0 z-40 flex items-center justify-center bg-black/30 p-4"
       role="presentation"

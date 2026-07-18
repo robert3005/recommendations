@@ -46,7 +46,11 @@ function savedToGeoJSON(pins: SavedPinFeature[]): FeatureCollection {
     features: pins.map((pin) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [pin.lng, pin.lat] },
-      properties: { savedPlaceId: pin.savedPlaceId, name: pin.name, unlinked: pin.unlinked ? 1 : 0 },
+      properties: {
+        savedPlaceId: pin.savedPlaceId,
+        name: pin.name,
+        unlinked: pin.unlinked ? 1 : 0,
+      },
     })),
   };
 }

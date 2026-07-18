@@ -12,9 +12,7 @@ export interface TagEditorProps {
 export function TagEditor({ tags, onAdd, onRemove }: TagEditorProps) {
   const [draft, setDraft] = useState("");
   const allTags = useTags();
-  const suggestions = (allTags ?? []).filter(
-    (t) => !tags.some((existing) => existing.id === t.id),
-  );
+  const suggestions = (allTags ?? []).filter((t) => !tags.some((existing) => existing.id === t.id));
 
   const submit = () => {
     const name = draft.trim();

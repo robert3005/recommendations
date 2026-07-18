@@ -25,9 +25,7 @@ export interface TagAssignment extends BaseEntity {
   tagId: string;
 }
 
-export type NoteTarget =
-  | { kind: "place"; placeId: PlaceId }
-  | { kind: "list"; listId: string };
+export type NoteTarget = { kind: "place"; placeId: PlaceId } | { kind: "list"; listId: string };
 
 /** A rich Markdown page anchored to a place or a list (book/src/notes.md). */
 export interface Note extends BaseEntity {

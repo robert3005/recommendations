@@ -10,15 +10,15 @@ import {
   linkPlaceToOsm,
   type Note,
   type Place,
-  recoveryEvidence,
   type ResolvedPoi,
+  recoveryEvidence,
   type SavedPlaceView,
   scoreCandidate,
 } from "@placemarks/domain";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
-import { useRepo } from "../../data/RepoContext";
 import { useLists, useNotesForPlace, useSavedPlaceView } from "../../data/hooks";
+import { useRepo } from "../../data/RepoContext";
 import { newId } from "../../lib/id";
 import { nowIso } from "../../lib/time";
 import { Markdown } from "../../markdown/Markdown";
@@ -49,7 +49,10 @@ function ReviewPanel({ place, onDone }: { place: Place; onDone: (updated: Place)
   };
 
   return (
-    <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50 p-3" data-testid="review-panel">
+    <div
+      className="mt-3 rounded-lg border border-violet-200 bg-violet-50 p-3"
+      data-testid="review-panel"
+    >
       <p className="text-sm font-medium text-violet-900">
         This place's OSM link changed ambiguously. Pick the right record:
       </p>

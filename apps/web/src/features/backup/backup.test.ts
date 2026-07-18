@@ -1,6 +1,6 @@
 /** Backup/restore roundtrip, merge semantics, and validation (book/src/storage-sync.md). */
 import type { ResolvedPoi } from "@placemarks/domain";
-import { beforeEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
 import { exportBackup, importBackup } from "./backup";
 
@@ -107,8 +107,8 @@ describe("backup roundtrip", () => {
 
   it("rejects a non-backup file", async () => {
     const target = freshRepo();
-    await expect(
-      importBackup(target, new Blob(["not a zip"]), "replace", LATER),
-    ).rejects.toThrow(/not a valid backup/);
+    await expect(importBackup(target, new Blob(["not a zip"]), "replace", LATER)).rejects.toThrow(
+      /not a valid backup/,
+    );
   });
 });

@@ -91,7 +91,12 @@ export function assembleAddress(tags: Record<string, string>): string | undefine
   return address === "" ? undefined : address;
 }
 
-const SOCIAL_KEYS = ["contact:instagram", "contact:facebook", "contact:twitter", "contact:mastodon"];
+const SOCIAL_KEYS = [
+  "contact:instagram",
+  "contact:facebook",
+  "contact:twitter",
+  "contact:mastodon",
+];
 
 export function socialsFromTags(tags: Record<string, string>): Record<string, string> | undefined {
   const socials: Record<string, string> = {};

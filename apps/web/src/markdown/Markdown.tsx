@@ -45,9 +45,19 @@ function AssetImage({ src, alt }: { src?: string | Blob; alt?: string }) {
 }
 
 const components: Components = {
-  img: (props) => <AssetImage {...(props.src ? { src: props.src } : {})} {...(props.alt ? { alt: props.alt } : {})} />,
+  img: (props) => (
+    <AssetImage
+      {...(props.src ? { src: props.src } : {})}
+      {...(props.alt ? { alt: props.alt } : {})}
+    />
+  ),
   a: ({ href, children }) => (
-    <a href={href} target="_blank" rel="noopener noreferrer nofollow ugc" className="text-blue-700 underline">
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer nofollow ugc"
+      className="text-blue-700 underline"
+    >
       {children}
     </a>
   ),

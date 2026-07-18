@@ -26,10 +26,7 @@ export function useSavedPlaceView(savedPlaceId: string | undefined): SavedPlaceV
 
 export function useNotesForPlace(placeId: PlaceId | undefined): Note[] | undefined {
   const repo = useRepo();
-  return useLiveQuery(
-    () => (placeId ? repo.listNotesForPlace(placeId) : []),
-    [repo, placeId],
-  );
+  return useLiveQuery(() => (placeId ? repo.listNotesForPlace(placeId) : []), [repo, placeId]);
 }
 
 /** The live SavedPlace for an OSM ref (current or historical), if any. */

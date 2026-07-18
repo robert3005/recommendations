@@ -44,7 +44,7 @@ describe("saving places", () => {
     const second = await repo.savePoi(poi({ resolvedAt: LATER }), LATER);
     expect(second.place.id).toBe(first.place.id);
     expect(second.savedPlace.id).toBe(first.savedPlace.id);
-    expect((await repo.listSavedPlaces())).toHaveLength(1);
+    expect(await repo.listSavedPlaces()).toHaveLength(1);
     // Re-saving via the current ref refreshed the evidence.
     expect(second.place.lastVerified?.observedAt).toBe(LATER);
   });
