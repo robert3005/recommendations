@@ -8,6 +8,8 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     trace: "retain-on-failure",
+    // End-of-test captures double as a visual record of each flow.
+    screenshot: "on",
   },
   projects: [
     {
