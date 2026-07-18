@@ -1,0 +1,19 @@
+{
+  "name": "placemarks",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@11.14.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "e2e": "pnpm --filter @placemarks/web e2e",
+    "storybook": "pnpm --filter @placemarks/web storybook",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "format": "biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "typescript": "^5.6.0"
+  }
+}
