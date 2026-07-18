@@ -39,7 +39,10 @@ test("building the Lisbon guide: sections, places, order, notes, reading view", 
   await closeSheet(page);
 
   // Create the guide.
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Guides" }).click();
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("link", { name: "Guides" })
+    .click();
   await page.getByLabel("New guide name").fill("Lisbon trip");
   await page.getByTestId("create-guide").click();
   await page.getByRole("link", { name: "Lisbon trip" }).click();

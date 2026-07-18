@@ -22,9 +22,6 @@ A shared place does not use an OSM element id as permanent identity. An OSM-link
 - a bounded first-seen and last-verified OSM observation;
 - a stable block id within that publication.
 
-An unlinked manual pin shares only its owner-provided name, coordinates, and optional category,
-explicitly marked as carrying no OSM claim.
-
 The viewer first resolves the exact OSM reference. If OSM confirms that it is gone or incompatible,
 the viewer may use the copied evidence for the conservative matching process from
 [Durable Place Identity](./place-identity.md#refresh-and-re-resolution). Provider failure is not a
@@ -103,20 +100,12 @@ interface SharedPlaceEvidence {
   observedAt: string;
 }
 
-type SharedPlaceAnchor =
-  | {
-      kind: "osm";
-      currentOsmRef: OsmElementRef;
-      firstSeen: SharedPlaceEvidence;
-      lastVerified: SharedPlaceEvidence;
-    }
-  | {
-      kind: "manual";              // an unlinked pin: owner-provided facts, no OSM claim
-      name: string;
-      lat: number;
-      lng: number;
-      category?: string;
-    };
+interface SharedPlaceAnchor {
+  kind: "osm";
+  currentOsmRef: OsmElementRef;
+  firstSeen: SharedPlaceEvidence;
+  lastVerified: SharedPlaceEvidence;
+}
 
 interface SharedNoteBody {
   pageSlug?: string;
@@ -191,16 +180,14 @@ not include them.
 The public route is read-only and needs no account:
 
 1. Decode the fragment or fetch the current hosted `SharedGuide` revision.
-2. Paint sections and place cards immediately from copied evidence or manual facts.
-3. Resolve each `kind: "osm"` anchor's `currentOsmRef` through the production resolver. Manual
-   anchors are never resolved: they render as labeled unlinked pins with owner-provided facts.
+2. Paint sections and place cards immediately from copied evidence.
+3. Resolve each anchor's `currentOsmRef` through the production resolver.
 4. On a confirmed missing/incompatible element, attempt a unique high-confidence evidence match.
 5. On ambiguity or provider failure, retain the fallback and show its state/timestamp.
 6. Render the interleaved article and synchronized map without exposing editing controls.
 7. Offer **Save this guide**. Reuse an existing local place where possible; create a new one only
    after the shared ref or a unique high-confidence replacement resolves. Unresolved OSM items
-   remain pending previews rather than silently degrading into unlinked pins; a shared **manual**
-   anchor imports as a manual place per the
+   remain pending previews rather than degrading into coordinate-only places. See the
    [deduplication rules](./place-identity.md#import-and-deduplication).
 
 The viewer never modifies the author's document after a temporary match. A confirmed owner-side

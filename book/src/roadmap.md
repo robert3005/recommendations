@@ -29,8 +29,7 @@ provider failures produce designed states rather than blank screens.
 - Place sheet actions: **View/Edit on OpenStreetMap**, **Report a map issue**, and
   **Check for OSM updates**.
 - Long press → nearby OSM candidate picker. If absent, **Add it on OpenStreetMap**, then retry after
-  downstream services update — or keep the spot as an **unlinked manual pin** (saved once the
-  library lands in Phase 2).
+  downstream services update. Do not persist a coordinate-only fallback.
 
 **Done when:** I can find a café, inspect its source, see its website, and hand a missing/wrong POI
 off to OpenStreetMap without creating a second public correction record.
@@ -40,9 +39,7 @@ off to OpenStreetMap without creating a second public correction record.
 - Create an immutable app `PlaceId` for OSM-backed saves only after exact OSM resolution; persist
   current OSM ref, append-only history, first-seen evidence, and last-verified evidence atomically
   with the save.
-- **Unlinked manual pins**: offline-capable `origin: "manual"` places with owner-provided facts, a
-  distinct badge, and a **Link to OpenStreetMap** upgrade via the candidate picker.
-- Implement `resolved`, `stale`, `unavailable`, `missing`, `needs-review`, and `unlinked` states.
+- Implement `resolved`, `stale`, `unavailable`, `missing`, and `needs-review` states.
 - Exact-ref refresh followed only on confirmed disappearance/repurposing by conservative evidence
   matching; ambiguous candidates require owner review.
 - Saved-place and clustered map layers; save/unsave; tags through `TagAssignment` edges.
@@ -63,8 +60,7 @@ from backup, and repair a simulated OSM node→way replacement without losing no
 - Share preview listing exactly which notes, tags, OSM evidence, and hosted media leave the device.
 - Exact OSM resolution plus evidence-based temporary recovery; fallback states remain visible.
 - **Save this guide** import using reference/history/evidence deduplication; unresolved new places
-  remain pending previews until an exact or unique high-confidence OSM match succeeds. Shared
-  manual pins import as unlinked places.
+  remain pending previews until an exact or unique high-confidence OSM match succeeds.
 
 **Done when:** I can send a read-only guide without a backend, the recipient cannot modify it, and
 the link still renders timestamped evidence when its old OSM element no longer resolves.

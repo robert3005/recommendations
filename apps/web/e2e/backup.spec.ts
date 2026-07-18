@@ -28,7 +28,10 @@ test("export → unsave → import(replace) restores the library", async ({ page
   await sheet.getByRole("button", { name: "Close" }).click();
 
   // Export the backup ZIP.
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Settings" }).click();
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("link", { name: "Settings" })
+    .click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByTestId("export-backup").click();
   const download = await downloadPromise;
@@ -36,20 +39,29 @@ test("export → unsave → import(replace) restores the library", async ({ page
   await expect(page.getByTestId("settings-message")).toContainText("Backup exported");
 
   // Destroy: unsave the place.
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Map" }).click();
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("link", { name: "Map" })
+    .click();
   await reopenSavedAtCenter(page);
   await expect(page.getByTestId("saved-place-sheet")).toBeVisible();
   await page.getByTestId("unsave").click();
   await expect(page.getByTestId("saved-place-sheet")).toHaveCount(0);
 
   // Restore: replace-import the downloaded archive.
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Settings" }).click();
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("link", { name: "Settings" })
+    .click();
   await page.getByRole("radio", { name: "Replace everything" }).check();
   await page.getByLabel("Backup file").setInputFiles(backupPath);
   await expect(page.getByTestId("settings-message")).toContainText("Imported");
 
   // The library is back: same place, same tag.
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Map" }).click();
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("link", { name: "Map" })
+    .click();
   await reopenSavedAtCenter(page);
   const restored = page.getByTestId("saved-place-sheet");
   await expect(restored).toBeVisible();
