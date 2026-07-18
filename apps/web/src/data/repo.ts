@@ -14,15 +14,22 @@ import {
   allRefKeys,
   type BlockNoteAttachment,
   compareByRank,
+  createImportedPlace,
   createManualPlace,
   createOsmPlace,
+  displayFacts,
+  distanceMeters,
   evidenceFromPoi,
+  type ExternalRef,
   type GuideBlockView,
+  hasExternalRef,
   type List,
   type ListBlock,
+  type ManualFacts,
   type MediaAsset,
-  type Note,
+  normalizeName,
   normalizeTagName,
+  type Note,
   noteTargetKey,
   type OsmElementRef,
   type Place,
@@ -36,6 +43,7 @@ import {
   sameRef,
   type Tag,
   type TagAssignment,
+  withExternalRef,
 } from "@placemarks/domain";
 import { newId } from "../lib/id";
 import { type ListBlockRow, type NoteRow, PlacemarksDb, type PlaceRow } from "./db";
@@ -80,6 +88,31 @@ export class DexieRepository implements PlacemarksRepository {
 
   async updatePlace(place: Place): Promise<void> {
     await this.db.places.put(toPlaceRow(place));
+  }
+
+  /** Import dedup rung 1: the same external ref (fid, else exact URL) is the same place. */
+  private async findByExternalRef(ref: ExternalRef): Promise<Place | undefined> {
+    const rows = await this.db.places.toArray();
+    return rows.find((row) => !row.deleted && hasExternalRef(row, ref));
+  }
+
+  /**
+   * Import dedup rung 2: same normalized name within 100 m. Coordinates alone
+   * never dedup (mirrors the identity-matching rule in the domain).
+   */
+  private async findByNameNearby(facts: ManualFacts): Promise<Place | undefined> {
+    const name = normalizeName(facts.name);
+    if (!name) return undefined;
+    const rows = await this.db.places.toArray();
+    return rows.find((row) => {
+      if (row.deleted) return false;
+      const display = displayFacts(row);
+      if (!display) return false;
+      return (
+        normalizeName(display.name) === name &&
+        distanceMeters(display.lat, display.lng, facts.lat, facts.lng) <= 100
+      );
+    });
   }
 
   private async tagsOf(placeId: PlaceId): Promise<Tag[]> {
@@ -412,6 +445,21 @@ export class DexieRepository implements PlacemarksRepository {
         } else if (source.kind === "manual") {
           place = createManualPlace(newId(), source.facts, now);
           await this.db.places.put(toPlaceRow(place));
+        } else if (source.kind === "import") {
+          // Idempotent re-import (book/src/interop.md): external-ref id first,
+          // then name+proximity — the same row converges on the same place.
+          const found =
+            (source.externalRef ? await this.findByExternalRef(source.externalRef) : undefined) ??
+            (await this.findByNameNearby(source.facts));
+          if (found) {
+            place = source.externalRef
+              ? withExternalRef(found, source.externalRef, now)
+              : found;
+            if (place !== found) await this.db.places.put(toPlaceRow(place));
+          } else {
+            place = createImportedPlace(newId(), source.facts, source.externalRef, now);
+            await this.db.places.put(toPlaceRow(place));
+          }
         } else {
           const poi: ResolvedPoi = source.poi;
           const found = (
@@ -434,6 +482,12 @@ export class DexieRepository implements PlacemarksRepository {
             }
           } else {
             place = createOsmPlace(newId(), poi, now);
+            await this.db.places.put(toPlaceRow(place));
+          }
+          // An import that OSM-matched still retains its source URL (provenance
+          // and the deep link back — book/src/interop.md).
+          if (source.externalRef && !hasExternalRef(place, source.externalRef)) {
+            place = withExternalRef(place, source.externalRef, now);
             await this.db.places.put(toPlaceRow(place));
           }
         }

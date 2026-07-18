@@ -29,6 +29,39 @@ export interface MediaBlobRow {
   blob: Blob;
 }
 
+/**
+ * Import workflow state (book/src/interop.md §Import queue model): persisted so
+ * a half-reviewed import survives a reload; not part of the durable place graph.
+ */
+export interface ImportBatchRow {
+  id: string;
+  source: "google-takeout" | "csv" | "kml" | "gpx" | "geojson";
+  fileName: string;
+  startedAt: string;
+  status: "reviewing" | "done" | "abandoned";
+}
+
+export interface ImportItemRow {
+  id: string;
+  batchId: string;
+  targetListId: string;
+  raw: { title: string; note?: string; url?: string; address?: string };
+  coords?: { lat: number; lng: number };
+  /** Geocode candidates awaiting review (typed OSM refs from the search adapter). */
+  candidates?: {
+    ref: { type: "node" | "way" | "relation"; id: string };
+    name: string;
+    lat: number;
+    lng: number;
+    category?: string;
+    address?: string;
+  }[];
+  status: "placed" | "review" | "skipped" | "duplicate";
+  /** True when the placed item was OSM-linked at import time. */
+  linkedOsm?: boolean;
+  placeId?: string;
+}
+
 export class PlacemarksDb extends Dexie {
   places!: EntityTable<PlaceRow, "id">;
   tags!: EntityTable<Tag, "id">;
@@ -39,6 +72,8 @@ export class PlacemarksDb extends Dexie {
   lists!: EntityTable<List, "id">;
   listBlocks!: EntityTable<ListBlockRow, "id">;
   blockNoteAttachments!: EntityTable<BlockNoteAttachment, "id">;
+  importBatches!: EntityTable<ImportBatchRow, "id">;
+  importItems!: EntityTable<ImportItemRow, "id">;
 
   constructor(name = "placemarks") {
     super(name);
@@ -123,6 +158,11 @@ export class PlacemarksDb extends Dexie {
           updatedAt: now,
         });
       }
+    });
+    // v5 (Phase 3, book/src/interop.md): the persisted import review queue.
+    this.version(5).stores({
+      importBatches: "id, status, startedAt",
+      importItems: "id, batchId, status",
     });
   }
 }

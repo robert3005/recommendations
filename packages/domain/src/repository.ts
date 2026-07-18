@@ -12,7 +12,7 @@
  */
 import type { BlockNoteAttachment, List, ListBlock, MediaAsset, Note, Tag } from "./entities";
 import type { OsmElementRef } from "./osm";
-import type { ManualFacts, Place, PlaceId } from "./place";
+import type { ExternalRef, ManualFacts, Place, PlaceId } from "./place";
 import type { ResolvedPoi } from "./poi";
 
 export interface PlaceView {
@@ -29,10 +29,16 @@ export interface GuideBlockView {
   attachments?: { attachment: BlockNoteAttachment; note: Note }[];
 }
 
-/** What is being added to a list — adding IS how a place comes to exist. */
+/**
+ * What is being added to a list — adding IS how a place comes to exist.
+ * `poi` may carry an external ref (an import that OSM-matched); `import` is a
+ * placed-but-unlinked import row (book/src/interop.md). Import dedup order:
+ * external-ref id first, then name+proximity against existing places.
+ */
 export type AddToListSource =
-  | { kind: "poi"; poi: ResolvedPoi }
+  | { kind: "poi"; poi: ResolvedPoi; externalRef?: ExternalRef }
   | { kind: "manual"; facts: ManualFacts }
+  | { kind: "import"; facts: ManualFacts; externalRef?: ExternalRef }
   | { kind: "existing"; placeId: PlaceId };
 
 export interface PlacemarksRepository {

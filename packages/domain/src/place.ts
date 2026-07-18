@@ -47,17 +47,31 @@ export interface ManualFacts {
   lat: number;
   lng: number;
   category?: string;
+  address?: string; // present on imported facts — Takeout carries addresses
+}
+
+/**
+ * A retained pointer into another ecosystem (book/src/interop.md): provenance
+ * and the deep link back. Opaque — the URL is never fetched.
+ */
+export interface ExternalRef {
+  provider: "google-maps";
+  url: string;
+  /** Stable id parsed from the URL when present (feature-id pair or cid) — the dedup key. */
+  fid?: string;
+  importedAt: string;
 }
 
 export interface Place {
   id: PlaceId;
-  origin: "osm" | "manual";
-  currentOsmRef?: OsmElementRef; // absent on an unlinked manual place
+  origin: "osm" | "manual" | "import";
+  currentOsmRef?: OsmElementRef; // absent on an unlinked manual/imported place
   currentOsmLinkedAt?: string;
   osmRefHistory: OsmLinkHistoryEntry[];
   firstSeen?: OsmEvidence; // immutable recovery evidence, set when first OSM-linked
   lastVerified?: OsmEvidence; // last successfully resolved observation
-  manual?: ManualFacts;
+  manual?: ManualFacts; // owner- or import-provided facts; required while unlinked
+  externalRefs?: ExternalRef[];
   resolutionState: ResolutionState;
   lastResolutionAttemptAt?: string;
   createdAt: string;
@@ -114,6 +128,42 @@ export function createManualPlace(id: PlaceId, facts: ManualFacts, now: string):
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/**
+ * An imported place (book/src/interop.md) rides the manual-pin machinery:
+ * unlinked, with imported facts and the source URL retained as an external ref.
+ * OSM linkage is an optional upgrade, never an import gate.
+ */
+export function createImportedPlace(
+  id: PlaceId,
+  facts: ManualFacts,
+  externalRef: ExternalRef | undefined,
+  now: string,
+): Place {
+  return {
+    id,
+    origin: "import",
+    osmRefHistory: [],
+    manual: facts,
+    ...(externalRef ? { externalRefs: [externalRef] } : {}),
+    resolutionState: "unlinked",
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+/** True when the place already carries this external ref (by fid, else exact URL). */
+export function hasExternalRef(place: Place, ref: ExternalRef): boolean {
+  return (place.externalRefs ?? []).some((existing) =>
+    ref.fid && existing.fid ? existing.fid === ref.fid : existing.url === ref.url,
+  );
+}
+
+/** Retain an external ref on a place; a no-op when an equivalent ref is present. */
+export function withExternalRef(place: Place, ref: ExternalRef, now: string): Place {
+  if (hasExternalRef(place, ref)) return place;
+  return { ...place, externalRefs: [...(place.externalRefs ?? []), ref], updatedAt: now };
 }
 
 /**
@@ -188,6 +238,7 @@ export function displayFacts(place: Place): DisplayFacts | undefined {
       ...(place.manual.category ? { category: place.manual.category } : {}),
       lat: place.manual.lat,
       lng: place.manual.lng,
+      ...(place.manual.address ? { address: place.manual.address } : {}),
       source: "manual",
     };
   }
