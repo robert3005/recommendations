@@ -4,6 +4,30 @@ The stack favors fast web delivery, open data, local ownership, and explicit pro
 Specific vendors are replaceable through contracts; place identity and publication semantics are
 not.
 
+## Chosen reference implementation
+
+The sections below define the *contracts*; these are the concrete defaults chosen to implement
+them (2026-07). Rule: boring by default, exotic only where the design demands it.
+
+| Layer | Choice | Deciding argument |
+|---|---|---|
+| Language/tooling | TypeScript `strict`; pnpm workspaces (`domain`/`schemas`/`app`/`services`); Biome + `tsc --noEmit`; GitHub Actions | One language end to end; shared Zod schemas are the wire contract |
+| Testing | Three layers: Vitest (node) for domain invariants; **Storybook 9 + Vitest addon** (browser mode) for component states, interactions, and per-story axe a11y; Playwright for e2e (IndexedDB, PWA offline, MapLibre, publish loop); MSW shared everywhere | Stories pin every named design state (`resolved…unlinked`, `queued…revoked`); a11y runs continuously, not as a one-off audit |
+| Framework | React 19 + Vite; TanStack Router; TanStack Query; Zustand (ephemeral UI only) | Map hot path is WebGL, so buy ecosystem + RN reuse, not framework perf; Query's stale-while-revalidate is the resolver semantics; typed routes carry slug + viewport state |
+| Local data | Dexie + `liveQuery`, isolated in an adapter package | Real multi-store transactions for the data-model invariants; RN later swaps OP-SQLite behind `LocalRepository` |
+| Map | MapLibre GL JS used directly (no react-map-gl) | Own the thin adapter the architecture mandates instead of depending on a wrapper's release cadence |
+| Markdown | unified: remark-parse + remark-gfm + rehype-sanitize (allowlist schema); `opening_hours` parser | AST access for `asset:` rewriting; allowlist is the correct sanitizer polarity |
+| Services | Hono on Cloudflare Workers; **D1** for slugs/revisions/audit (not KV — atomic slug claim and `If-Match` CAS need a consistent store); R2 + cookieless CDN for media | Hono makes the platform reversible (same app runs on Node/Fly + Postgres + sharp); scale-to-zero matches an idle-most-of-the-time service; R2 has zero egress |
+| Image pipeline | Client re-encode on import (canvas → WebP; strips EXIF by construction); server magic-byte sniff + caps + wasm re-encode (jSquash) | Defense in depth without requiring Node-only `sharp` |
+| Token handling | SHA-256 hash + constant-time compare for the 256-bit editor token | Slow hashes (bcrypt) are for low-entropy passwords, not random tokens |
+| Production providers | Contracted MapTiler/Stadia tier + vendor geocoder to launch; Protomaps PMTiles on R2 as the independence move; exact-ref reads via OSM API 0.6 + viewport POIs from basemap tiles; no self-hosted Overpass in v1 | One contract to start; each escape path stays cheap and concrete |
+| Styling / PWA | Tailwind v4; vite-plugin-pwa | Non-architectural; fastest solo iteration |
+
+**Explicitly rejected:** Next.js (SSR buys nothing behind a map canvas; OG previews for share
+slugs are one worker route), Redux, GraphQL, Prisma, Supabase/Firebase (their auth model fights
+bearer-token publications), sync engines (Replicache/PowerSync/Electric — their data models fight
+`PlaceId` + outbox semantics; re-evaluate at Phase 6), CRDTs, Kubernetes/Terraform.
+
 ## Web client
 
 | Concern | Choice | Notes |

@@ -6,6 +6,8 @@ includes a persistent read-only link that its creator can update safely.
 ## Phase 0 — Foundations and provider contracts
 
 - Vite + React + TypeScript scaffold, portable domain package, `LocalRepository`, and PWA shell.
+- Test harness from the start: Vitest for the domain package, Storybook (with the Vitest addon and
+  a11y checks) for component states, Playwright for e2e; MSW handlers shared across all three.
 - MapLibre map with hosted OSM-derived vector tiles and required attribution.
 - Provider interfaces for map style, search, POI resolution, publishing, and future sync.
 - Select the production provider path; document quotas, licensing/attribution, and the self-hosted
@@ -94,8 +96,10 @@ Deliberately after the v1 line: operational rigor scaled to real usage, not a la
   acceptance tests.
 - Large-library clustering, guide rendering, resolver-cache, and publication performance work;
   formalize p75/p95 map-shell and first-tile budgets on named reference devices/networks.
-- Provider dashboards, error budgets, failover drills, quota alarms, backup/restore drills, and
-  share-service recovery testing.
+- Deepen observability: provider health/quota dashboards and alarms, share-service and media-service
+  metrics, and client error reporting with privacy redaction (no fragment-bearing URLs, tokens, or
+  precise locations). No formal error budgets or scheduled failover/recovery drills — observability
+  over process.
 - Persistent-storage prompts, quota UX, backup reminders, stale-data explanations, and encrypted
   token-backup restore. Without a backup, a lost editor token requires publishing under a new slug.
 - Measure intended-place search success, first-save completion, creator republish success, recipient
@@ -120,6 +124,9 @@ and good citizens of the OSM ecosystem.
 ## Cross-cutting from day one
 
 - Correct OSM/provider attribution and licensing on map, guide, note, and export surfaces.
+- Basic metrics and observability: client error reporting and simple usage/provider-health counters
+  from the first release, always with privacy redaction (no fragment URLs, tokens, or precise
+  locations). Deeper dashboards/alarms arrive in Phase 5.
 - Provider privacy minimization, budgets, caching, cancellation, retry/backoff, and circuit breaking.
 - Public links remain read-only; the editor bearer token is private and never enters their URL or
   document.
