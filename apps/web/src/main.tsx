@@ -19,8 +19,13 @@ const queryClient = new QueryClient({
 async function prepare(): Promise<void> {
   // Dev-only request mocking for working without hitting public OSM services.
   if (import.meta.env.DEV && import.meta.env.VITE_ENABLE_MSW === "true") {
-    const { worker } = await import("./mocks/browser");
-    await worker.start({ onUnhandledRequest: "bypass" });
+    try {
+      const { worker } = await import("./mocks/browser");
+      await worker.start({ onUnhandledRequest: "bypass" });
+    } catch (err) {
+      // A dev nicety must never block the shell (e.g. service workers disabled).
+      console.warn("MSW failed to start; continuing without request mocking", err);
+    }
   }
 }
 

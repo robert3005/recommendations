@@ -6,7 +6,7 @@
 import type { BBox, OsmElementRef } from "@placemarks/domain";
 import type { FeatureCollection } from "geojson";
 import maplibregl from "maplibre-gl";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DISCOVER_DEBOUNCE_MS, OSM_ATTRIBUTION } from "../config";
 
 export interface PlacePinFeature {
@@ -88,6 +88,9 @@ export function MapView({
   callbacksRef.current = { onSelectPlace, onSelectPoi, onLongPress, onViewportChange };
   const poiPinsRef = useRef(poiPins);
   poiPinsRef.current = poiPins;
+  // A basemap that never establishes itself is a designed state, not a blank
+  // canvas (book/src/map-view.md §Offline and failure states).
+  const [unavailable, setUnavailable] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -128,7 +131,16 @@ export function MapView({
     map.on("move", updateViewData);
     updateViewData();
 
+    // A style/tile failure before the basemap ever loads means there is no map to
+    // show; errors after load degrade tile-by-tile and stay silent here.
+    let styleLoaded = false;
+    map.on("error", () => {
+      if (!styleLoaded) setUnavailable(true);
+    });
+
     map.on("load", () => {
+      styleLoaded = true;
+      setUnavailable(false);
       map.addSource("pois", { type: "geojson", data: poisToGeoJSON([]) });
       map.addLayer({
         id: "poi-pins",
@@ -355,5 +367,21 @@ export function MapView({
     });
   }, [flyTo]);
 
-  return <div ref={containerRef} data-testid="map-canvas" className="h-full w-full" />;
+  return (
+    <div className="relative h-full w-full">
+      <div ref={containerRef} data-testid="map-canvas" className="h-full w-full" />
+      {unavailable ? (
+        <div
+          role="status"
+          className="absolute inset-0 z-10 flex items-center justify-center bg-stone-100 p-6"
+        >
+          <p className="max-w-sm text-center text-sm text-stone-600">
+            <span className="font-semibold text-stone-800">Map unavailable.</span> The map style
+            could not load. Search and your lists keep working — the map returns when the connection
+            does.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
 }

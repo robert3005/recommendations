@@ -4,7 +4,7 @@
  * checksums before any write; merge is per-id LWW that never silently discards
  * a conflicting note body (a conflict copy is created instead).
  */
-import type { Note } from "@placemarks/domain";
+import { type Note, type OsmElementRef, refKey } from "@placemarks/domain";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { z } from "zod";
 import type { DexieRepository } from "../../data/repo";
@@ -80,22 +80,24 @@ export async function exportBackup(repo: DexieRepository, exportedAt: string): P
   const dataBytes = strToU8(JSON.stringify(data));
 
   const files: Record<string, Uint8Array> = { "data.json": dataBytes };
+  const checksums: Record<string, string> = { "data.json": await sha256Hex(dataBytes) };
+  // Fail closed: an apparently complete archive with silently omitted media is
+  // worse than no archive (book/src/storage-sync.md §Backup and restore).
   for (const asset of data.mediaAssets.filter((a) => !a.deleted)) {
     const blobRow = await db.mediaBlobs.get(asset.localBlobKey as string);
-    if (blobRow?.blob) {
-      try {
-        files[`media/${asset.localBlobKey}`] = await blobBytes(blobRow.blob);
-      } catch {
-        // Skip unreadable media rather than failing the whole export.
-      }
+    if (!blobRow?.blob) {
+      throw new Error(`media bytes are missing for asset ${asset.id} — export refused`);
     }
+    const name = `media/${asset.localBlobKey}`;
+    files[name] = await blobBytes(blobRow.blob);
+    checksums[name] = await sha256Hex(files[name]);
   }
 
   const manifest = {
     app: "placemarks" as const,
     schemaVersion: BACKUP_SCHEMA_VERSION,
     exportedAt,
-    checksums: { "data.json": await sha256Hex(dataBytes) },
+    checksums,
     counts: Object.fromEntries(Object.entries(data).map(([k, v]) => [k, v.length])),
     source: { attribution: "© OpenStreetMap contributors", license: "ODbL-1.0" } as const,
   };
@@ -109,6 +111,40 @@ export interface ImportResult {
   mode: "replace" | "merge";
   imported: number;
   conflictCopies: number;
+}
+
+interface CoordinateFacts {
+  lat?: unknown;
+  lng?: unknown;
+}
+
+function coordinatesInRange(facts: CoordinateFacts): boolean {
+  const { lat, lng } = facts;
+  return (
+    typeof lat === "number" &&
+    typeof lng === "number" &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
+}
+
+/** Structural zod checks pass `.loose()` fields through; coordinates get their own gate. */
+function validateCoordinates(data: BackupData): void {
+  for (const place of data.places) {
+    const row = place as { id: string; manual?: CoordinateFacts } & {
+      firstSeen?: CoordinateFacts;
+      lastVerified?: CoordinateFacts;
+    };
+    for (const facts of [row.manual, row.firstSeen, row.lastVerified]) {
+      if (facts && !coordinatesInRange(facts)) {
+        throw new Error(`place ${row.id} has an out-of-range coordinate — refusing to import`);
+      }
+    }
+  }
 }
 
 export async function importBackup(
@@ -132,7 +168,23 @@ export async function importBackup(
   if (!expected || (await sha256Hex(dataBytes)) !== expected) {
     throw new Error("backup data failed its checksum — refusing to import");
   }
+  // Every media entry must be declared and match its declared checksum, and every
+  // declared entry must be present — before any write happens.
+  for (const [name, fileBytes] of Object.entries(entries)) {
+    if (!name.startsWith("media/")) continue;
+    const declared = manifest.checksums[name];
+    if (!declared) throw new Error(`backup contains undeclared media entry ${name}`);
+    if ((await sha256Hex(fileBytes)) !== declared) {
+      throw new Error(`${name} failed its checksum — refusing to import`);
+    }
+  }
+  for (const name of Object.keys(manifest.checksums)) {
+    if (name !== "data.json" && !entries[name]) {
+      throw new Error(`backup is missing declared entry ${name}`);
+    }
+  }
   const data = dataSchema.parse(JSON.parse(strFromU8(dataBytes)));
+  validateCoordinates(data);
 
   const db = repo.db;
   const tables = [
@@ -159,8 +211,107 @@ export async function importBackup(
         imported += data[key].length;
       }
     } else {
+      // Identity merge (book/src/place-identity.md): the same exact OSM element —
+      // by current or historical ref — must not become two library places.
+      // Incoming duplicates are dropped and their edges rewritten to the retained
+      // PlaceId before the per-id merge.
+      const keysOf = (row: {
+        refKeys?: string[];
+        currentOsmRef?: OsmElementRef;
+        osmRefHistory?: { ref: OsmElementRef }[];
+      }): string[] =>
+        row.refKeys ?? [
+          ...(row.currentOsmRef ? [refKey(row.currentOsmRef)] : []),
+          ...(row.osmRefHistory ?? []).map((entry) => refKey(entry.ref)),
+        ];
+      const existingByRefKey = new Map<string, string>();
+      for (const row of await db.places.toArray()) {
+        if (row.deleted) continue;
+        for (const key of keysOf(row)) existingByRefKey.set(key, row.id);
+      }
+      const remap = new Map<string, string>();
+      data.places = data.places.filter((place) => {
+        const row = place as unknown as {
+          id: string;
+          deleted?: boolean;
+          refKeys?: string[];
+          currentOsmRef?: OsmElementRef;
+          osmRefHistory?: { ref: OsmElementRef }[];
+        };
+        if (row.deleted) return true;
+        const retained = keysOf(row)
+          .map((key) => existingByRefKey.get(key))
+          .find((id) => id !== undefined && id !== row.id);
+        if (!retained) return true;
+        remap.set(row.id, retained);
+        return false;
+      });
+      if (remap.size > 0) {
+        for (const assignment of data.tagAssignments) {
+          const target = remap.get(assignment.placeId);
+          if (target) assignment.placeId = target;
+        }
+        for (const block of data.listBlocks) {
+          const row = block as unknown as {
+            kind?: string;
+            refId?: string;
+            content?: { type?: string; placeId?: string };
+          };
+          if (row.kind !== "place" || !row.refId) continue;
+          const target = remap.get(row.refId);
+          if (!target) continue;
+          row.refId = target;
+          if (row.content?.type === "place") row.content.placeId = target;
+        }
+        for (const note of data.notes) {
+          const row = note as unknown as {
+            target?: { kind?: string; placeId?: string };
+            targetKey?: string;
+          };
+          if (row.target?.kind !== "place" || !row.target.placeId) continue;
+          const target = remap.get(row.target.placeId);
+          if (!target) continue;
+          row.target.placeId = target;
+          row.targetKey = `place:${target}`;
+        }
+      }
+
       for (const [key, table] of tables) {
         for (const incoming of data[key]) {
+          // Rewritten edges must not violate repository uniqueness invariants:
+          // one live block per (listId, placeId), one live (placeId, tagId) pair.
+          if (key === "listBlocks") {
+            const row = incoming as unknown as {
+              id: string;
+              listId: string;
+              kind?: string;
+              refId?: string;
+              deleted?: boolean;
+            };
+            if (!row.deleted && row.kind === "place" && row.refId) {
+              const siblings = await db.listBlocks.where("listId").equals(row.listId).toArray();
+              const clash = siblings.find(
+                (b) => !b.deleted && b.kind === "place" && b.refId === row.refId && b.id !== row.id,
+              );
+              if (clash) continue;
+            }
+          }
+          if (key === "tagAssignments") {
+            const row = incoming as unknown as {
+              id: string;
+              placeId: string;
+              tagId: string;
+              deleted?: boolean;
+            };
+            if (!row.deleted) {
+              const pairs = await db.tagAssignments
+                .where("[placeId+tagId]")
+                .equals([row.placeId, row.tagId])
+                .toArray();
+              const clash = pairs.find((a) => !a.deleted && a.id !== row.id);
+              if (clash) continue;
+            }
+          }
           // biome-ignore lint/suspicious/noExplicitAny: structural rows validated by zod
           const existing = (await (table as any).get(incoming.id)) as
             | { id: string; updatedAt: string; deleted?: boolean; body?: string }

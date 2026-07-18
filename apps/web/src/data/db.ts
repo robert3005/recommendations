@@ -17,7 +17,9 @@ import type {
   Tag,
   TagAssignment,
 } from "@placemarks/domain";
+import { rankAfter } from "@placemarks/domain";
 import Dexie, { type EntityTable } from "dexie";
+import { newId } from "../lib/id";
 
 export type PlaceRow = Place & { refKeys: string[] };
 export type NoteRow = Note & { targetKey: string };
@@ -83,5 +85,44 @@ export class PlacemarksDb extends Dexie {
       });
     // v3: the savedPlaces store is gone.
     this.version(3).stores({ savedPlaces: null });
+    // v4: membership is existence — a live place with no live list membership would
+    // be a hidden orphan (invisible but occupying its OSM ref). Formerly saved
+    // places that belonged to no list are placed in an explicit migration-created
+    // list instead (book/src/storage-sync.md §Backup and restore).
+    this.version(4).upgrade(async (tx) => {
+      const places = (await tx.table("places").toArray()) as {
+        id: string;
+        deleted?: boolean;
+      }[];
+      const blocks = (await tx.table("listBlocks").toArray()) as {
+        kind: string;
+        refId: string;
+        deleted?: boolean;
+      }[];
+      const withMembership = new Set(
+        blocks.filter((b) => !b.deleted && b.kind === "place").map((b) => b.refId),
+      );
+      const orphans = places.filter((p) => !p.deleted && !withMembership.has(p.id));
+      if (orphans.length === 0) return;
+      const now = new Date().toISOString();
+      const listId = newId();
+      await tx
+        .table("lists")
+        .put({ id: listId, name: "Saved places", createdAt: now, updatedAt: now });
+      let rank: string | null = null;
+      for (const orphan of orphans) {
+        rank = rankAfter(rank);
+        await tx.table("listBlocks").put({
+          id: newId(),
+          listId,
+          rank,
+          kind: "place",
+          refId: orphan.id,
+          content: { type: "place", placeId: orphan.id },
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
   }
 }

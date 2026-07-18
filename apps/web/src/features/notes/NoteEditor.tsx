@@ -84,16 +84,18 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
         </label>
         <button
           type="button"
-          onClick={() =>
+          onClick={() => {
+            // The title is optional: spreading `note` would resurrect a cleared one.
+            const { title: _previous, ...rest } = note;
             onSave({
-              ...note,
+              ...rest,
               ...(title.trim() ? { title: title.trim() } : {}),
               body,
               mediaIds,
               shareable,
               updatedAt: nowIso(),
-            })
-          }
+            });
+          }}
           className="shrink-0 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
         >
           Save note

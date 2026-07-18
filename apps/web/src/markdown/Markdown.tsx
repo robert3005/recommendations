@@ -15,6 +15,9 @@ const schema = {
     ...defaultSchema.attributes,
     img: [["src"], ["alt"]],
   },
+  // The sanitizer strips src values whose protocol is not allowlisted; app images
+  // use asset: ids exclusively (http/https images are already dropped in urlTransform).
+  protocols: { ...defaultSchema.protocols, src: ["asset"] },
 };
 
 function AssetImage({ src, alt }: { src?: string | Blob; alt?: string }) {
