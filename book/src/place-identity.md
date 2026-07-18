@@ -10,10 +10,10 @@ as the durable identity for a user's notes, tags, or guide entries.
 Every place persisted by Placemarks has:
 
 1. An immutable, app-owned `PlaceId`, used by all personal data.
-2. A current/last-confirmed OSM binding, which must resolve when the place is first created but may
-   later become missing.
+2. An optional current/last-confirmed OSM binding. It must resolve when an OSM-origin place is
+   created; manual/import-origin places may remain deliberately unlinked.
 3. Append-only history of previously confirmed OSM links.
-4. Copied OSM evidence from when the place was first linked and last verified.
+4. Once linked, copied OSM evidence from when the place was first linked and last verified.
 
 The copied evidence is deliberately durable. It provides an offline fallback and enough context to
 find the same real-world place if its OSM element id changes. It is not a user-authored correction
@@ -55,13 +55,14 @@ interface OsmLinkHistoryEntry {
 
 interface Place {
   id: PlaceId;
-  origin: "osm" | "manual";
-  currentOsmRef?: OsmElementRef;      // absent on an unlinked manual place
+  origin: "osm" | "manual" | "import";
+  currentOsmRef?: OsmElementRef;      // absent while a manual/import place is unlinked
   currentOsmLinkedAt?: string;
   osmRefHistory: OsmLinkHistoryEntry[];
   firstSeen?: OsmEvidence;    // immutable recovery evidence, set when first OSM-linked
   lastVerified?: OsmEvidence; // last successfully resolved observation
-  manual?: { name: string; lat: number; lng: number; category?: string };
+  manual?: { name: string; lat: number; lng: number; category?: string; address?: string };
+  externalRefs?: Array<{ provider: "google-maps"; url: string; importedAt: string }>;
   resolutionState: "resolved" | "stale" | "unavailable" | "missing" | "needs-review" | "unlinked";
   lastResolutionAttemptAt?: string;
   createdAt: string;
@@ -71,8 +72,10 @@ interface Place {
 ```
 
 Invariants: an `origin: "osm"` place has a binding and `firstSeen` from creation and is never
-`unlinked`; an `origin: "manual"` place starts `unlinked` with `manual` facts and enters the
-normal lifecycle when linked. `origin` is provenance and never changes.
+`unlinked`; an `origin: "manual"` place starts `unlinked` with owner-provided `manual` facts. An
+`origin: "import"` place keeps imported facts plus external provenance and may be linked during
+import or remain `unlinked`. Manual/import places enter the normal OSM lifecycle when linked;
+`origin` is provenance and never changes.
 
 `identityTags` is a bounded subset useful for matching, not an unfiltered copy of OSM. It may
 include names and brand, the primary category tag, relevant `addr:*` fields, `website`, `phone`,
@@ -83,7 +86,7 @@ not guaranteed truth.
 resolution. Keeping both prevents a bad or repurposed upstream element from destroying all of the
 evidence needed to recover the original place.
 
-## Creating and saving a place
+## Creating and adding a place
 
 The preferred path creates a place from an existing OSM POI (backup restore is the separate
 trusted recovery path):
@@ -101,10 +104,10 @@ explicit choices:
 - **Add it on OpenStreetMap** — open the OSM editor at that location, add it upstream, then return
   and retry the match after OSM-derived services have caught up. Preferred for real public POIs,
   because it improves the shared map.
-- **Save as an unlinked pin** — create an `origin: "manual"` place from the owner's name, the
-  chosen coordinates, and an optional category. It works offline, is clearly labeled as not linked
-  to OpenStreetMap, and is the right home for spots that don't belong in OSM at all (a picnic
-  bench, a meeting point, a friend's doorstep).
+- **Add unlinked pin** — add an `origin: "manual"` place straight into a selected list from
+  the owner's name, chosen coordinates, and optional category. It works offline, is clearly labeled
+  as not linked to OpenStreetMap, and is the right home for spots that don't belong in OSM at all
+  (a picnic bench, a meeting point, a friend's doorstep).
 
 ## Unlinked manual places
 
@@ -170,15 +173,17 @@ recovery for display.
 
 ## Display semantics
 
-The place card displays:
+The current v1 place card displays:
 
 ```text
-latest successfully resolved OSM observation
-    otherwise lastVerified, with its timestamp and state
+OSM-linked place → Place.lastVerified facts
+unlinked place   → Place.manual facts with a "Not linked to OSM" badge
 ```
 
-The UI never presents copied evidence as live data. `stale`, `unavailable`, `missing`, and
-`needs-review` are visible states with retry and review actions.
+The current surface does not run TTL refresh or claim that stored OSM evidence is a fresh live
+observation. When the deferred freshness surface returns, `stale`, `unavailable`, `missing`, and
+`needs-review` become visible with the evidence timestamp plus retry/review actions. The domain
+states remain canonical in the meantime.
 
 Public viewers may use copied evidence for a temporary high-confidence match, but they do not
 mutate the author's published document. If resolution is ambiguous, they show the fallback with an
@@ -188,12 +193,14 @@ mutate the author's published document. If resolution is ambiguous, they show th
 
 Placemarks does not maintain a global POI correction database. For an existing element, **View on
 OpenStreetMap** opens `https://www.openstreetmap.org/<type>/<id>`, where the user can inspect its
-history and choose Edit. **Edit on OpenStreetMap** opens the OSM editor focused on the place. For a
-missing POI, the editor opens at the chosen coordinates.
+history and choose Edit or report a problem. This portal link is the only OSM affordance on an
+existing place card. For a missing POI, **Add it on OpenStreetMap** opens the editor at the chosen
+coordinates.
 
-After the user returns, **Check for OSM updates** re-runs exact resolution or matching. OSM updates
-and downstream indexes are asynchronous, so the app keeps the last verified evidence until the new
-or changed element becomes available.
+OSM updates and downstream indexes are asynchronous. For now, the user retries search or the nearby
+candidate picker after they update; the deferred **Check for OSM updates** action will eventually
+run exact resolution/matching explicitly. The app keeps its last verified evidence until new facts
+become available.
 
 Personal notes and guide prose are never sent to OSM. Any future direct editing integration would
 require explicit user confirmation, OSM authentication, appropriate tagging, and an attributable
@@ -208,10 +215,10 @@ Backup restore and public-guide import have different identity semantics:
   existing place or mints a local id only after the shared current reference or a unique
   high-confidence replacement resolves successfully.
 - If a shared place cannot resolve, it remains a pending import with copied preview evidence. It is
-  not persisted as a new saved place until resolution succeeds; an already-local matching place may
+  not persisted as a new library place until resolution succeeds; an already-local matching place may
   still be reused in its existing state.
 
-For any save/import candidate, match in this order:
+For any add/import candidate, match in this order:
 
 1. The same app `PlaceId` within the same library.
 2. An exact current or historical OSM reference.

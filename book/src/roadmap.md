@@ -5,6 +5,28 @@ includes both **interop with the tools people already use** (2026-07-18: import 
 door — see [Import & Export](./interop.md)) and a persistent read-only link that its creator can
 update safely.
 
+## Current implementation audit (2026-07-18)
+
+- **Phase 0 — partial.** The application shell, local repository, map, attribution, geolocation
+  fallback, PWA, and core test layers exist. Completion still requires the full provider contract
+  set (`MapStyleProvider`, `SharePublisher`, and `SyncTransport`), Storybook's Vitest browser addon
+  with automated axe checks, an enforced production-provider configuration, evidence for the
+  two-second performance budget, and a designed basemap-provider failure state.
+- **Phase 1 — functionally complete on the development/test path.** Search, exact POI inspection,
+  bounded discovery, the OSM portal handoff, and the missing-place/manual-pin choice satisfy the
+  phase acceptance flow. Production readiness remains gated by Phase 0's provider work.
+- **Phase 2 — partial.** Durable identity, membership-based existence, manual pins, lists, tags,
+  text notes, IndexedDB, and the conservative recovery state machine exist. Completion still
+  requires local `asset:` images to render, lossless migration of pre-membership libraries,
+  coordinate/id/size/graph validation before backup writes, checksums for binary media,
+  fail-closed export when referenced media bytes are unavailable, identity-aware backup merge,
+  replacement semantics when an optional note title is cleared, and an offline stored-data
+  acceptance flow. Backup merge must never fork two `PlaceId` values for the same exact current or
+  historical OSM reference.
+
+This status records implementation evidence; it does not relax the requirements below. Update it
+only when the corresponding automated acceptance checks pass.
+
 ## Phase 0 — Foundations and provider contracts
 
 - Vite + React + TypeScript scaffold, portable domain package, `LocalRepository`, and PWA shell.
@@ -13,9 +35,11 @@ update safely.
 - MapLibre map with hosted OSM-derived vector tiles and required attribution.
 - Provider interfaces for map style, search, POI resolution, publishing, and future sync.
 - Select the production provider path; document quotas, licensing/attribution, and the self-hosted
-  escape path. Public/demo OSM services remain development-only.
+  escape path. Public/demo OSM services remain development-only, and production configuration
+  fails closed instead of silently using those defaults.
 - A simple performance budget: map shell and first tiles usable within ~2s on a mid-range phone
-  over 4G (formal p75/p95 budgets on reference devices land in Phase 6).
+  over 4G, captured by a repeatable throttled acceptance check (formal p75/p95 budgets on named
+  reference devices land in Phase 6).
 - Geolocation fallback: denial, timeout, or unavailability never blocks the map/search UI.
 
 **Done when:** the cached shell launches offline, the map works online with correct attribution, and
@@ -23,7 +47,7 @@ provider failures produce designed states rather than blank screens.
 
 ## Phase 1 — Find, inspect, and improve OSM places
 
-- Search-as-you-type through the selected provider; normalize every saveable result to a typed OSM
+- Search-as-you-type through the selected provider; normalize every selectable result to a typed OSM
   node/way/relation candidate.
 - Tap/search result → exact POI resolution with name, category, address, normalized website, phone,
   hours, OSM version, and representative point.
@@ -31,34 +55,38 @@ provider failures produce designed states rather than blank screens.
 - Place sheet: a single small **View on OpenStreetMap** portal link (in-app edit/report/refresh
   actions and the freshness surface are deferred — see book/src/map-view.md).
 - Long press → nearby OSM candidate picker. If absent, **Add it on OpenStreetMap**, then retry after
-  downstream services update — or keep the spot as an **unlinked manual pin** (saved once the
-  library lands in Phase 2).
+  downstream services update — or keep the spot as an **unlinked manual pin** (added to a list once
+  the library lands in Phase 2).
 
 **Done when:** I can find a café, inspect its source, see its website, and hand a missing/wrong POI
 off to OpenStreetMap without creating a second public correction record.
 
-## Phase 2 — Durable local-first library and guides
+## Phase 2 — Durable local-first library and lists
 
 - Create an immutable app `PlaceId` for OSM-backed places only after exact OSM resolution; persist
   current OSM ref, append-only history, first-seen evidence, and last-verified evidence atomically
-  with the save.
+  with its first list membership.
 - **Unlinked manual pins**: offline-capable `origin: "manual"` places with owner-provided facts, a
   distinct badge, and a **Link to OpenStreetMap** upgrade via the candidate picker.
 - Implement `resolved`, `stale`, `unavailable`, `missing`, `needs-review`, and `unlinked` states
   (domain model; the freshness UI surface is deferred — book/src/map-view.md).
 - Exact-ref refresh followed only on confirmed disappearance/repurposing by conservative evidence
   matching; ambiguous candidates require owner review.
-- Saved-place and clustered map layers; save/unsave; tags through `TagAssignment` edges.
-- Markdown place/list notes with local media.
-- **Lists first**: ordered place groupings with an owner-written description, built from ranked
-  `ListBlock` entities. Narrative guide enrichment (section blocks, `BlockNoteAttachment`,
-  reading view) is deferred to a later milestone on the same data model.
-- Offline views/edits from IndexedDB; live search, uncached tiles, OSM refresh, and creation show
-  clear online requirements.
+- Library-place and clustered map layers; membership is existence; tags through `TagAssignment`
+  edges.
+- Markdown place notes with local media. List-section notes arrive with the later guide layer.
+- **Lists first**: named, coloured, ordered place groupings built from ranked `ListBlock` entities.
+  Descriptions, section blocks, `BlockNoteAttachment`, and a narrative reading view belong to the
+  later guide layer, not to the Phase 2 list.
+- Offline views/edits from IndexedDB; live search, uncached tiles, OSM refresh, and OSM-backed place
+  creation show clear online requirements.
 - Versioned ZIP backup/restore with manifest, checksums, binary media, and attributed OSM evidence.
 
-**Done when:** I can build and edit a five-place, described Lisbon list offline after first load, restore it
-from backup, and repair a simulated OSM node→way replacement without losing notes or membership.
+**Done when:** after the first load, I can view a five-place named and coloured Lisbon list and edit
+its stored place tags/notes offline, create an unlinked manual pin into a list offline, restore the
+complete library (including media) from a validated backup, and repair a simulated OSM node→way
+replacement without losing notes or membership. List reorder/rename/recolour/removal UI arrives in
+Phase 3's explicit Edit mode.
 
 ## Phase 3 — Interop: Google Maps import & export
 
@@ -93,11 +121,12 @@ open a place in Google Maps from its card, and export a list as KML that Google 
 - Public read-only guide viewer using the versioned `SharedGuide` schema.
 - Fragment-encoded snapshot links with compressed/inflated size limits, schema validation, and
   decompression protection.
-- Share preview listing exactly which notes, tags, OSM evidence, and hosted media leave the device.
+- Share preview listing exactly which notes, tags, and OSM evidence leave the device, plus which
+  media are omitted from the snapshot.
 - Exact OSM resolution plus evidence-based temporary recovery; fallback states remain visible.
-- **Save this guide** import using reference/history/evidence deduplication; unresolved new places
-  remain pending previews until an exact or unique high-confidence OSM match succeeds. Shared
-  manual pins import as unlinked places.
+- **Add this guide to my library** using reference/history/evidence deduplication; unresolved new
+  places remain pending previews until an exact or unique high-confidence OSM match succeeds.
+  Shared manual pins import as unlinked places.
 
 **Done when:** I can send a read-only guide without a backend, the recipient cannot modify it, and
 the link still renders timestamped evidence when its old OSM element no longer resolves.
@@ -135,8 +164,8 @@ Deliberately after the v1 line: operational rigor scaled to real usage, not a la
   over process.
 - Persistent-storage prompts, quota UX, backup reminders, stale-data explanations, and encrypted
   token-backup restore. Without a backup, a lost editor token requires publishing under a new slug.
-- Measure intended-place search success, first-save completion, creator republish success, recipient
-  opens/imports, stale-resolution rates, and unintended-disclosure incidents.
+- Measure intended-place search success, first-list-add completion, creator republish success,
+  recipient opens/imports, stale-resolution rates, and unintended-disclosure incidents.
 
 **Done when:** the installed app and public reader are fast, accessible, observable, recoverable,
 and good citizens of the OSM ecosystem.
@@ -166,5 +195,6 @@ and good citizens of the OSM ecosystem.
   document.
 - No app-wide POI correction layer: public geographic corrections go upstream to OSM.
 - No silent identity repair: unavailability retains the old link, ambiguity requires review, and
-  copied evidence remains visibly timestamped.
+  copied evidence is never represented as a live observation. Timestamps become visible wherever
+  the freshness/public-viewer surface is in scope.
 - The local repository remains primary; networks are queued effects with explicit state.

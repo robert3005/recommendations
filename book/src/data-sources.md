@@ -32,7 +32,7 @@ quotas, monitor usage, and make rotation possible without a client release.
 
 ## Geocoding and search
 
-Search results must carry a typed OSM element reference when they can become a saved place.
+Search results must carry a typed OSM element reference when they can become a library place.
 
 - [Photon](https://github.com/komoot/photon) supports search-as-you-type, multilingual search,
   location bias, and typo tolerance.
@@ -47,6 +47,9 @@ reasonable-use throttling and no availability guarantee. See the
 Those public endpoints are development/evaluation configurations only. A public Placemarks release
 uses a selected managed service or a self-hosted deployment. The provider adapter implements input
 debouncing, cancellation, result normalization, attribution, caching, and retry/backoff.
+Production configuration is explicit and fail-closed: a production build/deployment must not
+silently inherit demo Photon, shared Overpass, or trial tile defaults when required provider
+settings are absent.
 
 ## POI discovery and resolution
 
@@ -61,7 +64,7 @@ restricted to manual development traffic.
 ### Viewport discovery
 
 Prefer POI features already present in compatible vector tiles when possible, then hydrate only a
-selected or saved item. If the resolver must discover a bounded viewport, query all relevant OSM
+selected or library item. If the resolver must discover a bounded viewport, query all relevant OSM
 element types and impose explicit zoom, area, time, and result budgets:
 
 ```overpassql
@@ -91,7 +94,8 @@ input and never bypass link or Markdown sanitization.
 
 ## Durable observation and re-resolution
 
-Saving a place copies bounded metadata from a successful exact OSM resolution:
+Adding an OSM-backed place to its first list copies bounded metadata from a successful exact OSM
+resolution in the same transaction:
 
 - current element type/id and OSM version;
 - name, primary category, coordinates, address, website, phone, and hours;
@@ -108,14 +112,12 @@ bounded version of the same evidence for first paint and recovery.
 
 ## Updating OpenStreetMap upstream
 
-Every OSM-backed place exposes:
-
-- **View on OpenStreetMap** — `https://www.openstreetmap.org/<type>/<id>` for source, history, and
-  editing entry points.
-- **Edit on OpenStreetMap** — opens the OSM web editor focused on the current place.
-- **Add it on OpenStreetMap** — for a missing POI, opens the editor centered on the chosen
-  coordinates; after saving upstream, Placemarks retries search/linking.
-- **Report a map issue** — opens the OSM note/report flow for users who cannot confidently edit.
+An existing OSM-backed place exposes one small **View on OpenStreetMap** portal link to
+`https://www.openstreetmap.org/<type>/<id>`. The portal provides source history plus its own Edit
+and report flows; Placemarks does not duplicate those actions on the card. For a missing POI,
+**Add it on OpenStreetMap** opens the editor centered on the chosen coordinates. After saving
+upstream and allowing indexes to update, the user retries Placemarks search or the candidate
+picker.
 
 Placemarks never submits a personal note, tag, or inferred correction to OSM automatically. Direct
 in-app OSM editing would require explicit confirmation, OSM authentication, correct tagging, and a
@@ -128,8 +130,9 @@ new one, and never copy data from a proprietary places service. This applies wit
 place must never pre-fill an OSM editor hand-off — the user contributes from their own knowledge,
 not from our stored Google data.
 
-OSM edits and downstream geocoder/resolver replication are asynchronous. **Check for OSM updates**
-keeps the last verified evidence until the changed or newly created element becomes visible.
+OSM edits and downstream geocoder/resolver replication are asynchronous. Placemarks keeps the last
+verified evidence until the changed or newly created element becomes visible. A dedicated
+**Check for OSM updates** action belongs to the deferred freshness surface.
 
 ## Privacy and data flow
 
@@ -142,7 +145,7 @@ External providers can observe different slices of activity:
 - the share service receives the public projection the owner approved plus normal request metadata;
 - the media service/CDN receives approved image bytes/ids and normal request metadata.
 
-Do not send note bodies, list titles, tags, or a user's complete saved library to map/search/POI
+Do not send note bodies, list names, tags, or a user's complete library to map/search/POI
 providers. Request location only after a user action, minimize precision where it is merely search
 bias, and document whether each request is direct or proxied plus the provider's retention terms.
 Share/media mutation requests also carry the editor bearer token; it must be redacted before all

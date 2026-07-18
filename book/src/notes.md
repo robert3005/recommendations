@@ -1,7 +1,8 @@
 # Notes & Rich Content
 
 Notes are rich Markdown pages anchored to either a place or a list. A place note is a write-up about
-a durable `PlaceId`; a list note is a narrative section in a [guide](./data-model.md#list-a-rich-guide).
+a durable `PlaceId`; a list note becomes a narrative section when a
+[list gains the guide layer](./data-model.md#list-a-named-group-of-places).
 A note is private by default, may be selected for a read-only shared guide, and may optionally be
 published as its own read-only page at `/n/<slug>`.
 
@@ -22,7 +23,9 @@ guide-writing use case without inventing a proprietary document format.
 
 Notes are edited in a **full-screen editor** (2026-07-18): a Markdown writing surface beside a
 live, sanitized preview — never a cramped inline box. The editor's output *is* the persisted
-Markdown source; a future WYSIWYG upgrade must keep serializing to Markdown.
+Markdown source; a future WYSIWYG upgrade must keep serializing to Markdown. Optional fields obey
+normal replacement semantics: clearing a note title removes it rather than retaining the previous
+value.
 
 ## Rendering pipeline
 
@@ -36,6 +39,9 @@ Markdown → CommonMark/GFM parser → HTML → sanitizer → safe rendered cont
 - Raw HTML is disabled; output is still sanitized with DOMPurify or `rehype-sanitize`.
 - Links allow only approved schemes. External links use `rel="noopener noreferrer nofollow ugc"`.
 - Remote Markdown images are blocked. Images must use an `asset:` id controlled by the app.
+- Both URL transformation and the sanitizer protocol allowlist explicitly permit `asset:` only for
+  image sources. The renderer resolves that id to a local/hosted object URL; sanitization must not
+  erase an approved local image before the resolver component sees it.
 - The app and public viewer share the same parser, sanitizer, and Content Security Policy.
 
 ## Images and media

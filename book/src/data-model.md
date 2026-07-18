@@ -93,10 +93,11 @@ machinery: imported facts fill `ManualFacts`, the source URL is retained in `ext
 (provenance + deep link — an opaque pointer that is never fetched), and OSM linkage is an
 optional upgrade, either automatic when import-time matching is confident or later via the
 picker. Imported Google-derived facts never pre-fill OSM contributions
-([licensing hygiene](./interop.md#licensing-hygiene)). `firstSeen` is immutable recovery evidence once set. `lastVerified` is the latest
-successful observation and the only durable POI fallback; there is no second `cachedPoi`
-authority. See [Durable Place Identity](./place-identity.md) for creation, refresh, conservative
-relinking, and deduplication rules.
+([licensing hygiene](./interop.md#licensing-hygiene)). `firstSeen` is immutable recovery evidence
+once set. `lastVerified` is the latest successful observation and the only durable POI fallback;
+there is no second `cachedPoi` authority. See
+[Durable Place Identity](./place-identity.md) for creation, refresh, conservative relinking, and
+deduplication rules.
 
 ## Resolved POI (transient source view)
 
@@ -226,9 +227,7 @@ a whole array during future sync.
 interface List {
   id: string;
   name: string;
-  coverMediaId?: string;
   color?: string; // the list's user-selected marker colour, worn by its places' pins
-  icon?: string;
   createdAt: string;
   updatedAt: string;
   deleted?: boolean;
@@ -313,17 +312,19 @@ or shared document. See [Lists & Sharing](./sharing.md).
 
 ## What the UI displays
 
-There is no merge with app-wide user corrections:
+There is no merge with app-wide user corrections. The current v1 surface uses:
 
 ```text
-displayed POI = latest successfully resolved OSM observation
-                or Place.lastVerified with a visible stale/error state
-                or Place.manual facts with an "unlinked" badge (manual pins)
+displayed place = Place.lastVerified facts for an OSM-linked place
+                  or Place.manual facts with an "unlinked" badge
 ```
 
-Personal notes and guide prose are separate owned content. Wrong OSM facts lead to **View/Edit on
-OpenStreetMap**, followed by **Check for OSM updates**. This keeps one public geographic source and
-avoids introducing a second moderation-heavy places database.
+TTL refresh, evidence timestamps, and stale/error badges belong to the deferred freshness surface;
+stored evidence is not described as a fresh live observation. Personal notes and guide prose are
+separate owned content. Wrong OSM facts lead to the **View on OpenStreetMap** portal, where the
+user may inspect/edit/report the source. The app retries search or matching only after upstream
+services update. This keeps one public geographic source and avoids introducing a second
+moderation-heavy places database.
 
 ## Relationships
 
@@ -345,8 +346,8 @@ List ──1:*── ListBlock ──place────▶ PlaceId ──▶ Plac
   and private place notes; it never changes OSM.
 - Removing or disabling already-published content marks the relevant publication dirty. The old
   public revision remains visible until the revocation/update succeeds.
-- Mutating a list title/description/cover, section note, attached place note/media, selected tag,
-  block/order, or place OSM binding increments every affected publication's `localRevision` and
+- Mutating a list name/marker/order, or future guide prose/cover/section, attached place note/media,
+  selected tag, or place OSM binding increments every affected publication's `localRevision` and
   queues/coalesces an immutable revision-bearing job in the same transaction.
 - Place-link history is preserved as immutable completed intervals when an OSM element is replaced;
   notes and guide membership stay attached to the same `PlaceId`.

@@ -1,6 +1,6 @@
 # The Map View
 
-The map is the home screen, paired with a fully usable saved-place/list view. It should feel
+The map is the home screen, paired with a fully usable list view. It should feel
 familiar: a full-bleed map, floating search and filters, and content in a bottom sheet or side
 panel.
 
@@ -12,40 +12,41 @@ panel.
 │  [Eat] [Drink] [Shop] [Stay] [Culture] […] │
 │                                             │
 │                    MAP                      │
-│             saved pins · live POIs          │
+│            library pins · live POIs         │
 │                                             │
 │                                      ( ◎ )  │
 │  © OpenStreetMap contributors               │
 ├─────────────────────────────────────────────┤
-│  bottom sheet: place / saved / guide detail │
+│  bottom sheet: place / list detail          │
 └─────────────────────────────────────────────┘
 ```
 
-The menu leads to All Saved, Tags, Lists, publication status, backup/restore, provider/privacy
-information, and settings. The category chips map the detailed OSM taxonomy into the small
-top-level groups adopted from [prior art](./prior-art-step.md).
+Primary navigation leads to Map, Lists, and Settings. Place cards expose tags and notes;
+Settings owns backup/restore and provider/privacy information. Publication status joins Settings
+when sharing lands. The category chips map the detailed OSM taxonomy into the small top-level
+groups adopted from [prior art](./prior-art-step.md).
 
 ## Core interactions
 
 - **Pan / zoom / rotate** — standard MapLibre gestures with reduced-motion support.
 - **Locate me** — a user-triggered permission request; location is not persisted. Only the minimum
   location bias required by the configured provider is sent externally.
-- **Search** — type-ahead through the configured production search adapter. A saveable result must
-  resolve to a typed OSM node, way, or relation.
+- **Search** — type-ahead through the configured production search adapter. A selectable result that
+  can enter the library must resolve to a typed OSM node, way, or relation.
 - **Tap a POI** — opens its detail sheet. Discovery may come from compatible vector tiles or a
   bounded resolver query; selected details are hydrated through `PoiResolver`.
 - **Long press** — opens nearby OSM candidates. The user selects the correct existing POI, or —
   when the spot is absent — chooses between the two options below.
-- **Missing place** — **Add it on OpenStreetMap** opens the OSM editor at that coordinate (on
-  return, **Check for OSM updates** retries discovery and creates the durable link when the POI
-  appears), or **Save as unlinked pin** creates a local `origin: "manual"` place from an
-  owner-provided name — offline-capable, clearly labeled, linkable to OSM later.
-- **Saved pins** — drawn above transient POIs and **coloured by their list's user-selected
-  marker** (2026-07-18): one list → that list's colour; several lists → a deterministic neutral;
-  no list → the default. Unlinked manual pins keep their distinct orange marker. The mark
-  appears the moment a place is saved — never only after deselection.
-- **Selection ring** — the selected place (saved or not) is marked immediately with a ring, and
-  fly-to offsets the target above the bottom sheet so it stays visible.
+- **Missing place** — **Add it on OpenStreetMap** opens the OSM editor at that coordinate; after
+  upstream and downstream indexes update, reopening search or the candidate picker can find it.
+  **Add unlinked pin** instead creates a local `origin: "manual"` place from an owner-provided
+  name — offline-capable, clearly labeled, and linkable to OSM later.
+- **Library pins** — drawn above transient POIs and **coloured by their list's user-selected
+  marker** (2026-07-18): one list → that list's colour; several lists → a deterministic neutral.
+  Unlinked manual pins keep their distinct orange marker. A library mark appears as soon as the
+  place gains its first list membership — never only after deselection.
+- **Selection ring** — the selected place (in the library or not) is marked immediately with a
+  ring, and fly-to offsets the target above the bottom sheet so it stays visible.
 
 Every OSM-backed `Place` begins with a resolved OSM element, copied first-seen evidence, and its
 own immutable `PlaceId`; manual pins begin `unlinked` with owner-provided facts (see
@@ -61,9 +62,10 @@ The mobile sheet / desktop panel shows (decisions of 2026-07-18):
 - Personal actions: **Add tag**, **Add note**, and **Add to list** — pick an existing list or
   create a new one inline right on the card. **There is no Save button** (2026-07-18: membership
   is existence): adding a place to a list is the only way it enters the library, and **Remove
-  place** takes it out of every list — which removes it entirely. Creating a list picks its **marker colour** from a swatch row (default: the next
-  unused palette colour). The place card is the write surface for list *membership*; the default
-  list view stays read-only for reading and navigation. Reordering, removal, renaming, and
+  place** takes it out of every list—which removes it entirely. Creating a list picks its **marker
+  colour** from a swatch row (default: the next unused palette colour). The place card is the write
+  surface for list *membership*; the default list view stays read-only for reading and navigation.
+  Reordering, removal, renaming, and
   recolouring return with the interop milestone as a **deliberate Edit mode on the list page**
   (2026-07-18 — imported lists are too large for place-card-only curation; see
   [Import & Export](./interop.md#list-curation-returns-edit-mode)); editorial text still waits
@@ -85,15 +87,15 @@ are corrected on the OSM portal.
 ### Deferred for now: OSM data freshness (2026-07-18)
 
 The freshness surface — TTL-driven refresh, **Check for OSM updates**, evidence timestamps
-("showing saved data from…"), and the stale/unavailable/missing/needs-review badges and review
+("showing stored OSM data from…"), and the stale/unavailable/missing/needs-review badges and review
 panel — is removed from the UI for now. The durable-identity model and conservative resolution
 rules ([Durable Place Identity](./place-identity.md)) remain the design of record for when this
-surface returns; saved places simply display their stored facts until then.
+surface returns; library places simply display their stored facts until then.
 
 ## Layers and rendering
 
 - **Basemap:** provider style JSON with required attribution; light/dark theme where supported.
-- **Saved-place layer:** GeoJSON derived from local `Place.lastVerified` evidence, clustered at low
+- **Library-place layer:** GeoJSON derived from local `Place.lastVerified` evidence, clustered at low
   zoom and available offline after the app shell/data have loaded.
 - **Live-POI layer:** transient, zoom/area/result bounded, visually secondary, and explicitly
   marked incomplete when the provider truncates results.
@@ -101,28 +103,33 @@ surface returns; saved places simply display their stored facts until then.
 
 ## Performance and provider etiquette
 
-- Prefer POIs already encoded in compatible vector tiles and hydrate only selected/saved places.
+- Prefer POIs already encoded in compatible vector tiles and hydrate only selected/library places.
 - Debounce and cancel viewport requests after map movement; align cache keys to reusable tiles.
 - Skip discovery below a configured minimum zoom and show a “zoom in” hint.
 - Cache with provider-approved TTLs; use stale-while-revalidate, negative caching, retry/backoff, and
   a circuit breaker for repeated upstream failures.
-- Cluster saved pins so large guides remain responsive.
+- Cluster library pins so large lists remain responsive.
 
 Public/demo OSM endpoints are development-only. Production traffic goes through the selected
 managed or self-hosted adapters described in [Open Data Sources](./data-sources.md).
 
 ## Offline and failure states
 
-- Saved pins, guide/list views, notes, tags, and last-verified POI evidence remain usable.
+- Library pins, list/guide views, notes, tags, and last-verified POI evidence remain usable.
 - Uncached tiles, live search, live POIs, OSM refresh, and OSM editing require a network.
-- A provider failure shows timestamped evidence and `unavailable`; it never starts identity repair.
+- A basemap style/tile failure leaves navigation, search, and list access usable and exposes an
+  accessible **Map unavailable** state; a blank or silently broken canvas is not a designed state.
+- Search, exact-resolution, nearby-candidate, and viewport-discovery failures each expose a bounded
+  retry/error state appropriate to their surface.
+- A resolver failure retains stored evidence and becomes `unavailable` in the domain; it never
+  starts identity repair. Timestamp/state UI returns with the deferred freshness surface.
 - A confirmed deleted element shows its last-known card plus retry, candidate review, and OSM links.
 - Geolocation denied/unavailable starts from the last viewport or a neutral default and leaves
   search fully usable.
 
 ## Accessibility and responsiveness
 
-- All saved-place, search, filter, guide, and publication workflows are keyboard operable.
+- All place, search, filter, list/guide, and publication workflows are keyboard operable.
 - A synchronized non-map result/list view provides equivalent content for screen readers and people
   who cannot operate the canvas.
 - Sheets use dialog semantics, managed focus, labelled controls, and non-gesture dismissal.

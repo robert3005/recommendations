@@ -1,8 +1,8 @@
 # Introduction
 
-**Placemarks** (working title) is a personal location-recommendation app built on open data. Think
-of it as *your own map* — save OSM places you love, tag them, write about them, and organize them
-into read-only shareable guides.
+**Placemarks** (working title) is a personal location-recommendation app built around open maps and
+portable user data. Think of it as *your own map* — import or add places, group them into lists,
+tag them, write about them, and publish selected editorial content as read-only guides.
 
 It is deliberately **not** a full-featured places platform. We don't scrape reviews, we don't
 run a social feed, and we don't try to replicate Google Places. Instead we do three things well:
@@ -13,9 +13,10 @@ run a social feed, and we don't try to replicate Google Places. Instead we do th
 
 ## Principles
 
-- **Open data first.** Map tiles, geocoding, and place metadata all come from OpenStreetMap and
-  OSM-derived services. Wrong or missing public facts are corrected upstream in OSM; Placemarks
-  does not maintain a competing global POI layer.
+- **Open live data.** Map tiles, live geocoding, and live place metadata come from OpenStreetMap
+  and OSM-derived services. User-exported files may contribute private imported facts, kept
+  technically separate from OSM observations. Wrong or missing public facts are corrected
+  upstream in OSM; Placemarks does not maintain a competing global POI layer.
 - **Durable identity.** Personal content joins through an app-owned place id. The linked OSM
   element may be conservatively re-resolved from copied source evidence if OSM changes shape.
 - **Local-first.** Your owned data lives on your device and edits commit locally. No account is

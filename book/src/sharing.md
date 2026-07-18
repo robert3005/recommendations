@@ -1,8 +1,9 @@
 # Lists & Sharing
 
-Lists are the app's unit of curation and sharing. Because a list can be a
-[rich guide](./data-model.md#list-a-rich-guide), a shared page may interleave narrative sections
-and places. Three requirements drive the design:
+Lists are the app's unit of curation. A
+[named list](./data-model.md#list-a-named-group-of-places) becomes a guide when the later editorial
+layer adds narrative sections, selected notes, and a reading experience; that guide is the unit
+published for sharing. Three requirements drive the design:
 
 1. **Private by default** — only explicitly selected guide content leaves the device.
 2. **Durable place context** — each place carries its current OSM link plus bounded copied evidence
@@ -197,10 +198,10 @@ The public route is read-only and needs no account:
 4. On a confirmed missing/incompatible element, attempt a unique high-confidence evidence match.
 5. On ambiguity or provider failure, retain the fallback and show its state/timestamp.
 6. Render the interleaved article and synchronized map without exposing editing controls.
-7. Offer **Save this guide**. Reuse an existing local place where possible; create a new one only
-   after the shared ref or a unique high-confidence replacement resolves. Unresolved OSM items
-   remain pending previews rather than silently degrading into unlinked pins; a shared **manual**
-   anchor imports as a manual place per the
+7. Offer **Add this guide to my library**. Reuse an existing local place where possible; create a
+   new one only after the shared ref or a unique high-confidence replacement resolves. Unresolved
+   OSM items remain pending previews rather than silently degrading into unlinked pins; a shared
+   **manual** anchor imports as a manual place per the
    [deduplication rules](./place-identity.md#import-and-deduplication).
 
 The viewer never modifies the author's document after a temporary match. A confirmed owner-side
@@ -248,7 +249,9 @@ DELETE /s/lists/:slug
   reading, plus abuse reporting/takedown and per-publication media budgets.
 - Mutations and reads are rate-limited and audited; revoked slugs retain a non-readable tombstone.
 - Replaying an already-completed `DELETE` with the same idempotency key returns success.
-- Storage can remain a KV table or object store; no PostGIS is required.
+- The chosen deployment uses transactional D1/SQL for atomic slug claims and conditional revision
+  updates; another consistent SQL/document store may sit behind the same contract. No PostGIS is
+  required.
 
 Public `GET` responses use bounded cache lifetimes and purgeable surrogate keys. On update, old
 revisions become non-public; on revoke, document and media CDN entries are purged within the stated

@@ -6,7 +6,7 @@
 ┌────────────────────────────────────────────────────────────────────┐
 │ Web client                                                         │
 │                                                                    │
-│  Map / search UI       Guide editor       Public read-only viewer │
+│  Map / search UI     List/guide editor    Public read-only viewer │
 │          │                  │                         │             │
 │  ┌───────┴──────────────────┴─────────────────────────┴──────────┐ │
 │  │ Core domain                                                 │ │
@@ -41,7 +41,7 @@ Framework-independent TypeScript owns:
 
 - immutable app `PlaceId` values and mutable OSM bindings;
 - first-seen/last-verified evidence and the conservative re-resolution state machine;
-- saved places, tags, Markdown notes, lists, ordered blocks, and note attachments;
+- membership-backed places, tags, Markdown notes, lists, ordered blocks, and note attachments;
 - construction of explicit public projections;
 - publication state transitions.
 
@@ -91,7 +91,8 @@ provider selection and capacity are release prerequisites, not later polish. See
 - **Durable identity is app-owned.** User content joins through an immutable `PlaceId`. The current
   OSM node/way/relation link can change while copied evidence and link history preserve continuity.
 - **OSM remains the public source of truth.** Placemarks has no global correction overlay. Wrong or
-  missing POI facts lead to View/Edit on OpenStreetMap and a later refresh.
+  missing POI facts lead to the OpenStreetMap portal, where the user may inspect, edit, or report
+  the source; the app retries its own lookup only after upstream services update.
 - **Local commits do not wait for networks.** Refresh, publish, revoke, and sync are explicit queued
   effects with visible pending/failure states.
 - **Shared URLs are read-only.** A hosted slug grants public read access only. Its creator updates or

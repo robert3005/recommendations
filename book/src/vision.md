@@ -25,26 +25,26 @@ A responsive web app with:
   is no standalone save): an existing OSM POI resolves under an app-owned identity with bounded
   copied evidence, then carries free-form tags and personal notes. **Membership is existence** —
   a place removed from its last list is gone.
-- **Lists first** (flow inverted 2026-07-18) — group saved places into named **lists**. A list
+- **Lists first** (flow inverted 2026-07-18) — group places into named **lists**. A list
   is a name plus a **user-selected marker colour** over an ordered set of places: created and
-  populated **from a place's card** ("add to new list" — and adding to a list *is* the save),
+  populated **from a place's card** ("add to new list" — membership is how the place persists),
   read on the **read-only Lists tab**. Its places wear the marker on the map. **Guides come
   later as editorialised lists** — the same list enriched with prose, interleaved Markdown
   sections, and a reading experience. Descriptive text belongs to the guide layer, not the
   list.
 - **Google Maps import & export** (2026-07-18) — a Google Takeout archive (per-list CSVs +
-  saved-places GeoJSON), KML/KMZ, GPX, or GeoJSON imports into lists through a review queue;
+  `Saved Places.json` GeoJSON), KML/KMZ, GPX, or GeoJSON imports into lists through a review queue;
   lists export as KML (Google My Maps ingests it), Takeout-shaped CSV, GeoJSON, and GPX. Each
   imported place keeps its Google URL as an external ref — provenance and a **deep link** for
   navigation handoff (Google/Apple Maps). See [Import & Export](./interop.md).
-- **Shareable lists** — publish a guide to a persistent, **read-only public link**. Only the creator
-  can update/unpublish it using a separate private editor bearer token. It shows the latest successfully
-  published guide revision and the latest OSM facts the viewer can resolve.
-- **Local-first storage** — saved data and editing work without an account and, after the app shell
+- **Shareable guides** — publish a guide to a persistent, **read-only public link**. Only the
+  creator can update or unpublish it using a separate private editor bearer token. It shows the
+  latest successfully published guide revision and the latest OSM facts the viewer can resolve.
+- **Local-first storage** — library data and editing work without an account and, after the app shell
   loads, without a network. Search, uncached maps, OSM refresh, uploads, and publishing are online
   capabilities.
-- **Upstream corrections** — view/edit an existing POI on OpenStreetMap, or add a missing POI there
-  and return to link it after OSM-derived services update.
+- **Upstream corrections** — open an existing POI on the OpenStreetMap portal and edit/report it
+  there, or add a missing POI and return to link it after OSM-derived services update.
 - **Unlinked manual pins** — drop a clearly-labeled local pin for spots that aren't in OSM (or
   shouldn't be: a picnic bench, a meeting point). Works offline; upgradeable to an OSM link later
   via the candidate picker.
@@ -74,12 +74,12 @@ A responsive web app with:
 - The map is visible and usable within ~2 seconds of launch on a mid-range phone over 4G; denied
   or slow geolocation never blocks first use. (Formal p75/p95 budgets on reference devices are a
   [hardening-phase](./roadmap.md) concern.)
-- Find a place and save it with a tag in < 15s.
+- Find a place, add it to a list, and tag it in < 15s.
 - Import a 50-place Google Takeout list and see it on the map with every row accounted for —
   placed, in review, or explicitly skipped; nothing silently dropped.
 - Create a list, add 5 places, and share a working link in < 1 min.
 - A recipient can read but cannot modify a shared guide; its creator can publish an update.
-- If an OSM node is replaced by a way/relation, the saved place retains its notes and either
+- If an OSM node is replaced by a way/relation, the library place retains its notes and either
   re-resolves with high confidence or asks the owner to review candidates.
 - A month-old link still renders copied evidence and clearly reports whether live OSM refresh
   succeeded, while preserving the latest successfully published guide revision.

@@ -71,7 +71,7 @@ self-hosted path with:
 | Concern | Choice | Notes |
 |---|---|---|
 | Runtime | Small Node/TypeScript service or edge function | Same schemas as public projections |
-| Document storage | KV, object store, SQLite, or Postgres | Versioned guide/note JSON and slug tombstones |
+| Document storage | D1 (SQLite); Postgres is the portable alternative | Atomic slug claims, conditional revisions, versioned guide/note JSON, and tombstones require consistent transactions |
 | Public API | REST | Public `GET`; Bearer-authorized conditional mutations |
 | Concurrency | ETag / `If-Match` + idempotency keys | Prevent stale/out-of-order publication |
 | Write ownership | Random device-held editor bearer token; hash server-side | No account and no token in public link |

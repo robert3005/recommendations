@@ -27,7 +27,7 @@ provider such as Google Places or Foursquare).
 
 | Step feature | Our take |
 |---|---|
-| **Import from links / screenshots** | Their standout feature — it directly solves the "places trapped in screenshots & DMs" problem we named in [Vision](./vision.md). Worth adopting, starting with the tractable case (**Google/Apple Maps share links** → extract name+coords → resolve an OSM candidate → create a durable `PlaceId`), with IG/TikTok/screenshot import as a stretch. See caveats below. |
+| **Import from links / screenshots** | Their standout feature validates import as the front door, but our reliable/legal surface is different: user-exported files first (Google Takeout, KML/KMZ, GPX, GeoJSON). We explicitly reject scraping Google share links; IG/TikTok and screenshot extraction remain experimental futures. See [Import & Export](./interop.md). |
 | **Category taxonomy (eat/drink/shop/stay/culture/health)** | Clean and legible; maps well onto OSM tags. We adopt a similar top-level filter set (see [Map View](./map-view.md)). |
 | **Photos + comments per place** | We have notes; adding optional **photos** (local blobs first) is a cheap, high-value memory feature. |
 | **PostGIS for geo queries** | Validates our optional-backend choice — already our documented path in [Tech Stack](./tech-stack.md). |
@@ -36,10 +36,11 @@ provider such as Google Places or Foursquare).
 
 These are the design bets that differentiate us — mostly by being *lighter and more open*:
 
-1. **Open data, not proprietary.** Step's places data is closed/undisclosed. We are **OSM-only**
-   and surface the **website** from OSM tags. Trade-off: OSM POI coverage and website data are
-   thinner in some places — we accept that in exchange for openness and portable, attributable
-   source data. Corrections go upstream to OSM rather than into an app-specific global overlay.
+1. **Open live data, portable personal imports.** Step's places data is closed/undisclosed. Our
+   live geographic providers are OSM-derived and surface the **website** from OSM tags; files the
+   user exported from other tools may coexist as private imported facts. OSM coverage is thinner
+   in some places, but source evidence stays portable and attributable. Public corrections go
+   upstream to OSM rather than into an app-specific global overlay.
 2. **Personal-first, not social-graph-gated.** Step's core loop *requires* following people —
    the map is empty until you build a social graph (a hard cold-start). We work **solo from
    minute one**; discovery via people is an optional later layer, never a prerequisite.
@@ -54,23 +55,25 @@ These are the design bets that differentiate us — mostly by being *lighter and
 5. **No heavy recommender in v1.** Step leans on AWS Personalize. Personalized ML recs are an
    explicit **non-goal** for us; curation is human and list-based.
 
-## Honest caveats on the "import" feature
+## Honest boundaries on import
 
-It's the most attractive thing to copy, and also the trickiest — worth being clear-eyed:
+Import is the lesson worth copying, but the input contract must remain explicit:
 
-- **Maps-link import** (Google/Apple Maps share URLs) is the realistic starting point: parse the
-  URL for a name/coords, then resolve an OSM feature. Ambiguous candidates still require user
-  confirmation before creating a durable place identity.
+- **File import is the supported front door.** Google Takeout, KML/KMZ, GPX, and GeoJSON have
+  inspectable formats and can be parsed locally. Every source row is accounted for, while OSM
+  matching remains optional and ambiguity enters a persisted review queue.
+- **Google/Apple shared-link scraping is not supported.** Redirects and page markup are unstable,
+  incomplete, and governed by platform terms. Reconsider only if an official API provides a
+  compliant import surface.
 - **Instagram/TikTok import** relies on scraping/oEmbed and platform ToS that shift often; fragile
   and gray-area. Treat as experimental, not a v1 promise.
 - **Screenshot import** needs OCR + geocoding + disambiguation — a real feature in its own right.
 
-We therefore slot import as a **post-core, opt-in** capability on the [Roadmap](./roadmap.md), not
-a Phase 1 commitment.
+File import lands in Phase 3 immediately after the durable local core. It is not a Phase 1 search
+feature; once available, it becomes the primary acquisition path for real user libraries.
 
 ## One-line summary
 
 Step proved the *appetite* for a personal-map-of-places product and nailed frictionless **import**.
-We differentiate by being **open (OSM), personal-first, link-shareable, and web/local-first** —
-trading Step's social network and proprietary data for lower friction, creator-controlled read-only
-links, and OSM-backed place identities that can be repaired when map elements change.
+We differentiate with OSM-derived live data, portable file imports, personal-first local ownership,
+and creator-controlled read-only links—without a social graph or proprietary places API calls.

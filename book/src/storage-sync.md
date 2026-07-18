@@ -43,7 +43,8 @@ interface LocalRepository {
 
   getPlace(id: PlaceId): Promise<Place | undefined>;
   findPlaceByOsmRef(ref: OsmElementRef): Promise<Place | undefined>;
-  upsertPlace(place: Place): Promise<void>;
+  /** Updates an existing membership-backed place; it is not a creation path. */
+  updatePlace(place: Place): Promise<void>;
 
   /** Places currently in at least one list — membership is existence. */
   listPlaces(): Promise<Place[]>;
@@ -62,9 +63,9 @@ interface SyncTransport {
 }
 ```
 
-Creating a place by adding it to a list, deleting a list with its owned section blocks and
-orphaned places, or changing a guide and queuing its publication are aggregate transactions. A failed network effect never rolls back a
-committed local edit.
+Creating a place by adding it to a list, deleting a list with its owned section blocks and orphaned
+places, or changing a guide and queuing its publication are aggregate transactions. A failed
+network effect never rolls back a committed local edit.
 
 ## Offline behavior
 
@@ -73,12 +74,12 @@ offline. The UI exposes capability rather than using a blanket “offline capabl
 
 | Capability | Offline behavior |
 |---|---|
-| View/edit saved places, tags, notes, and guides | Works from IndexedDB |
-| View saved POI facts | Uses timestamped `lastVerified` evidence |
+| View/edit library places, tags, notes, and lists/guides | Works from IndexedDB |
+| View stored OSM facts | Uses `lastVerified` evidence; freshness timestamps return with that surface |
 | View previously cached map area | Best effort, subject to tile-provider policy/cache |
 | Search or browse live POIs | Unavailable |
 | Refresh or repair an OSM link | Queued until online |
-| Create an OSM-backed saved place | Requires a resolved OSM candidate |
+| Create an OSM-backed library place | Requires a resolved OSM candidate and first list membership |
 | Create an unlinked manual pin | Works fully offline |
 | Publish, revoke, or upload media | Local change queues; public revision remains unchanged |
 
@@ -111,19 +112,30 @@ A backup is a versioned archive, not a single JSON file:
 
 ```text
 placemarks-backup.zip
-├── manifest.json             # schema version, checksums, export metadata
+├── manifest.json             # schema version, per-entry checksums, counts, export metadata
 ├── data.json                 # owned entities + bounded attributed OSM identity evidence
 └── media/<asset-id>.<ext>    # optional binary media
 ```
 
 OSM-derived evidence is included because it is necessary to preserve place identity and offline
-fallback. The manifest labels its source, observation timestamp, attribution, and license. Ephemeral
-resolver caches are excluded.
+fallback. Evidence rows carry their observation timestamps; the manifest labels the archive's
+export time, source attribution, and license. It contains a SHA-256 checksum for `data.json` and
+every media entry. Ephemeral resolver caches are excluded. Export fails closed if a live
+`MediaAsset` references missing or unreadable bytes; it never emits an apparently complete archive
+with omitted media.
 
-Imports validate schema, checksums, coordinates, ids, and size limits before a transaction begins.
+Before a transaction begins, import caps archive bytes, entry count, and inflated bytes; verifies
+every declared checksum; rejects undeclared media; and validates schema, coordinates, ids,
+references, and graph invariants. In particular, every live place must have a live list membership,
+every place block must target a live place in its list, and media metadata must have matching bytes.
 The user chooses merge or replace. Merge uses the place-deduplication order from
-[Durable Place Identity](./place-identity.md#import-and-deduplication) and never silently discards a
-conflicting note body.
+[Durable Place Identity](./place-identity.md#import-and-deduplication): exact current or historical
+OSM references are coalesced before per-id merge, with incoming edges rewritten to the retained
+`PlaceId`. It never silently discards a conflicting note body.
+
+Schema migrations obey the same graph invariants. When the standalone save model is upgraded to
+membership-is-existence, every formerly saved place must either retain an existing list membership
+or be placed in an explicit migration-created list; it may never become a hidden live orphan.
 
 Editor bearer tokens are excluded by default. A separate explicitly encrypted recovery bundle may
 include them; exporting a guide or ordinary JSON must never leak write access to public pages.
@@ -165,7 +177,7 @@ collaborative editing, but are not a substitute for explicit identity and public
 | Data | Location | Update mechanism |
 |---|---|---|
 | Place identity and OSM evidence | IndexedDB; included in backup | Exact resolve and conservative relink |
-| Saves, tags, notes, guides | IndexedDB | Local edits; optional future sync |
+| List membership, tags, notes, lists/guides | IndexedDB | Local edits; optional future sync |
 | Media bytes | IndexedDB media store | Local import; explicit hosted upload |
 | Publication editor token | Private local credential store | Created once; optional encrypted recovery |
 | Hosted public guide/note | Share-service storage | Last successful Bearer-authorized publish |
