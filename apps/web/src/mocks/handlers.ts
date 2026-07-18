@@ -30,8 +30,12 @@ export const handlers = [
   http.get(`${OSM_API_URL}/api/0.6/way/201/full.json`, () => HttpResponse.json(osmWay201Full)),
 
   http.post(OVERPASS_URL, async ({ request }) => {
-    const body = await request.text();
-    if (body.includes("around")) return HttpResponse.json(overpassNearby);
+    const query = new URLSearchParams(await request.text()).get("data") ?? "";
+    if (query.includes("around")) {
+      // (0, 0) is the fixture coordinate for "nothing mapped here".
+      if (/around:\d+,0,0/.test(query)) return HttpResponse.json({ elements: [] });
+      return HttpResponse.json(overpassNearby);
+    }
     return HttpResponse.json(overpassDiscover);
   }),
 ];
