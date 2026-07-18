@@ -1,22 +1,21 @@
+/** Place-creation policy (book/src/place-identity.md). */
 import { describe, expect, it } from "vitest";
 import * as placeModule from "./place";
 
-/**
- * Place-creation policy per the ratified design (book/src/place-identity.md,
- * decided in the 2026-07-18 design review):
- *
- * - OSM-backed places begin with a successfully resolved OSM element.
- * - Unlinked manual pins ARE part of the durable model (user decision: "Restore
- *   manual pins" — vision.md, roadmap Phase 2), but they must start `unlinked`
- *   with owner-provided facts and may NEVER fabricate an OSM claim.
- *
- * Note: an earlier revision of this test asserted that `createManualPlace` must
- * not exist. That reflected a proposal the design review explicitly overruled;
- * the enforced policy below is the documented one.
- */
 describe("place creation policy", () => {
-  it("exposes a manual-place factory (user-ratified: manual pins are in scope)", () => {
-    expect(placeModule).toHaveProperty("createManualPlace");
+  it("OSM-backed places begin with a resolved element and evidence", () => {
+    const poi = {
+      osmRef: { type: "node" as const, id: "1" },
+      category: "cafe",
+      lat: 38.7,
+      lng: -9.1,
+      identityTags: {},
+      resolvedAt: "2026-07-18T00:00:00.000Z",
+    };
+    const place = placeModule.createOsmPlace("p-osm", poi, "2026-07-18T00:00:00.000Z");
+    expect(place.currentOsmRef).toEqual({ type: "node", id: "1" });
+    expect(place.firstSeen).toBeDefined();
+    expect(place.resolutionState).toBe("resolved");
   });
 
   it("manual places start unlinked, with owner facts and no OSM claim", () => {
@@ -34,18 +33,29 @@ describe("place creation policy", () => {
     expect(place.manual?.name).toBe("Picnic bench");
   });
 
-  it("OSM-backed places always begin with a resolved element and evidence", () => {
-    const poi = {
-      osmRef: { type: "node" as const, id: "1" },
-      category: "cafe",
-      lat: 38.7,
-      lng: -9.1,
-      identityTags: {},
-      resolvedAt: "2026-07-18T00:00:00.000Z",
-    };
-    const place = placeModule.createOsmPlace("p-osm", poi, "2026-07-18T00:00:00.000Z");
-    expect(place.currentOsmRef).toEqual({ type: "node", id: "1" });
-    expect(place.firstSeen).toBeDefined();
-    expect(place.resolutionState).toBe("resolved");
+  it("origin is provenance: linking a manual place keeps origin and sets firstSeen once", () => {
+    const manual = placeModule.createManualPlace(
+      "p-manual",
+      { name: "Café Escondido", lat: 38.7, lng: -9.1 },
+      "2026-07-18T00:00:00.000Z",
+    );
+    const linked = placeModule.linkPlaceToOsm(
+      manual,
+      {
+        osmRef: { type: "node", id: "7" },
+        name: "Café Escondido",
+        category: "cafe",
+        lat: 38.7001,
+        lng: -9.1001,
+        identityTags: { name: "Café Escondido", amenity: "cafe" },
+        resolvedAt: "2026-07-19T00:00:00.000Z",
+      },
+      "2026-07-19T00:00:00.000Z",
+      "owner-confirmed",
+    );
+    expect(linked.origin).toBe("manual");
+    expect(linked.resolutionState).toBe("resolved");
+    expect(linked.firstSeen?.ref).toEqual({ type: "node", id: "7" });
+    expect(linked.manual?.name).toBe("Café Escondido"); // retained as provenance
   });
 });

@@ -27,6 +27,9 @@ A responsive web app with:
   capabilities.
 - **Upstream corrections** — view/edit an existing POI on OpenStreetMap, or add a missing POI there
   and return to link it after OSM-derived services update.
+- **Unlinked manual pins** — drop a clearly-labeled local pin for spots that aren't in OSM (or
+  shouldn't be: a picnic bench, a meeting point). Works offline; upgradeable to an OSM link later
+  via the candidate picker.
 
 ## Explicit non-goals (v1)
 
@@ -36,9 +39,9 @@ A responsive web app with:
 - ❌ No turn-by-turn navigation or routing (may come later; out of scope now).
 - ❌ No heavy "places enrichment" pipeline. If OSM has a website tag, great; if not, we don't
   go hunting for one or publish an app-wide correction overlay.
-- ❌ No coordinate-only or manually invented place identities. A new place is persisted only after
-  an existing OSM element resolves; a missing POI must be added upstream first. A retained place
-  may enter `missing` state if its element disappears and no replacement resolves.
+- ❌ No automatic identity guessing. An unlinked manual pin stays clearly labeled as not linked to
+  OSM until the owner confirms a link; a retained OSM place may enter `missing` state if its
+  element disappears and no replacement resolves.
 
 ## Who it's for
 

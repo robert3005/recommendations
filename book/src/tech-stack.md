@@ -12,7 +12,7 @@ them (2026-07). Rule: boring by default, exotic only where the design demands it
 | Layer | Choice | Deciding argument |
 |---|---|---|
 | Language/tooling | TypeScript `strict`; pnpm workspaces (`domain`/`schemas`/`app`/`services`); Biome + `tsc --noEmit`; GitHub Actions | One language end to end; shared Zod schemas are the wire contract |
-| Testing | Three layers: Vitest (node) for domain invariants; **Storybook 9 + Vitest addon** (browser mode) for component states, interactions, and per-story axe a11y; Playwright for e2e (IndexedDB, PWA offline, MapLibre, publish loop); MSW shared everywhere | Stories pin every named design state (`resolved…needs-review`, `queued…revoked`); a11y runs continuously, not as a one-off audit |
+| Testing | Three layers: Vitest (node) for domain invariants; **Storybook 9 + Vitest addon** (browser mode) for component states, interactions, and per-story axe a11y; Playwright for e2e (IndexedDB, PWA offline, MapLibre, publish loop); MSW shared everywhere | Stories pin every named design state (`resolved…unlinked`, `queued…revoked`); a11y runs continuously, not as a one-off audit |
 | Framework | React 19 + Vite; TanStack Router; TanStack Query; Zustand (ephemeral UI only) | Map hot path is WebGL, so buy ecosystem + RN reuse, not framework perf; Query's stale-while-revalidate is the resolver semantics; typed routes carry slug + viewport state |
 | Local data | Dexie + `liveQuery`, isolated in an adapter package | Real multi-store transactions for the data-model invariants; RN later swaps OP-SQLite behind `LocalRepository` |
 | Map | MapLibre GL JS used directly (no react-map-gl) | Own the thin adapter the architecture mandates instead of depending on a wrapper's release cadence |

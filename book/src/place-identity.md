@@ -55,12 +55,14 @@ interface OsmLinkHistoryEntry {
 
 interface Place {
   id: PlaceId;
-  currentOsmRef: OsmElementRef;
-  currentOsmLinkedAt: string;
+  origin: "osm" | "manual";
+  currentOsmRef?: OsmElementRef;      // absent on an unlinked manual place
+  currentOsmLinkedAt?: string;
   osmRefHistory: OsmLinkHistoryEntry[];
-  firstSeen: OsmEvidence;    // immutable recovery evidence, set at creation
-  lastVerified: OsmEvidence; // last successfully resolved observation
-  resolutionState: "resolved" | "stale" | "unavailable" | "missing" | "needs-review";
+  firstSeen?: OsmEvidence;    // immutable recovery evidence, set when first OSM-linked
+  lastVerified?: OsmEvidence; // last successfully resolved observation
+  manual?: { name: string; lat: number; lng: number; category?: string };
+  resolutionState: "resolved" | "stale" | "unavailable" | "missing" | "needs-review" | "unlinked";
   lastResolutionAttemptAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -68,8 +70,9 @@ interface Place {
 }
 ```
 
-Invariant: every place has a successfully resolved OSM binding, `firstSeen`, and `lastVerified`
-from creation. Coordinate-only manual places are not part of the durable model.
+Invariants: an `origin: "osm"` place has a binding and `firstSeen` from creation and is never
+`unlinked`; an `origin: "manual"` place starts `unlinked` with `manual` facts and enters the
+normal lifecycle when linked. `origin` is provenance and never changes.
 
 `identityTags` is a bounded subset useful for matching, not an unfiltered copy of OSM. It may
 include names and brand, the primary category tag, relevant `addr:*` fields, `website`, `phone`,
@@ -82,8 +85,8 @@ evidence needed to recover the original place.
 
 ## Creating and saving a place
 
-The creation path requires an existing OSM POI (backup restore is the separate trusted recovery
-path):
+The preferred path creates a place from an existing OSM POI (backup restore is the separate
+trusted recovery path):
 
 1. Search or map selection produces an OSM candidate.
 2. The resolver fetches that exact element and creates an `OsmEvidence` observation.
@@ -91,12 +94,25 @@ path):
    current or historical OSM reference is already known.
 4. Notes, tags, and list blocks refer to `PlaceId`, never directly to the OSM element.
 
-A long press opens a nearby-OSM candidate picker first. If the place is absent, the app does not
-create a local place:
+A long press opens a nearby-OSM candidate picker first. If the place is absent, the user has two
+explicit choices:
 
 - **Add it on OpenStreetMap** — open the OSM editor at that location, add it upstream, then return
-  and retry the match after OSM-derived services have caught up. Creation remains pending until the
-  new element resolves, which improves the shared map without inventing a second place record.
+  and retry the match after OSM-derived services have caught up. Preferred for real public POIs,
+  because it improves the shared map.
+- **Save as an unlinked pin** — create an `origin: "manual"` place from the owner's name, the
+  chosen coordinates, and an optional category. It works offline, is clearly labeled as not linked
+  to OpenStreetMap, and is the right home for spots that don't belong in OSM at all (a picnic
+  bench, a meeting point, a friend's doorstep).
+
+## Unlinked manual places
+
+A manual place skips resolution entirely: `resolutionState` stays `unlinked`, the UI displays its
+`manual` facts labeled as owner-provided, and no refresh is scheduled. **Link to OpenStreetMap**
+reruns the candidate picker at any time; a confirmed selection sets the binding and evidence and
+moves the place into the normal lifecycle (its `manual` facts are retained as provenance and
+fallback). Manual facts are personal data — they are never sent to OSM and carry no OSM
+attribution.
 
 ## Refresh and re-resolution
 
@@ -195,6 +211,10 @@ For any save/import candidate, match in this order:
 2. An exact current or historical OSM reference.
 3. A unique, high-confidence evidence match.
 4. Owner confirmation for every ambiguous match.
+
+An imported **manual** anchor never evidence-matches against OSM-linked places automatically: it
+reuses an existing manual place only on a near-exact name+coordinate match, otherwise it imports
+as a new unlinked pin (the importer may link it later).
 
 Library-to-library transfer uses the versioned backup/import protocol, not the public guide schema.
 A merge validates ids and OSM evidence and resolves collisions explicitly; it never assumes an

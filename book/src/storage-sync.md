@@ -77,6 +77,7 @@ offline. The UI exposes capability rather than using a blanket “offline capabl
 | Search or browse live POIs | Unavailable |
 | Refresh or repair an OSM link | Queued until online |
 | Create an OSM-backed saved place | Requires a resolved OSM candidate |
+| Create an unlinked manual pin | Works fully offline |
 | Publish, revoke, or upload media | Local change queues; public revision remains unchanged |
 
 IndexedDB may be evicted or cleared. The app requests persistent storage where supported, surfaces

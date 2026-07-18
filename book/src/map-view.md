@@ -34,15 +34,19 @@ top-level groups adopted from [prior art](./prior-art-step.md).
   resolve to a typed OSM node, way, or relation.
 - **Tap a POI** — opens its detail sheet. Discovery may come from compatible vector tiles or a
   bounded resolver query; selected details are hydrated through `PoiResolver`.
-- **Long press** — opens nearby OSM candidates. The user selects the correct existing POI.
+- **Long press** — opens nearby OSM candidates. The user selects the correct existing POI, or —
+  when the spot is absent — chooses between the two options below.
 - **Missing place** — **Add it on OpenStreetMap** opens the OSM editor at that coordinate (on
   return, **Check for OSM updates** retries discovery and creates the durable link when the POI
-  appears). No coordinate-only place is persisted while the POI is absent.
+  appears), or **Save as unlinked pin** creates a local `origin: "manual"` place from an
+  owner-provided name — offline-capable, clearly labeled, linkable to OSM later.
 - **Saved pins** — distinct from transient POIs and colorable by the currently selected guide or
-  tag filter. A deterministic neutral style is used when several colors apply.
+  tag filter. A deterministic neutral style is used when several colors apply. Unlinked manual
+  pins carry a distinct marker/badge.
 
-Every `Place` begins with a resolved OSM element, copied first-seen evidence, and its own immutable
-`PlaceId` (see [Durable Place Identity](./place-identity.md)).
+Every OSM-backed `Place` begins with a resolved OSM element, copied first-seen evidence, and its
+own immutable `PlaceId`; manual pins begin `unlinked` with owner-provided facts (see
+[Durable Place Identity](./place-identity.md#unlinked-manual-places)).
 
 ## Place detail sheet
 
@@ -54,7 +58,8 @@ The mobile sheet / desktop panel shows:
 - Personal actions: **Save**, **Add tag**, **Add to guide**, and **Add note**.
 - Travel action: **Directions**, deep-linking to an external maps app in v1.
 - Source actions: **View on OpenStreetMap**, **Edit on OpenStreetMap**, **Report a map issue**, and
-  **Check for OSM updates**.
+  **Check for OSM updates**. An unlinked manual pin instead shows its owner-provided facts, an
+  "unlinked" badge, and a **Link to OpenStreetMap** action.
 
 The public OSM website/phone/hours are never silently overridden inside Placemarks. If they are
 wrong, the source action explains that the correction is public and opens OSM. Personal notes stay

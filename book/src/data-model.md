@@ -43,20 +43,30 @@ interface OsmEvidence {
   observedAt: string;
 }
 
+interface ManualFacts {
+  name: string;
+  lat: number;
+  lng: number;
+  category?: string;
+}
+
 interface Place {
   id: PlaceId;
-  // OSM binding and evidence are required from creation.
-  currentOsmRef: OsmElementRef;
-  currentOsmLinkedAt: string;
+  origin: "osm" | "manual";
+  // OSM binding — present from creation when origin is "osm";
+  // absent on an unlinked manual place until the owner links one.
+  currentOsmRef?: OsmElementRef;
+  currentOsmLinkedAt?: string;
   osmRefHistory: Array<{
     ref: OsmElementRef;
     linkedAt: string;
     unlinkedAt?: string;
     reason?: "replaced" | "merged" | "owner-confirmed" | "resolver-match";
   }>;
-  firstSeen: OsmEvidence;     // immutable observation captured at creation
-  lastVerified: OsmEvidence;  // latest successful observation
-  resolutionState: "resolved" | "stale" | "unavailable" | "missing" | "needs-review";
+  firstSeen?: OsmEvidence;     // set when first OSM-linked
+  lastVerified?: OsmEvidence;  // set after the first successful resolution
+  manual?: ManualFacts;        // owner-provided facts; required while unlinked
+  resolutionState: "resolved" | "stale" | "unavailable" | "missing" | "needs-review" | "unlinked";
   lastResolutionAttemptAt?: string;
   createdAt: string;
   updatedAt: string;
@@ -64,12 +74,14 @@ interface Place {
 }
 ```
 
-Every place always carries an OSM binding and evidence. `firstSeen` is immutable recovery evidence
-captured at creation. `lastVerified` is the latest successful observation and the only durable POI
-fallback; there is no second `cachedPoi` authority. Coordinate-only manual places are not persisted:
-the user adds a missing POI upstream and retries after the OSM element resolves. See
-[Durable Place Identity](./place-identity.md) for creation, refresh, conservative relinking, and
-deduplication rules.
+An **OSM-origin** place always carries a binding and evidence. A **manual** place is a deliberate,
+clearly-labeled local pin for a spot that is not in OSM — or should never be (a picnic bench, a
+meeting point): it starts in `unlinked` state with owner-provided `ManualFacts` and no OSM data,
+and may later be upgraded through the same candidate picker, entering the normal resolution
+lifecycle. `firstSeen` is immutable recovery evidence once set. `lastVerified` is the latest
+successful observation and the only durable POI fallback; there is no second `cachedPoi`
+authority. See [Durable Place Identity](./place-identity.md) for creation, refresh, conservative
+relinking, and deduplication rules.
 
 ## Resolved POI (transient source view)
 
@@ -294,6 +306,7 @@ There is no merge with app-wide user corrections:
 ```text
 displayed POI = latest successfully resolved OSM observation
                 or Place.lastVerified with a visible stale/error state
+                or Place.manual facts with an "unlinked" badge (manual pins)
 ```
 
 Personal notes and guide prose are separate owned content. Wrong OSM facts lead to **View/Edit on
