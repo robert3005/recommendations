@@ -22,7 +22,7 @@ test("adding to a list saves the place; the Lists tab reads the marked list", as
   await placeSheet.getByTestId("add-to-list").selectOption("__new__");
   await placeSheet.getByLabel("New list name").fill("Lisbon favourites");
   // The default marker colour (first palette entry) is preselected.
-  await expect(placeSheet.getByTestId("marker-#dc2626")).toHaveAttribute("aria-checked", "true");
+  await expect(placeSheet.getByTestId("marker-#dc2626")).toBeChecked();
   await placeSheet.getByTestId("create-list-and-add").click();
   // The act of adding was the save: the saved sheet takes over, mark on map.
   const savedSheet = page.getByTestId("saved-place-sheet");

@@ -67,19 +67,23 @@ export function AddToList({ lists, memberListIds, onPick }: AddToListProps) {
         {/* The list's visual marker — its places wear this colour on the map. */}
         <div className="mt-2 flex items-center gap-1.5" role="radiogroup" aria-label="List marker">
           {MARKER_COLORS.map((option) => (
-            <button
+            <label
               key={option}
-              type="button"
-              role="radio"
-              aria-checked={option === selectedColor}
-              aria-label={`Marker colour ${option}`}
-              onClick={() => setColor(option)}
-              className={`h-5 w-5 rounded-full border-2 ${
+              className={`inline-block h-5 w-5 cursor-pointer rounded-full border-2 ${
                 option === selectedColor ? "border-stone-800" : "border-transparent"
               }`}
               style={{ backgroundColor: option }}
-              data-testid={`marker-${option}`}
-            />
+            >
+              <input
+                type="radio"
+                name="list-marker"
+                checked={option === selectedColor}
+                onChange={() => setColor(option)}
+                aria-label={`Marker colour ${option}`}
+                className="sr-only"
+                data-testid={`marker-${option}`}
+              />
+            </label>
           ))}
         </div>
       </div>

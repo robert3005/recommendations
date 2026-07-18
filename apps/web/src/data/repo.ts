@@ -436,7 +436,9 @@ export class DexieRepository implements PlacemarksRepository {
     );
     const membership: Record<string, string[]> = {};
     for (const block of blocks) {
-      (membership[block.refId] ??= []).push(block.listId);
+      const existing = membership[block.refId] ?? [];
+      existing.push(block.listId);
+      membership[block.refId] = existing;
     }
     return membership;
   }
