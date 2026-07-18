@@ -62,11 +62,16 @@ The mobile sheet / desktop panel shows (decisions of 2026-07-18):
   create a new one inline right on the card. **There is no Save button** (2026-07-18: membership
   is existence): adding a place to a list is the only way it enters the library, and **Remove
   place** takes it out of every list — which removes it entirely. Creating a list picks its **marker colour** from a swatch row (default: the next
-  unused palette colour). The place card is the *only* write surface for lists; the **Lists tab
-  is read-only**. Reordering, removal, and editorial text (guides = editorialised lists) are
-  deferred until a dedicated editing surface returns with the guide milestone. Lists a place
-  already belongs to leave the dropdown; full membership display / reverse navigation may come
-  later.
+  unused palette colour). The place card is the write surface for list *membership*; the default
+  list view stays read-only for reading and navigation. Reordering, removal, renaming, and
+  recolouring return with the interop milestone as a **deliberate Edit mode on the list page**
+  (2026-07-18 — imported lists are too large for place-card-only curation; see
+  [Import & Export](./interop.md#list-curation-returns-edit-mode)); editorial text still waits
+  for the guide milestone. Lists a place already belongs to leave the dropdown; full membership
+  display / reverse navigation may come later.
+- **Navigation handoff** (2026-07-18): **Open in Google Maps** — the imported external-ref URL
+  when one exists (it reopens the exact Google listing), else a coordinate/name search link — and
+  **Open in Apple Maps**. Navigation itself stays external; no routing in-app.
 - The **single OSM affordance is a small "View on OpenStreetMap" portal link.** In-app
   Edit/Report/Directions/Check-for-updates actions are removed — the portal itself offers editing
   and issue reporting. An unlinked manual pin shows its owner-provided facts and a

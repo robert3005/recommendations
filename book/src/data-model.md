@@ -4,7 +4,8 @@ The model separates two kinds of data:
 
 1. **OSM observations** — source facts that Placemarks copies for display, offline fallback, and
    identity recovery. OSM remains the upstream source of truth.
-2. **Owned data** — durable place identities, saves, tags, notes, guides, and publication state.
+2. **Owned data** — durable place identities, list memberships, tags, notes, guides, imported
+   facts/external refs, and publication state.
 
 There is deliberately no Placemarks-wide POI contribution layer. If a website, phone number,
 opening time, location, or POI is wrong or missing, the product sends the user to
@@ -48,13 +49,21 @@ interface ManualFacts {
   lat: number;
   lng: number;
   category?: string;
+  address?: string;            // present on imported facts (Takeout carries addresses)
+}
+
+/** A retained pointer into another ecosystem — provenance and deep link, never fetched. */
+interface ExternalRef {
+  provider: "google-maps";     // more later if other exports appear
+  url: string;                 // as imported; its embedded feature id is the dedup key
+  importedAt: string;
 }
 
 interface Place {
   id: PlaceId;
-  origin: "osm" | "manual";
+  origin: "osm" | "manual" | "import";
   // OSM binding — present from creation when origin is "osm";
-  // absent on an unlinked manual place until the owner links one.
+  // absent on an unlinked manual/imported place until one is linked.
   currentOsmRef?: OsmElementRef;
   currentOsmLinkedAt?: string;
   osmRefHistory: Array<{
@@ -65,7 +74,8 @@ interface Place {
   }>;
   firstSeen?: OsmEvidence;     // set when first OSM-linked
   lastVerified?: OsmEvidence;  // set after the first successful resolution
-  manual?: ManualFacts;        // owner-provided facts; required while unlinked
+  manual?: ManualFacts;        // owner- or import-provided facts; required while unlinked
+  externalRefs?: ExternalRef[]; // e.g. the Google Maps URL an import arrived with
   resolutionState: "resolved" | "stale" | "unavailable" | "missing" | "needs-review" | "unlinked";
   lastResolutionAttemptAt?: string;
   createdAt: string;
@@ -78,7 +88,12 @@ An **OSM-origin** place always carries a binding and evidence. A **manual** plac
 clearly-labeled local pin for a spot that is not in OSM — or should never be (a picnic bench, a
 meeting point): it starts in `unlinked` state with owner-provided `ManualFacts` and no OSM data,
 and may later be upgraded through the same candidate picker, entering the normal resolution
-lifecycle. `firstSeen` is immutable recovery evidence once set. `lastVerified` is the latest
+lifecycle. An **import-origin** place ([Import & Export](./interop.md)) rides the same
+machinery: imported facts fill `ManualFacts`, the source URL is retained in `externalRefs`
+(provenance + deep link — an opaque pointer that is never fetched), and OSM linkage is an
+optional upgrade, either automatic when import-time matching is confident or later via the
+picker. Imported Google-derived facts never pre-fill OSM contributions
+([licensing hygiene](./interop.md#licensing-hygiene)). `firstSeen` is immutable recovery evidence once set. `lastVerified` is the latest
 successful observation and the only durable POI fallback; there is no second `cachedPoi`
 authority. See [Durable Place Identity](./place-identity.md) for creation, refresh, conservative
 relinking, and deduplication rules.
@@ -114,8 +129,9 @@ as links, with safe external-link attributes and a restrictive Content Security 
 There is **no standalone "save" entity** (2026-07-18: the notion of saves was removed). A place
 exists in the library **iff it belongs to at least one list**:
 
-- The only way a place comes to exist is being **added to a list** (from its card, or the manual
-  pin dialog — which therefore requires choosing a list).
+- The only way a place comes to exist is being **added to a list** (from its card, from the
+  manual pin dialog — which therefore requires choosing a list — or by an
+  [import](./interop.md) materializing rows into their list).
 - Removing a place's **last** membership — by removing the block, or deleting the list that held
   it — removes the place together with its tags and notes, in the same transaction.
 - Tag assignments and list blocks join directly on `PlaceId`. Reverse relationships are queries,
@@ -245,7 +261,7 @@ interface BlockNoteAttachment {
 interface BlockTagSelection {
   id: string;
   blockId: string;             // must identify a place block
-  tagId: string;               // tag assigned to that block's saved place
+  tagId: string;               // tag assigned to that block's place
   createdAt: string;
   updatedAt: string;
   deleted?: boolean;
@@ -261,8 +277,8 @@ choices.
 Repository transactions enforce these cross-entity invariants:
 
 - a section note targets the same list as its section block;
-- an attached place note targets the same `PlaceId` as the block's saved place;
-- a selected tag is actually assigned to the block's saved place;
+- an attached place note targets the same `PlaceId` as the block's place;
+- a selected tag is actually assigned to the block's place;
 - live `(blockId, noteId)` and `(blockId, tagId)` edges are unique.
 
 ## Publication state
@@ -312,21 +328,21 @@ avoids introducing a second moderation-heavy places database.
 ## Relationships
 
 ```text
-List ──1:*── ListBlock ──place────▶ SavedPlace ──▶ PlaceId ──▶ Place
-  │             │                       │                         │
-  │             ├─section──▶ Note       ├─* TagAssignment ─▶ Tag │
-  │             │                       └─* Note                  │
-  │             ├─* BlockNoteAttachment ───────────────▶ Note    │
-  │             └─* BlockTagSelection ─────────────────▶ Tag     │
-  │                                                               ▼
-  └──────────────── Publication                         current OSM ref
-                                                               + evidence
+List ──1:*── ListBlock ──place────▶ PlaceId ──▶ Place
+  │             │                       │          │
+  │             ├─section──▶ Note       ├─* TagAssignment ─▶ Tag
+  │             │                       └─* Note   │
+  │             ├─* BlockNoteAttachment ──▶ Note   ├─▶ current OSM ref + evidence
+  │             └─* BlockTagSelection ────▶ Tag    └─▶ external refs (imports)
+  │
+  └──────────────── Publication
 ```
 
 - Deleting a list tombstones its blocks, attachments, and list-section notes in one local
-  transaction. It does not delete saved places.
-- Deleting a saved place tombstones its tag assignments, place blocks, and private place notes; it
-  never changes OSM.
+  transaction. Places whose **only** membership it held are removed with their tags and notes
+  (membership is existence); places shared with other lists survive.
+- Removing a place takes it out of every list and tombstones its tag assignments, place blocks,
+  and private place notes; it never changes OSM.
 - Removing or disabling already-published content marks the relevant publication dirty. The old
   public revision remains visible until the revocation/update succeeds.
 - Mutating a list title/description/cover, section note, attached place note/media, selected tag,

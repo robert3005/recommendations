@@ -10,6 +10,7 @@
 - [Durable Place Identity](./place-identity.md)
 - [Places, Tags & Lists — Data Model](./data-model.md)
 - [Notes & Rich Content](./notes.md)
+- [Import & Export — Interop](./interop.md)
 - [Lists & Sharing](./sharing.md)
 - [Storage & Sync](./storage-sync.md)
 - [Tech Stack](./tech-stack.md)

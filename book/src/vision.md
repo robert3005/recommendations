@@ -7,6 +7,13 @@ worth a detour. Today that lives in screenshots, notes apps, and Google Maps "sa
 are locked into one vendor and awkward to share. We want a **personal, open, portable** way to
 curate places and hand a friend a link.
 
+**Sharpened thesis (2026-07-18, after living with the first build):** Placemarks is **a way to
+editorialise lists of places**. The collections already exist — overwhelmingly in Google Maps —
+and OSM data/search quality trails Google's in many regions, so finding every place again through
+our own map cannot be the front door. Instead: **import from the tools people actually use**,
+make our UI the place where a list is adjusted and read for navigation, and hand navigation back
+out through deep links and exports ([Import & Export](./interop.md)).
+
 ## What we're building (v1)
 
 A responsive web app with:
@@ -25,6 +32,11 @@ A responsive web app with:
   later as editorialised lists** — the same list enriched with prose, interleaved Markdown
   sections, and a reading experience. Descriptive text belongs to the guide layer, not the
   list.
+- **Google Maps import & export** (2026-07-18) — a Google Takeout archive (per-list CSVs +
+  saved-places GeoJSON), KML/KMZ, GPX, or GeoJSON imports into lists through a review queue;
+  lists export as KML (Google My Maps ingests it), Takeout-shaped CSV, GeoJSON, and GPX. Each
+  imported place keeps its Google URL as an external ref — provenance and a **deep link** for
+  navigation handoff (Google/Apple Maps). See [Import & Export](./interop.md).
 - **Shareable lists** — publish a guide to a persistent, **read-only public link**. Only the creator
   can update/unpublish it using a separate private editor bearer token. It shows the latest successfully
   published guide revision and the latest OSM facts the viewer can resolve.
@@ -41,7 +53,9 @@ A responsive web app with:
 
 - ❌ No reviews, ratings aggregation, or user-generated content beyond your own notes/tags.
 - ❌ No social graph, following, or feeds.
-- ❌ No proprietary places API (Google/Foursquare/Yelp). OSM only.
+- ❌ No proprietary places API **calls** (Google/Foursquare/Yelp). OSM is the only live
+  geographic source. Parsing files the user exported of their own data (Takeout, KML, GPX) is
+  portability, not integration — in scope; scraping Google share links is not.
 - ❌ No turn-by-turn navigation or routing (may come later; out of scope now).
 - ❌ No heavy "places enrichment" pipeline. If OSM has a website tag, great; if not, we don't
   go hunting for one or publish an app-wide correction overlay.
@@ -61,6 +75,8 @@ A responsive web app with:
   or slow geolocation never blocks first use. (Formal p75/p95 budgets on reference devices are a
   [hardening-phase](./roadmap.md) concern.)
 - Find a place and save it with a tag in < 15s.
+- Import a 50-place Google Takeout list and see it on the map with every row accounted for —
+  placed, in review, or explicitly skipped; nothing silently dropped.
 - Create a list, add 5 places, and share a working link in < 1 min.
 - A recipient can read but cannot modify a shared guide; its creator can publish an update.
 - If an OSM node is replaced by a way/relation, the saved place retains its notes and either

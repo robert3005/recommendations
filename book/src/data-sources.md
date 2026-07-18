@@ -1,8 +1,17 @@
 # Open Data Sources
 
-All geographic facts come from OpenStreetMap or OSM-derived services. Placemarks does not create a
-second public POI database. It stores bounded OSM observations for identity/offline recovery and
-directs corrections upstream.
+All **live** geographic facts come from OpenStreetMap or OSM-derived services. Placemarks does not
+create a second public POI database. It stores bounded OSM observations for identity/offline
+recovery and directs corrections upstream.
+
+A second source exists since the 2026-07-18 interop pivot: **files the user exported of their own
+data** (Google Takeout, KML/KMZ, GPX, GeoJSON — see [Import & Export](./interop.md)). These are
+parsed locally and stored as user-imported facts on the user's own places. They are the user's
+personal data, not a proprietary API integration: Placemarks never calls Google services, never
+fetches an imported URL, and keeps imported facts technically distinguishable from OSM
+observations. The one-way valve matters in both directions — imported Google-derived facts never
+pre-fill OSM contributions, and OSM-derived facts carry ODbL attribution wherever they leave the
+app ([licensing hygiene](./interop.md#licensing-hygiene)).
 
 ## Map tiles
 
@@ -114,7 +123,10 @@ clear changeset comment; it is outside v1.
 
 The hand-off explains that OSM edits and map notes are public. Users should add only verifiable,
 non-personal facts they are permitted to contribute, check for an existing feature before adding a
-new one, and never copy data from a proprietary places service.
+new one, and never copy data from a proprietary places service. This applies with extra force to
+[imported](./interop.md) places: Google-sourced names, addresses, and coordinates stored on a
+place must never pre-fill an OSM editor hand-off — the user contributes from their own knowledge,
+not from our stored Google data.
 
 OSM edits and downstream geocoder/resolver replication are asynchronous. **Check for OSM updates**
 keeps the last verified evidence until the changed or newly created element becomes visible.

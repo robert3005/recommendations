@@ -28,9 +28,9 @@ and identity evidence. A short-lived resolver response cache may exist for perfo
 rebuildable and cannot replace `Place` state.
 
 Useful indexes include current and historical OSM reference, resolution state, `updatedAt`,
-`savedPlace.placeId`, tag-assignment pairs, list-block `(listId, rank)`, place blocks by
-`savedPlaceId`, and publication status. Ordered edges sort by `(rank, id)` and rebalance ranks
-deterministically. Repository transactions enforce uniqueness and update dependent edges atomically.
+tag-assignment pairs, list-block `(listId, rank)`, place blocks by `placeId`, and publication
+status. Ordered edges sort by `(rank, id)` and rebalance ranks deterministically. Repository
+transactions enforce uniqueness and update dependent edges atomically.
 
 ## Repository and effect boundaries
 
@@ -45,8 +45,9 @@ interface LocalRepository {
   findPlaceByOsmRef(ref: OsmElementRef): Promise<Place | undefined>;
   upsertPlace(place: Place): Promise<void>;
 
-  listSavedPlaces(): Promise<SavedPlace[]>;
-  upsertSavedPlace(saved: SavedPlace): Promise<void>;
+  /** Places currently in at least one list — membership is existence. */
+  listPlaces(): Promise<Place[]>;
+  addToList(listId: string, source: AddToListSource, now: string): Promise<Place>;
 
   listBlocks(listId: string): Promise<ListBlock[]>;
   upsertBlock(block: ListBlock): Promise<void>;
@@ -61,8 +62,8 @@ interface SyncTransport {
 }
 ```
 
-Creating a place and saving it, deleting a list and its owned section blocks, or changing a guide
-and queuing its publication are aggregate transactions. A failed network effect never rolls back a
+Creating a place by adding it to a list, deleting a list with its owned section blocks and
+orphaned places, or changing a guide and queuing its publication are aggregate transactions. A failed network effect never rolls back a
 committed local edit.
 
 ## Offline behavior

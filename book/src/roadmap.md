@@ -1,7 +1,9 @@
 # Roadmap
 
-Each phase ends with a usable, testable increment. V1 spans Phases 0–4 because the product thesis
-includes a persistent read-only link that its creator can update safely.
+Each phase ends with a usable, testable increment. V1 spans Phases 0–5 because the product thesis
+includes both **interop with the tools people already use** (2026-07-18: import is the front
+door — see [Import & Export](./interop.md)) and a persistent read-only link that its creator can
+update safely.
 
 ## Phase 0 — Foundations and provider contracts
 
@@ -13,7 +15,7 @@ includes a persistent read-only link that its creator can update safely.
 - Select the production provider path; document quotas, licensing/attribution, and the self-hosted
   escape path. Public/demo OSM services remain development-only.
 - A simple performance budget: map shell and first tiles usable within ~2s on a mid-range phone
-  over 4G (formal p75/p95 budgets on reference devices land in Phase 5).
+  over 4G (formal p75/p95 budgets on reference devices land in Phase 6).
 - Geolocation fallback: denial, timeout, or unavailability never blocks the map/search UI.
 
 **Done when:** the cached shell launches offline, the map works online with correct attribution, and
@@ -37,7 +39,7 @@ off to OpenStreetMap without creating a second public correction record.
 
 ## Phase 2 — Durable local-first library and guides
 
-- Create an immutable app `PlaceId` for OSM-backed saves only after exact OSM resolution; persist
+- Create an immutable app `PlaceId` for OSM-backed places only after exact OSM resolution; persist
   current OSM ref, append-only history, first-seen evidence, and last-verified evidence atomically
   with the save.
 - **Unlinked manual pins**: offline-capable `origin: "manual"` places with owner-provided facts, a
@@ -58,7 +60,35 @@ off to OpenStreetMap without creating a second public correction record.
 **Done when:** I can build and edit a five-place, described Lisbon list offline after first load, restore it
 from backup, and repair a simulated OSM node→way replacement without losing notes or membership.
 
-## Phase 3 — Snapshot sharing
+## Phase 3 — Interop: Google Maps import & export
+
+The 2026-07-18 pivot: import from the tools people actually use is the front door; our UI is the
+editorial layer; navigation hands back out. Design in [Import & Export](./interop.md).
+
+- Import a Google Takeout archive (per-list CSVs + `Saved Places.json`), standalone CSV, KML/KMZ,
+  GPX, and GeoJSON into lists — parsed locally; no Google API calls, no link scraping.
+- The coordinate ladder for coordinate-less CSV rows: literal URL coordinates → cross-reference
+  with the archive's GeoJSON → geocode title+address and score candidates with the existing
+  evidence ladder. Auto-place unique high-confidence matches; everything else lands in a
+  persisted **review queue** (candidate picker or manual placement).
+- Materialize through `addToList` only (membership is existence); imported notes become place
+  notes; each Google URL is retained as an **external ref** for provenance and deep links.
+- Idempotent re-import: dedup by external-ref id, then name+proximity; converges, never deletes.
+- An **import report** accounts for every source row — placed, linked, in review, or skipped.
+- **List Edit mode** (supersedes "no edit on the Lists tab" for the edit surface only): reorder,
+  remove, rename, recolour — imported lists are too big for place-card-only curation.
+- Export any list as KML/KMZ (My Maps-compatible, with feature/size-limit warnings),
+  Takeout-shaped CSV, GeoJSON, and GPX; golden-snapshot tests for every writer.
+- Place-card **navigation handoff**: Open in Google Maps (external ref URL when present) and
+  Apple Maps deep links alongside the OSM portal link.
+- Licensing valves enforced: imported Google facts never pre-fill OSM handoffs; OSM-derived
+  fields in exports carry ODbL attribution.
+
+**Done when:** I can run Takeout on a real Google account, drop the archive into Placemarks,
+clear the review queue, see every list on the map wearing its marker with no row unaccounted for,
+open a place in Google Maps from its card, and export a list as KML that Google My Maps accepts.
+
+## Phase 4 — Snapshot sharing
 
 - Public read-only guide viewer using the versioned `SharedGuide` schema.
 - Fragment-encoded snapshot links with compressed/inflated size limits, schema validation, and
@@ -72,7 +102,7 @@ from backup, and repair a simulated OSM node→way replacement without losing no
 **Done when:** I can send a read-only guide without a backend, the recipient cannot modify it, and
 the link still renders timestamped evidence when its old OSM element no longer resolves.
 
-## Phase 4 — Persistent creator-updatable links and note pages
+## Phase 5 — Persistent creator-updatable links and note pages
 
 - Hosted named guide and note URLs: public, guessable, and strictly read-only.
 - Before atomic slug creation, the client generates and persists a high-entropy editor bearer token;
@@ -91,7 +121,7 @@ the link still renders timestamped evidence when its old OSM element no longer r
 **Done when:** a creator can update or revoke a persistent read-only guide while any visitor with
 only the public link can read—but never modify—its latest successfully published revision.
 
-## Phase 5 — Hardening & operations (post-v1)
+## Phase 6 — Hardening & operations (post-v1)
 
 Deliberately after the v1 line: operational rigor scaled to real usage, not a launch prerequisite.
 
@@ -111,12 +141,13 @@ Deliberately after the v1 line: operational rigor scaled to real usage, not a la
 **Done when:** the installed app and public reader are fast, accessible, observable, recoverable,
 and good citizens of the OSM ecosystem.
 
-## Phase 6+ — Optional futures
+## Phase 7+ — Optional futures
 
 - Accounts and multi-device sync using idempotent mutation push, server cursors, per-edge merging,
   tombstone acknowledgement, and recoverable note conflicts.
-- Import from Google/Apple Maps links first; Instagram/TikTok and screenshot extraction remain
-  experimental because of platform and disambiguation risk.
+- Import beyond files (file-based Google import landed in Phase 3): shared-link ingestion only if
+  an official API appears; Instagram/TikTok and screenshot extraction remain experimental because
+  of platform and disambiguation risk.
 - Self-hosted tiles, search, and OSM resolver stack.
 - Native client reusing portable domain packages.
 - Collaborative guide editing, which may motivate CRDTs.
@@ -129,7 +160,7 @@ and good citizens of the OSM ecosystem.
 - Correct OSM/provider attribution and licensing on map, guide, note, and export surfaces.
 - Basic metrics and observability: client error reporting and simple usage/provider-health counters
   from the first release, always with privacy redaction (no fragment URLs, tokens, or precise
-  locations). Deeper dashboards/alarms arrive in Phase 5.
+  locations). Deeper dashboards/alarms arrive in Phase 6.
 - Provider privacy minimization, budgets, caching, cancellation, retry/backoff, and circuit breaking.
 - Public links remain read-only; the editor bearer token is private and never enters their URL or
   document.

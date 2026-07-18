@@ -21,12 +21,13 @@ them (2026-07). Rule: boring by default, exotic only where the design demands it
 | Image pipeline | Client re-encode on import (canvas → WebP; strips EXIF by construction); server magic-byte sniff + caps + wasm re-encode (jSquash) | Defense in depth without requiring Node-only `sharp` |
 | Token handling | SHA-256 hash + constant-time compare for the 256-bit editor token | Slow hashes (bcrypt) are for low-entropy passwords, not random tokens |
 | Production providers | Contracted MapTiler/Stadia tier + vendor geocoder to launch; Protomaps PMTiles on R2 as the independence move; exact-ref reads via OSM API 0.6 + viewport POIs from basemap tiles; no self-hosted Overpass in v1 | One contract to start; each escape path stays cheap and concrete |
+| Interop | PapaParse (CSV), `@tmcw/togeojson` (KML/GPX → GeoJSON), fflate (Takeout ZIP — already the backup dependency); hand-written KML/GPX/CSV export templates | Files are the integration surface — no Google SDKs, no scraping; writers are golden-snapshot tested |
 | Styling / PWA | Tailwind v4; vite-plugin-pwa | Non-architectural; fastest solo iteration |
 
 **Explicitly rejected:** Next.js (SSR buys nothing behind a map canvas; OG previews for share
 slugs are one worker route), Redux, GraphQL, Prisma, Supabase/Firebase (their auth model fights
 bearer-token publications), sync engines (Replicache/PowerSync/Electric — their data models fight
-`PlaceId` + outbox semantics; re-evaluate at Phase 6), CRDTs, Kubernetes/Terraform.
+`PlaceId` + outbox semantics; re-evaluate at Phase 7), CRDTs, Kubernetes/Terraform.
 
 ## Web client
 
@@ -43,8 +44,9 @@ bearer-token publications), sync engines (Replicache/PowerSync/Electric — thei
 | Markdown | CommonMark + GFM parser and sanitizer | Same safe pipeline in app/public viewer |
 | PWA | Vite PWA plugin | Offline app shell from the local-first milestone |
 
-IndexedDB stores places and OSM evidence, saves, tags/assignments, notes/media, lists/blocks/note
-attachments, publications, credentials, and mutation/publication outboxes. Binary media is separate
+IndexedDB stores places (with OSM evidence and external refs), tags/assignments, notes/media,
+lists/blocks/note attachments, import batches/items, publications, credentials, and
+mutation/publication outboxes. Binary media is separate
 from portable domain metadata.
 
 ## Domain packages

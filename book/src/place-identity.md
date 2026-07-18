@@ -90,8 +90,9 @@ trusted recovery path):
 
 1. Search or map selection produces an OSM candidate.
 2. The resolver fetches that exact element and creates an `OsmEvidence` observation.
-3. A `Place` and its `SavedPlace` are committed atomically, reusing an existing `Place` when the
-   current or historical OSM reference is already known.
+3. The `Place` and its list membership are committed atomically via `addToList` (membership is
+   existence), reusing an existing `Place` when the current or historical OSM reference is
+   already known.
 4. Notes, tags, and list blocks refer to `PlaceId`, never directly to the OSM element.
 
 A long press opens a nearby-OSM candidate picker first. If the place is absent, the user has two
