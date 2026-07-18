@@ -37,9 +37,10 @@ test.describe("saving places", () => {
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
     // The saved pin is at the map's initial center; click it to reopen.
     const mapEl = page.getByTestId("map-canvas");
+    // The map reports painted saved pins via a data attribute — no sleeps.
+    await expect(mapEl).toHaveAttribute("data-saved-pins", /^[1-9]/, { timeout: 10_000 });
     const box = await mapEl.boundingBox();
     if (!box) throw new Error("no canvas");
-    await page.waitForTimeout(700); // saved layer paints after style + data load
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     const reopened = page.getByTestId("saved-place-sheet");
     await expect(reopened).toBeVisible();

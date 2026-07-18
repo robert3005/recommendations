@@ -271,6 +271,13 @@ export function MapView({
       (map.getSource("saved") as maplibregl.GeoJSONSource | undefined)?.setData(
         savedToGeoJSON(savedPins),
       );
+      // Observable render state: the count appears only after the layer has
+      // actually painted (tests wait on this instead of sleeping).
+      map.once("idle", () => {
+        if (containerRef.current) {
+          containerRef.current.dataset.savedPins = String(savedPins.length);
+        }
+      });
     };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);

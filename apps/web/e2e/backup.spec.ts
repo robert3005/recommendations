@@ -6,9 +6,10 @@ import { expect, type Page, test } from "@playwright/test";
 
 async function reopenSavedAtCenter(page: Page) {
   const mapEl = page.getByTestId("map-canvas");
+  // The map reports painted saved pins via a data attribute — no sleeps.
+  await expect(mapEl).toHaveAttribute("data-saved-pins", /^[1-9]/, { timeout: 10_000 });
   const box = await mapEl.boundingBox();
   if (!box) throw new Error("no canvas");
-  await page.waitForTimeout(700); // saved layer paints after style + data load
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
