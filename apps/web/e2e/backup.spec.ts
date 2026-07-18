@@ -5,15 +5,15 @@
 import { expect, type Page, test } from "@playwright/test";
 
 async function reopenSavedAtCenter(page: Page) {
-  // Reload to a fresh camera: fly-to offsets shift the pin away from center otherwise.
   await page.reload();
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
   const mapEl = page.getByTestId("map-canvas");
   // The map reports painted saved pins via a data attribute — no sleeps.
   await expect(mapEl).toHaveAttribute("data-pins", /^[1-9]/, { timeout: 10_000 });
-  const box = await mapEl.boundingBox();
-  if (!box) throw new Error("no canvas");
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  // Reopen camera-independently: search recognizes the listed place.
+  await page.getByRole("combobox", { name: "Search places" }).fill("cafe");
+  await page.getByRole("option", { name: /Café Central/ }).click();
+  await page.getByTestId("open-place").click();
 }
 
 test("export → remove-place → import(replace) restores the library", async ({ page }) => {

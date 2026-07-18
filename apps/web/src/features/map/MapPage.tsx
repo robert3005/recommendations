@@ -8,6 +8,7 @@ import { useDexieRepo, useRepo } from "../../data/RepoContext";
 import { newId } from "../../lib/id";
 import { pinColorForLists } from "../../lib/markers";
 import { nowIso } from "../../lib/time";
+import { initialViewport, persistViewport } from "../../lib/viewport";
 import { MapView, type PlacePinFeature, type PoiPinFeature } from "../../map/MapView";
 import { poiResolver, searchProvider } from "../../providers";
 import { useUiStore } from "../../state/ui";
@@ -45,6 +46,9 @@ export function MapPage() {
   const membership = useListMembership();
   const [manualAt, setManualAt] = useState<{ lat: number; lng: number } | null>(null);
   const [viewport, setViewport] = useState<Viewport | null>(null);
+  // The starting camera: last viewport, else a timezone-derived approximation
+  // (book/src/map-view.md — no permission prompt, nothing leaves the device).
+  const [startViewport] = useState(() => initialViewport());
   const discoverEnabled = viewport !== null && viewport.zoom >= DISCOVER_MIN_ZOOM;
 
   // Bounded, debounced viewport POI discovery (book/src/data-sources.md budgets).
@@ -104,6 +108,8 @@ export function MapPage() {
     <div className="relative h-full" data-testid="map-page">
       <MapView
         styleUrl={MAP_STYLE_URL}
+        initialCenter={{ lat: startViewport.lat, lng: startViewport.lng }}
+        initialZoom={startViewport.zoom}
         placePins={placePins}
         poiPins={poiPins}
         selectionPin={selectionPin}
@@ -133,7 +139,11 @@ export function MapPage() {
           }
           openPicker(pos);
         }}
-        onViewportChange={(view) => setViewport(view)}
+        onViewportChange={(view) => {
+          setViewport(view);
+          // The next launch starts where this session left off.
+          persistViewport({ lat: view.center.lat, lng: view.center.lng, zoom: view.zoom });
+        }}
       />
       {placingImportItemId ? (
         <output

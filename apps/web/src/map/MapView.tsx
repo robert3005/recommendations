@@ -30,6 +30,9 @@ export interface PoiPinFeature {
 
 export interface MapViewProps {
   styleUrl: string;
+  /** Starting camera — the caller decides (last viewport / timezone approximation). */
+  initialCenter: { lat: number; lng: number };
+  initialZoom: number;
   placePins: PlacePinFeature[];
   poiPins: PoiPinFeature[];
   /** The currently selected place — marked immediately with a ring. */
@@ -38,7 +41,11 @@ export interface MapViewProps {
   onSelectPlace?: (placeId: string) => void;
   onSelectPoi?: (poi: PoiPinFeature) => void;
   onLongPress?: (pos: { lat: number; lng: number }) => void;
-  onViewportChange?: (view: { bbox: BBox; zoom: number }) => void;
+  onViewportChange?: (view: {
+    bbox: BBox;
+    zoom: number;
+    center: { lat: number; lng: number };
+  }) => void;
 }
 
 const LONG_PRESS_MS = 600;
@@ -73,6 +80,8 @@ function poisToGeoJSON(pins: PoiPinFeature[]): FeatureCollection {
 
 export function MapView({
   styleUrl,
+  initialCenter,
+  initialZoom,
   placePins,
   poiPins,
   selectionPin,
@@ -97,8 +106,8 @@ export function MapView({
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: styleUrl,
-      center: [-9.1394, 38.7139],
-      zoom: 2,
+      center: [initialCenter.lng, initialCenter.lat],
+      zoom: initialZoom,
       attributionControl: false,
     });
     mapRef.current = map;
@@ -279,6 +288,7 @@ export function MapView({
       if (moveTimer) clearTimeout(moveTimer);
       moveTimer = setTimeout(() => {
         const bounds = map.getBounds();
+        const center = map.getCenter();
         callbacksRef.current.onViewportChange?.({
           bbox: {
             west: bounds.getWest(),
@@ -287,6 +297,7 @@ export function MapView({
             north: bounds.getNorth(),
           },
           zoom: map.getZoom(),
+          center: { lat: center.lat, lng: center.lng },
         });
       }, DISCOVER_DEBOUNCE_MS);
     });

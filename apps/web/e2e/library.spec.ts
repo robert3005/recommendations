@@ -44,9 +44,10 @@ test.describe("places exist through lists", () => {
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
     const mapEl = page.getByTestId("map-canvas");
     await expect(mapEl).toHaveAttribute("data-pins", /^[1-9]/, { timeout: 10_000 });
-    const box = await mapEl.boundingBox();
-    if (!box) throw new Error("no canvas");
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    // Reopen camera-independently: search recognizes the listed place.
+    await page.getByRole("combobox", { name: "Search places" }).fill("cafe");
+    await page.getByRole("option", { name: /Café Central/ }).click();
+    await page.getByTestId("open-place").click();
     const reopened = page.getByTestId("place-details");
     await expect(reopened).toBeVisible();
     await expect(reopened.getByText("Café Central")).toBeVisible();

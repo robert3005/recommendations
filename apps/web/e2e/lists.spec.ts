@@ -107,7 +107,10 @@ test("Edit mode reorders, renames, recolours, and removes; reading stays read-on
   await items.nth(1).getByTestId("remove-from-list").click();
   await expect(items).toHaveCount(1);
   await page.getByTestId("edit-list").click();
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Map" }).click();
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("link", { name: "Map" })
+    .click();
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "1");
 });
 

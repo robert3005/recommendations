@@ -37,6 +37,51 @@ test.describe("map display", () => {
     await expect(mapEl).not.toHaveAttribute("data-center", before ?? "");
   });
 
+  test("the map starts on a timezone-approximate location, no permission asked", async ({
+    browser,
+  }) => {
+    // The suite pins Europe/Lisbon; this context is a Tokyo device.
+    const context = await browser.newContext({ timezoneId: "Asia/Tokyo" });
+    const page = await context.newPage();
+    await page.goto("/");
+    await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+    await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-center", "139.6900,35.6900");
+    await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-zoom", "10.00");
+    await context.close();
+  });
+
+  test("the next launch restores the last viewport", async ({ page }) => {
+    await page.goto("/");
+    const mapEl = page.getByTestId("map-canvas");
+    await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+    // Start: the Lisbon approximation from the suite's pinned timezone.
+    await expect(mapEl).toHaveAttribute("data-center", "-9.1400,38.7200");
+
+    const box = await mapEl.boundingBox();
+    if (!box) throw new Error("no canvas box");
+    const cx = box.x + box.width / 2;
+    const cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx + 160, cy + 60, { steps: 8 });
+    await page.mouse.up();
+    await expect(mapEl).not.toHaveAttribute("data-center", "-9.1400,38.7200");
+    // Drag inertia settles before the debounced persist fires; wait for a
+    // stored viewport that is no longer the starting approximation.
+    await page.waitForFunction(() => {
+      const raw = localStorage.getItem("placemarks:viewport");
+      if (!raw) return false;
+      const stored = JSON.parse(raw) as { lng: number; lat: number };
+      return `${stored.lng.toFixed(4)},${stored.lat.toFixed(4)}` !== "-9.1400,38.7200";
+    });
+    // By persist time the camera is idle — this is the settled center.
+    const settled = await mapEl.getAttribute("data-center");
+
+    await page.reload();
+    await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+    await expect(mapEl).toHaveAttribute("data-center", settled ?? "");
+  });
+
   test("geolocation denial produces a designed state, never a blank screen", async ({
     browser,
   }) => {

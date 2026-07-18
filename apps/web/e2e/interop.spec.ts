@@ -79,7 +79,10 @@ test("a Takeout archive imports into a list; review resolves on the map", async 
   expect(kml).toContain("OpenStreetMap contributors");
 
   // The imported Google URL survives as the deep link on the linked place.
-  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Map" }).click();
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("link", { name: "Map" })
+    .click();
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "3");
 });
 

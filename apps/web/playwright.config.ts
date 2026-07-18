@@ -10,6 +10,9 @@ export default defineConfig({
     trace: "retain-on-failure",
     // End-of-test captures double as a visual record of each flow.
     screenshot: "on",
+    // Deterministic start camera: the map opens on a timezone-derived
+    // approximate location (src/lib/viewport.ts), so the zone must be pinned.
+    timezoneId: "Europe/Lisbon",
   },
   projects: [
     {

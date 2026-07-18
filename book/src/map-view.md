@@ -29,6 +29,10 @@ groups adopted from [prior art](./prior-art-step.md).
 ## Core interactions
 
 - **Pan / zoom / rotate** — standard MapLibre gestures with reduced-motion support.
+- **Starting camera** (2026-07-18) — the first launch centres on an **approximate location
+  derived locally from the device timezone** (a city/region centroid): no permission prompt, no
+  network request, nothing leaves the device. Every later launch restores the **last viewport**.
+  Precise location stays behind the user-triggered Locate button.
 - **Locate me** — a user-triggered permission request; location is not persisted. Only the minimum
   location bias required by the configured provider is sent externally.
 - **Search** — type-ahead through the configured production search adapter. A selectable result that
@@ -126,7 +130,7 @@ managed or self-hosted adapters described in [Open Data Sources](./data-sources.
 - A resolver failure retains stored evidence and becomes `unavailable` in the domain; it never
   starts identity repair. Timestamp/state UI returns with the deferred freshness surface.
 - A confirmed deleted element shows its last-known card plus retry, candidate review, and OSM links.
-- Geolocation denied/unavailable starts from the last viewport or a neutral default and leaves
+- Geolocation denied/unavailable starts from the last viewport or the timezone approximation and leaves
   search fully usable.
 
 ## Accessibility and responsiveness
