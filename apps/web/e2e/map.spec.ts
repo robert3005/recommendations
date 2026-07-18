@@ -74,7 +74,7 @@ test.describe("map display", () => {
     await page.goto("/");
     const nav = page.getByRole("navigation", { name: "Primary" });
     await expect(nav.getByRole("link", { name: "Map" })).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Guides" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Lists" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Settings" })).toBeVisible();
   });
 });
