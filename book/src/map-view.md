@@ -59,7 +59,8 @@ The mobile sheet / desktop panel shows (decisions of 2026-07-18):
   list or create a new one inline right on the card (supersedes the earlier no-add-here rule,
   2026-07-18). The place card is the *only* write surface for lists; the **Lists tab is
   read-only** — a reading view of each list's places (final ruling 2026-07-18). Reordering,
-  removal, and description editing are deferred until a dedicated editing surface returns with
+  removal, and editorial text (guides = editorialised lists) are deferred until a dedicated
+  editing surface returns with
   the guide milestone. Lists a place already belongs to leave the dropdown; full membership
   display / reverse navigation may come later.
 - The **single OSM affordance is a small "View on OpenStreetMap" portal link.** In-app

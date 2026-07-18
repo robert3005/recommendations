@@ -203,19 +203,19 @@ interface TagAssignment {
 The repository enforces one live assignment for each `(savedPlaceId, tagId)` pair. Tag names are
 normalized for uniqueness while preserving the user's display casing.
 
-## List (a group of places; opt-in guide)
+## List (a named group of places)
 
-A list is first an **ordered group of places with a description** — that is the primary flow
-(inverted 2026-07-18: lists come first, guides later). The same blocks can additionally
-interleave narrative sections, which turns a list into a guide; that enrichment is a later
-milestone. Blocks are their own entities so adding, removing, or reordering one item does not
-replace a whole array during future sync.
+A list is a **named, ordered group of places — nothing more** (2026-07-18: descriptions were
+removed; lists have names). A **guide is an editorialised list**: the same list enriched with the
+editorial layer — prose descriptions, interleaved narrative sections, attached notes, a reading
+experience. That layer arrives at the guide milestone; descriptive text belongs to it, not to the
+list. Blocks are their own entities so adding, removing, or reordering one item does not replace
+a whole array during future sync.
 
 ```ts
 interface List {
   id: string;
   name: string;
-  description?: string;
   coverMediaId?: string;
   color?: string;
   icon?: string;

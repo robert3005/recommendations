@@ -20,11 +20,6 @@ export function ListPage() {
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="list-page">
       <h1 className="text-xl font-semibold text-stone-900">{list.name}</h1>
-      {list.description ? (
-        <p className="mt-1 text-sm text-stone-600" data-testid="list-description">
-          {list.description}
-        </p>
-      ) : null}
 
       <ul className="mt-4 space-y-2">
         {placeBlocks.map((view) => {

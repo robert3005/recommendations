@@ -50,7 +50,6 @@ export interface MediaAsset extends BaseEntity {
 
 export interface List extends BaseEntity {
   name: string;
-  description?: string;
   coverMediaId?: string;
   color?: string;
   icon?: string;

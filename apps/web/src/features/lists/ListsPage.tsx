@@ -20,9 +20,6 @@ export function ListsPage() {
               className="block px-1 py-3 hover:bg-stone-50"
             >
               <span className="font-medium text-stone-900">{list.name}</span>
-              {list.description ? (
-                <span className="block text-sm text-stone-500">{list.description}</span>
-              ) : null}
             </Link>
           </li>
         ))}
