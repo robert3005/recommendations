@@ -1,0 +1,54 @@
+/**
+ * Dexie schema — the durable primary store (book/src/storage-sync.md).
+ * Rows carry derived index fields (refKeys, targetKey, kind/refId) next to the
+ * domain shape; the repository strips/derives them at the boundary.
+ */
+import type {
+  BlockNoteAttachment,
+  List,
+  ListBlock,
+  MediaAsset,
+  Note,
+  Place,
+  SavedPlace,
+  Tag,
+  TagAssignment,
+} from "@placemarks/domain";
+import Dexie, { type EntityTable } from "dexie";
+
+export type PlaceRow = Place & { refKeys: string[] };
+export type NoteRow = Note & { targetKey: string };
+export type ListBlockRow = ListBlock & { kind: "section" | "place"; refId: string };
+export interface MediaBlobRow {
+  id: string;
+  blob: Blob;
+}
+
+export class PlacemarksDb extends Dexie {
+  places!: EntityTable<PlaceRow, "id">;
+  savedPlaces!: EntityTable<SavedPlace, "id">;
+  tags!: EntityTable<Tag, "id">;
+  tagAssignments!: EntityTable<TagAssignment, "id">;
+  notes!: EntityTable<NoteRow, "id">;
+  mediaAssets!: EntityTable<MediaAsset, "id">;
+  mediaBlobs!: EntityTable<MediaBlobRow, "id">;
+  lists!: EntityTable<List, "id">;
+  listBlocks!: EntityTable<ListBlockRow, "id">;
+  blockNoteAttachments!: EntityTable<BlockNoteAttachment, "id">;
+
+  constructor(name = "placemarks") {
+    super(name);
+    this.version(1).stores({
+      places: "id, resolutionState, updatedAt, *refKeys",
+      savedPlaces: "id, placeId, updatedAt",
+      tags: "id, nameNorm, updatedAt",
+      tagAssignments: "id, savedPlaceId, tagId, [savedPlaceId+tagId], updatedAt",
+      notes: "id, targetKey, updatedAt",
+      mediaAssets: "id, updatedAt",
+      mediaBlobs: "id",
+      lists: "id, updatedAt",
+      listBlocks: "id, listId, kind, refId, updatedAt",
+      blockNoteAttachments: "id, blockId, noteId, [blockId+noteId], updatedAt",
+    });
+  }
+}
