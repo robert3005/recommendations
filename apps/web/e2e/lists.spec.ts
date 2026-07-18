@@ -1,6 +1,7 @@
 /**
  * Lists-first flow (book/src/vision.md): adding a place to a list IS the save;
- * lists carry a user-selected marker; the Lists tab is a read-only reading surface.
+ * lists carry a user-selected marker; the Lists tab reads list contents and can
+ * create lists (2026-07-18) — contents are edited elsewhere.
  */
 import { expect, type Page, test } from "@playwright/test";
 
@@ -58,4 +59,29 @@ test("adding to a list saves the place; the Lists tab reads the marked list", as
   await page.reload();
   await expect(page.getByTestId("list-page")).toBeVisible();
   await expect(page.getByTestId("place-item")).toHaveCount(2);
+});
+
+test("a list created on the Lists tab is offered on the place card", async ({ page }) => {
+  // Lists exist on their own (2026-07-18): created here, before any place joins.
+  await page.goto("/lists");
+  await page.getByTestId("new-list").click();
+  await page.getByLabel("New list name").fill("Weekend");
+  await expect(page.getByTestId("marker-#dc2626")).toBeChecked();
+  await page.getByTestId("create-list").click();
+  const entry = page.getByRole("link", { name: /Weekend/ });
+  await expect(entry).toBeVisible();
+  await expect(page.getByTestId("list-marker")).toHaveAttribute("data-color", "#dc2626");
+
+  // The app-created list receives its first place from the map card.
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("link", { name: "Map" })
+    .click();
+  await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+  await openPlace(page, /Café Central/);
+  await page.getByTestId("place-sheet").getByTestId("add-to-list").selectOption({
+    label: "Weekend",
+  });
+  await expect(page.getByTestId("place-details")).toBeVisible();
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", /^[1-9]/);
 });

@@ -7,6 +7,7 @@ import { composeStories, setProjectAnnotations } from "@storybook/react";
 import { act, render } from "@testing-library/react";
 import { describe, test } from "vitest";
 import { withProviders } from "../../.storybook/decorators";
+import * as NewListFormStories from "../features/lists/NewListForm.stories";
 import * as NoteEditorStories from "../features/notes/NoteEditor.stories";
 import * as CandidatePickerStories from "../features/picker/CandidatePicker.stories";
 import * as ManualPinDialogStories from "../features/picker/ManualPinDialog.stories";
@@ -29,6 +30,7 @@ const modules = [
   ["CandidatePicker", CandidatePickerStories],
   ["ManualPinDialog", ManualPinDialogStories],
   ["TagEditor", TagEditorStories],
+  ["NewListForm", NewListFormStories],
   ["NoteEditor", NoteEditorStories],
   ["Markdown", MarkdownStories],
 ] as const;

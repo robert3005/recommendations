@@ -5,7 +5,8 @@
  */
 import type { List } from "@placemarks/domain";
 import { useState } from "react";
-import { MARKER_COLORS, nextUnusedColor } from "../../lib/markers";
+import { nextUnusedColor } from "../../lib/markers";
+import { MarkerSwatches } from "../lists/MarkerSwatches";
 
 export type ManualPinListTarget =
   | { kind: "existing"; listId: string }
@@ -110,30 +111,11 @@ export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPin
               className="w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
               data-testid="manual-new-list-name"
             />
-            <div
-              className="mt-2 flex items-center gap-1.5"
-              role="radiogroup"
-              aria-label="List marker"
-            >
-              {MARKER_COLORS.map((option) => (
-                <label
-                  key={option}
-                  className={`inline-block h-5 w-5 cursor-pointer rounded-full border-2 ${
-                    option === selectedColor ? "border-stone-800" : "border-transparent"
-                  }`}
-                  style={{ backgroundColor: option }}
-                >
-                  <input
-                    type="radio"
-                    name="manual-list-marker"
-                    checked={option === selectedColor}
-                    onChange={() => setColor(option)}
-                    aria-label={`Marker colour ${option}`}
-                    className="sr-only"
-                  />
-                </label>
-              ))}
-            </div>
+            <MarkerSwatches
+              radioName="manual-list-marker"
+              selected={selectedColor}
+              onSelect={setColor}
+            />
           </div>
         ) : null}
         <p className="mt-2 text-xs text-stone-400">

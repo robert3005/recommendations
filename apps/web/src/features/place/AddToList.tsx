@@ -1,11 +1,12 @@
 /**
- * Add a place to a list — or create the list right here (book/src/map-view.md:
- * the place card is the only write surface for lists). Used by both the unsaved
- * place sheet (where adding implies saving) and the saved-place sheet.
+ * Add a place to a list — or create the list right here. The place card is the
+ * write surface for list membership (book/src/map-view.md); lists themselves can
+ * also be created on the Lists tab. Used by both the unsaved place sheet (where
+ * adding implies saving) and the saved-place sheet.
  */
 import type { List } from "@placemarks/domain";
 import { useState } from "react";
-import { MARKER_COLORS, nextUnusedColor } from "../../lib/markers";
+import { NewListForm } from "../lists/NewListForm";
 
 export type AddToListTarget =
   | { kind: "existing"; list: List }
@@ -19,74 +20,20 @@ export interface AddToListProps {
 
 export function AddToList({ lists, memberListIds, onPick }: AddToListProps) {
   const [creating, setCreating] = useState(false);
-  const [name, setName] = useState("");
-  const [color, setColor] = useState<string>();
 
   if (creating) {
-    const selectedColor = color ?? nextUnusedColor(lists ?? []);
     return (
-      <div className="mt-1">
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="New list name"
-            aria-label="New list name"
-            // biome-ignore lint/a11y/noAutofocus: the input appears on explicit user intent
-            autoFocus
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setCreating(false);
-            }}
-            className="min-w-0 flex-1 rounded border border-stone-300 px-2 py-1 text-sm"
-          />
-          <button
-            type="button"
-            disabled={name.trim() === ""}
-            onClick={() => {
-              const trimmed = name.trim();
-              if (trimmed === "") return;
-              setCreating(false);
-              setName("");
-              setColor(undefined);
-              onPick({ kind: "new", name: trimmed, color: selectedColor });
-            }}
-            className="shrink-0 rounded bg-stone-800 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
-            data-testid="create-list-and-add"
-          >
-            Create & add
-          </button>
-          <button
-            type="button"
-            onClick={() => setCreating(false)}
-            className="shrink-0 rounded px-2 py-1 text-xs text-stone-600 hover:bg-stone-100"
-          >
-            Cancel
-          </button>
-        </div>
-        {/* The list's visual marker — its places wear this colour on the map. */}
-        <div className="mt-2 flex items-center gap-1.5" role="radiogroup" aria-label="List marker">
-          {MARKER_COLORS.map((option) => (
-            <label
-              key={option}
-              className={`inline-block h-5 w-5 cursor-pointer rounded-full border-2 ${
-                option === selectedColor ? "border-stone-800" : "border-transparent"
-              }`}
-              style={{ backgroundColor: option }}
-            >
-              <input
-                type="radio"
-                name="list-marker"
-                checked={option === selectedColor}
-                onChange={() => setColor(option)}
-                aria-label={`Marker colour ${option}`}
-                className="sr-only"
-                data-testid={`marker-${option}`}
-              />
-            </label>
-          ))}
-        </div>
-      </div>
+      <NewListForm
+        lists={lists}
+        submitLabel="Create & add"
+        submitTestId="create-list-and-add"
+        radioName="list-marker"
+        onCreate={(name, color) => {
+          setCreating(false);
+          onPick({ kind: "new", name, color });
+        }}
+        onCancel={() => setCreating(false)}
+      />
     );
   }
 
