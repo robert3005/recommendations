@@ -4,13 +4,15 @@
  * or self-hosted deployments via VITE_* env configuration.
  */
 /**
- * Default basemap: OpenFreeMap "liberty" — full street-level OSM vector tiles,
- * no API key, explicitly free to use (https://openfreemap.org). Still treated
- * as a swappable provider; production contracts land per book/src/data-sources.md.
- * E2e overrides this with a local, network-free style fixture.
+ * Default basemap: OpenFreeMap "bright" — the OSM Bright GL style on full
+ * street-level OSM vector tiles, no API key, explicitly free to use
+ * (https://openfreemap.org). Alternatives for development live in
+ * .env.example / book/src/data-sources.md. Still a swappable provider;
+ * production contracts land per the book. E2e overrides this with a local,
+ * network-free style fixture.
  */
 export const MAP_STYLE_URL: string =
-  import.meta.env.VITE_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/liberty";
+  import.meta.env.VITE_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/bright";
 
 export const PHOTON_URL: string = import.meta.env.VITE_PHOTON_URL ?? "https://photon.komoot.io";
 

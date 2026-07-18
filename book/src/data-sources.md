@@ -27,6 +27,21 @@ Tile schemas, source-layer names, styles, fonts, sprites, feature ids, attributi
 API-key restrictions can differ. Application overlays must not depend on a basemap provider's
 private layer schema.
 
+### Development basemaps (2026-07-19)
+
+All development-only; the app's own layers sit on top and depend on no basemap schema, so
+switching is one `VITE_MAP_STYLE_URL` (see `apps/web/.env.example`):
+
+| Source | Styles | Key | Notes |
+|---|---|---|---|
+| **OpenFreeMap** (default host) | **bright** (OSM Bright — the dev default), liberty, positron, dark, fiord | none | Keyless, explicitly free, OpenMapTiles schema |
+| **VersaTiles** | colorful, graybeard, eclipse, neutrino | none | FLOSS, non-commercial hosted project |
+| **Stadia Maps** | osm_bright, alidade, outdoors | none on localhost | Production-contract candidate ([tech stack](./tech-stack.md)) |
+| **Protomaps PMTiles** | basemaps styles over a downloaded extract | none (self-hosted file) | The independence path; also the fully-offline dev option |
+| MapLibre demotiles | minimal world | none | Smoke tests only — no streets/POIs |
+
+E2e keeps the local `/test-style.json` fixture — deterministic and network-free.
+
 Browser tile keys are public identifiers: origin-restrict them where supported, give them limited
 quotas, monitor usage, and make rotation possible without a client release.
 
