@@ -217,7 +217,7 @@ interface List {
   id: string;
   name: string;
   coverMediaId?: string;
-  color?: string;
+  color?: string; // the list's user-selected marker colour, worn by its places' pins
   icon?: string;
   createdAt: string;
   updatedAt: string;

@@ -5,6 +5,9 @@
 import { expect, type Page, test } from "@playwright/test";
 
 async function reopenSavedAtCenter(page: Page) {
+  // Reload to a fresh camera: fly-to offsets shift the pin away from center otherwise.
+  await page.reload();
+  await expect(page.locator(".maplibregl-canvas")).toBeVisible();
   const mapEl = page.getByTestId("map-canvas");
   // The map reports painted saved pins via a data attribute — no sleeps.
   await expect(mapEl).toHaveAttribute("data-saved-pins", /^[1-9]/, { timeout: 10_000 });

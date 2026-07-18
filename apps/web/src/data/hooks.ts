@@ -50,6 +50,12 @@ export function useLists(): List[] | undefined {
   return useLiveQuery(() => repo.listLists(), [repo]);
 }
 
+/** savedPlaceId → listIds for pin colouring on the map. */
+export function useListMembership(): Record<string, string[]> | undefined {
+  const repo = useRepo();
+  return useLiveQuery(() => repo.listMembershipBySavedPlace(), [repo]);
+}
+
 /** Ids of lists already containing this saved place (dropdown filtering). */
 export function useListIdsForSavedPlace(savedPlaceId: string | undefined): string[] | undefined {
   const repo = useRepo();

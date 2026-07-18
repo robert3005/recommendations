@@ -17,10 +17,12 @@ A responsive web app with:
 - **Durable saving & tagging** — save an existing OSM POI under an app-owned identity, copy bounded
   OSM evidence for offline/recovery use, and attach free-form tags and personal notes.
 - **Lists first** (flow inverted 2026-07-18) — group saved places into named **lists**. A list
-  is just a name over an ordered set of places: created and populated **from a place's card**
-  ("add to new list"), read on the **read-only Lists tab**. **Guides come later as editorialised
-  lists** — the same list enriched with prose, interleaved Markdown sections, and a reading
-  experience. Descriptive text belongs to the guide layer, not the list.
+  is a name plus a **user-selected marker colour** over an ordered set of places: created and
+  populated **from a place's card** ("add to new list" — and adding to a list *is* the save),
+  read on the **read-only Lists tab**. Its places wear the marker on the map. **Guides come
+  later as editorialised lists** — the same list enriched with prose, interleaved Markdown
+  sections, and a reading experience. Descriptive text belongs to the guide layer, not the
+  list.
 - **Shareable lists** — publish a guide to a persistent, **read-only public link**. Only the creator
   can update/unpublish it using a separate private editor bearer token. It shows the latest successfully
   published guide revision and the latest OSM facts the viewer can resolve.

@@ -5,11 +5,13 @@
  */
 import { refKey } from "@placemarks/domain";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { useSavedPlaceForRef } from "../../data/hooks";
+import { useLists, useSavedPlaceForRef } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
+import { newId } from "../../lib/id";
 import { nowIso } from "../../lib/time";
 import { poiResolver } from "../../providers";
 import { type Selection, useUiStore } from "../../state/ui";
+import { AddToList } from "./AddToList";
 import { OsmLink } from "./OsmLink";
 import { PlaceFields } from "./PlaceFields";
 import { SavedPlaceSheet } from "./SavedPlaceSheet";
@@ -41,6 +43,7 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
   const repo = useRepo();
   const selectSaved = useUiStore((s) => s.selectSaved);
   const existingSave = useSavedPlaceForRef(ref);
+  const lists = useLists();
   const resolveQuery = useQuery({
     queryKey: ["resolve", refKey(ref)],
     queryFn: ({ signal }) => poiResolver.resolveExact(ref, { signal }),
@@ -131,6 +134,35 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
           </button>
         )}
       </div>
+      {!existingSave ? (
+        <div className="mt-3">
+          <h3 className="text-xs font-semibold tracking-wide text-stone-500 uppercase">Lists</h3>
+          <AddToList
+            lists={lists}
+            memberListIds={[]}
+            onPick={(target) => {
+              // Adding a place to a list IS the save (book/src/map-view.md).
+              void (async () => {
+                const saved = await repo.savePoi(poi, nowIso());
+                if (target.kind === "new") {
+                  const listId = newId();
+                  await repo.createList({
+                    id: listId,
+                    name: target.name,
+                    color: target.color,
+                    createdAt: nowIso(),
+                    updatedAt: nowIso(),
+                  });
+                  await repo.addPlaceBlock(listId, saved.savedPlace.id, nowIso());
+                } else {
+                  await repo.addPlaceBlock(target.list.id, saved.savedPlace.id, nowIso());
+                }
+                selectSaved(saved.savedPlace.id);
+              })();
+            }}
+          />
+        </div>
+      ) : null}
       <div className="mt-3">
         <OsmLink osmRef={poi.osmRef} />
       </div>

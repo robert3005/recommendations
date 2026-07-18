@@ -15,6 +15,8 @@ export interface SavedPinFeature {
   lat: number;
   lng: number;
   unlinked: boolean;
+  /** List marker colour (or the default) — book/src/map-view.md. */
+  color: string;
 }
 
 export interface PoiPinFeature {
@@ -30,6 +32,8 @@ export interface MapViewProps {
   styleUrl: string;
   savedPins: SavedPinFeature[];
   poiPins: PoiPinFeature[];
+  /** The currently selected place — marked immediately with a ring. */
+  selectionPin?: { lat: number; lng: number } | null;
   flyTo?: { lat: number; lng: number; zoom?: number } | null;
   onSelectSaved?: (savedPlaceId: string) => void;
   onSelectPoi?: (poi: PoiPinFeature) => void;
@@ -50,6 +54,7 @@ function savedToGeoJSON(pins: SavedPinFeature[]): FeatureCollection {
         savedPlaceId: pin.savedPlaceId,
         name: pin.name,
         unlinked: pin.unlinked ? 1 : 0,
+        color: pin.color,
       },
     })),
   };
@@ -70,6 +75,7 @@ export function MapView({
   styleUrl,
   savedPins,
   poiPins,
+  selectionPin,
   flyTo,
   onSelectSaved,
   onSelectPoi,
@@ -123,6 +129,20 @@ export function MapView({
     updateViewData();
 
     map.on("load", () => {
+      map.addSource("pois", { type: "geojson", data: poisToGeoJSON([]) });
+      map.addLayer({
+        id: "poi-pins",
+        type: "circle",
+        source: "pois",
+        paint: {
+          // Live POIs are visually secondary to saved pins.
+          "circle-color": "#57534e",
+          "circle-radius": 5,
+          "circle-opacity": 0.75,
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#fafaf9",
+        },
+      });
       map.addSource("saved", {
         type: "geojson",
         data: savedToGeoJSON([]),
@@ -158,25 +178,28 @@ export function MapView({
         source: "saved",
         filter: ["!", ["has", "point_count"]],
         paint: {
-          // Unlinked manual pins carry a distinct marker (book/src/map-view.md).
-          "circle-color": ["case", ["==", ["get", "unlinked"], 1], "#b45309", "#be123c"],
+          // Unlinked manual pins keep their marker; others wear their list colour.
+          "circle-color": ["case", ["==", ["get", "unlinked"], 1], "#b45309", ["get", "color"]],
           "circle-radius": 8,
           "circle-stroke-width": 2,
           "circle-stroke-color": "#fafaf9",
         },
       });
-      map.addSource("pois", { type: "geojson", data: poisToGeoJSON([]) });
+
+      map.addSource("selection", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
       map.addLayer({
-        id: "poi-pins",
+        id: "selection-ring",
         type: "circle",
-        source: "pois",
+        source: "selection",
         paint: {
-          // Live POIs are visually secondary to saved pins.
-          "circle-color": "#57534e",
-          "circle-radius": 5,
-          "circle-opacity": 0.75,
-          "circle-stroke-width": 1,
-          "circle-stroke-color": "#fafaf9",
+          "circle-radius": 11,
+          "circle-color": "#000000",
+          "circle-opacity": 0,
+          "circle-stroke-width": 3,
+          "circle-stroke-color": "#1c1917",
         },
       });
 
@@ -279,7 +302,7 @@ export function MapView({
         }
       });
     };
-    if (map.isStyleLoaded()) apply();
+    if (map.getSource("saved")) apply();
     else map.once("load", apply);
   }, [savedPins]);
 
@@ -291,14 +314,45 @@ export function MapView({
         poisToGeoJSON(poiPins),
       );
     };
-    if (map.isStyleLoaded()) apply();
+    if (map.getSource("pois")) apply();
     else map.once("load", apply);
   }, [poiPins]);
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      const source = map.getSource("selection") as maplibregl.GeoJSONSource | undefined;
+      source?.setData({
+        type: "FeatureCollection",
+        features: selectionPin
+          ? [
+              {
+                type: "Feature",
+                geometry: { type: "Point", coordinates: [selectionPin.lng, selectionPin.lat] },
+                properties: {},
+              },
+            ]
+          : [],
+      });
+      if (containerRef.current) {
+        containerRef.current.dataset.selection = selectionPin ? "1" : "0";
+      }
+    };
+    if (map.getSource("selection")) apply();
+    else map.once("load", apply);
+  }, [selectionPin]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map || !flyTo) return;
-    map.flyTo({ center: [flyTo.lng, flyTo.lat], zoom: flyTo.zoom ?? 17, duration: 700 });
+    map.flyTo({
+      center: [flyTo.lng, flyTo.lat],
+      zoom: flyTo.zoom ?? 17,
+      duration: 700,
+      // Keep the target clear of the bottom sheet.
+      offset: [0, -120],
+    });
   }, [flyTo]);
 
   return <div ref={containerRef} data-testid="map-canvas" className="h-full w-full" />;

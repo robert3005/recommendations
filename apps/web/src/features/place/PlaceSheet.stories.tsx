@@ -1,6 +1,6 @@
 import type { OsmElementRef } from "@placemarks/domain";
 import type { Decorator, Meta, StoryObj } from "@storybook/react";
-import { expect, within } from "storybook/test";
+import { expect, userEvent, within } from "storybook/test";
 import { type SelectionHint, useUiStore } from "../../state/ui";
 import { PlaceSheet } from "./PlaceSheet";
 
@@ -33,6 +33,19 @@ export const ResolvedFromOsm: Story = {
       "href",
       "https://www.openstreetmap.org/node/101",
     );
+  },
+};
+
+export const AddToListSavesImplicitly: Story = {
+  decorators: [withSelection({ type: "node", id: "101" })],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByTestId("website-link");
+    await userEvent.selectOptions(canvas.getByTestId("add-to-list"), "__new__");
+    await userEvent.type(canvas.getByLabelText("New list name"), "Coffee crawl");
+    await userEvent.click(canvas.getByTestId("create-list-and-add"));
+    // Adding to a list IS the save: the saved sheet takes over.
+    await expect(await canvas.findByTestId("saved-place-sheet")).toBeInTheDocument();
   },
 };
 

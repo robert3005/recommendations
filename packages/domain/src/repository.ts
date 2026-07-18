@@ -79,6 +79,8 @@ export interface PlacemarksRepository {
   getGuideBlocks(listId: string): Promise<GuideBlockView[]>;
   /** Lists that currently contain this saved place (for add-to-list filtering). */
   listIdsForSavedPlace(savedPlaceId: string): Promise<string[]>;
+  /** savedPlaceId → listIds across all live lists (for pin colouring). */
+  listMembershipBySavedPlace(): Promise<Record<string, string[]>>;
   /** A place may appear at most once in a list. */
   addPlaceBlock(listId: string, savedPlaceId: string, now: string): Promise<ListBlock>;
   /** Creates the section Note (target = list) and its block in one transaction. */

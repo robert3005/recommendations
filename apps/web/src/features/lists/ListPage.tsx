@@ -6,6 +6,7 @@
 import { displayFacts } from "@placemarks/domain";
 import { useParams } from "@tanstack/react-router";
 import { useGuide, useGuideBlocks } from "../../data/hooks";
+import { DEFAULT_PIN_COLOR } from "../../lib/markers";
 import { StateBadge } from "../place/StateBadge";
 
 export function ListPage() {
@@ -19,7 +20,15 @@ export function ListPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="list-page">
-      <h1 className="text-xl font-semibold text-stone-900">{list.name}</h1>
+      <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-900">
+        <span
+          className="inline-block h-4 w-4 rounded-full"
+          style={{ backgroundColor: list.color ?? DEFAULT_PIN_COLOR }}
+          data-testid="list-marker"
+          data-color={list.color ?? DEFAULT_PIN_COLOR}
+        />
+        {list.name}
+      </h1>
 
       <ul className="mt-4 space-y-2">
         {placeBlocks.map((view) => {

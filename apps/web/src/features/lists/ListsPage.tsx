@@ -4,6 +4,7 @@
  */
 import { Link } from "@tanstack/react-router";
 import { useLists } from "../../data/hooks";
+import { DEFAULT_PIN_COLOR } from "../../lib/markers";
 
 export function ListsPage() {
   const lists = useLists();
@@ -19,6 +20,12 @@ export function ListsPage() {
               params={{ listId: list.id }}
               className="block px-1 py-3 hover:bg-stone-50"
             >
+              <span
+                className="mr-2 inline-block h-3 w-3 rounded-full align-baseline"
+                style={{ backgroundColor: list.color ?? DEFAULT_PIN_COLOR }}
+                data-testid="list-marker"
+                data-color={list.color ?? DEFAULT_PIN_COLOR}
+              />
               <span className="font-medium text-stone-900">{list.name}</span>
             </Link>
           </li>

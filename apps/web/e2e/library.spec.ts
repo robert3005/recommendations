@@ -27,6 +27,10 @@ test.describe("saving places", () => {
     await expect(savedSheet).toBeVisible();
     // Healthy places show no state marker (freshness UI deferred).
     await expect(savedSheet.getByTestId("state-badge")).toHaveCount(0);
+    // The mark appears immediately on save — not only after deselecting.
+    const mapNow = page.getByTestId("map-canvas");
+    await expect(mapNow).toHaveAttribute("data-saved-pins", /^[1-9]/);
+    await expect(mapNow).toHaveAttribute("data-selection", "1");
 
     // Tag it.
     await savedSheet.getByLabel("Add tag").fill("coffee");

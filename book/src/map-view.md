@@ -40,9 +40,12 @@ top-level groups adopted from [prior art](./prior-art-step.md).
   return, **Check for OSM updates** retries discovery and creates the durable link when the POI
   appears), or **Save as unlinked pin** creates a local `origin: "manual"` place from an
   owner-provided name — offline-capable, clearly labeled, linkable to OSM later.
-- **Saved pins** — distinct from transient POIs and colorable by the currently selected guide or
-  tag filter. A deterministic neutral style is used when several colors apply. Unlinked manual
-  pins carry a distinct marker/badge.
+- **Saved pins** — drawn above transient POIs and **coloured by their list's user-selected
+  marker** (2026-07-18): one list → that list's colour; several lists → a deterministic neutral;
+  no list → the default. Unlinked manual pins keep their distinct orange marker. The mark
+  appears the moment a place is saved — never only after deselection.
+- **Selection ring** — the selected place (saved or not) is marked immediately with a ring, and
+  fly-to offsets the target above the bottom sheet so it stays visible.
 
 Every OSM-backed `Place` begins with a resolved OSM element, copied first-seen evidence, and its
 own immutable `PlaceId`; manual pins begin `unlinked` with owner-provided facts (see
@@ -56,13 +59,14 @@ The mobile sheet / desktop panel shows (decisions of 2026-07-18):
 - **No state marker on healthy places.** The only badge is "Not linked to OSM" on unlinked manual
   pins; freshness/recovery badges are deferred with the freshness UI (below).
 - Personal actions: **Save**, **Add tag**, **Add note**, and **Add to list** — pick an existing
-  list or create a new one inline right on the card (supersedes the earlier no-add-here rule,
-  2026-07-18). The place card is the *only* write surface for lists; the **Lists tab is
-  read-only** — a reading view of each list's places (final ruling 2026-07-18). Reordering,
-  removal, and editorial text (guides = editorialised lists) are deferred until a dedicated
-  editing surface returns with
-  the guide milestone. Lists a place already belongs to leave the dropdown; full membership
-  display / reverse navigation may come later.
+  list or create a new one inline right on the card. **Add to list appears on unsaved place
+  cards too, and adding a place to a list IS the save** (2026-07-18) — no separate save step is
+  required. Creating a list picks its **marker colour** from a swatch row (default: the next
+  unused palette colour). The place card is the *only* write surface for lists; the **Lists tab
+  is read-only**. Reordering, removal, and editorial text (guides = editorialised lists) are
+  deferred until a dedicated editing surface returns with the guide milestone. Lists a place
+  already belongs to leave the dropdown; full membership display / reverse navigation may come
+  later.
 - The **single OSM affordance is a small "View on OpenStreetMap" portal link.** In-app
   Edit/Report/Directions/Check-for-updates actions are removed — the portal itself offers editing
   and issue reporting. An unlinked manual pin shows its owner-provided facts and a
