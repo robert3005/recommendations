@@ -429,6 +429,15 @@ export class DexieRepository implements PlacemarksRepository {
     );
   }
 
+  async listIdsForSavedPlace(savedPlaceId: string): Promise<string[]> {
+    const blocks = (await this.db.listBlocks.where("refId").equals(savedPlaceId).toArray()).filter(
+      (b) => !b.deleted && b.kind === "place",
+    );
+    const listIds = [...new Set(blocks.map((b) => b.listId))];
+    const lists = await Promise.all(listIds.map((id) => this.db.lists.get(id)));
+    return lists.filter((l) => l && !l.deleted).map((l) => (l as { id: string }).id);
+  }
+
   async addPlaceBlock(listId: string, savedPlaceId: string, now: string): Promise<ListBlock> {
     return this.db.transaction(
       "rw",

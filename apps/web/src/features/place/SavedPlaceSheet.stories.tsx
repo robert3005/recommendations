@@ -106,6 +106,47 @@ export const ManualUnlinkedPin: Story = {
   },
 };
 
+export const AddToNewList: Story = {
+  render: () => <Seeded seed={async (repo) => (await repo.savePoi(cafePoi, NOW)).savedPlace.id} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByTestId("saved-place-sheet");
+    await userEvent.selectOptions(await canvas.findByTestId("add-to-list"), "__new__");
+    await userEvent.type(canvas.getByLabelText("New list name"), "Coffee crawl");
+    await userEvent.click(canvas.getByTestId("create-list-and-add"));
+    await expect(await canvas.findByTestId("sheet-message")).toHaveTextContent(
+      'Added to "Coffee crawl"',
+    );
+  },
+};
+
+export const AddToExistingList: Story = {
+  render: () => (
+    <Seeded
+      seed={async (repo) => {
+        await repo.createList({ id: "l1", name: "Weekend", createdAt: NOW, updatedAt: NOW });
+        return (await repo.savePoi(cafePoi, NOW)).savedPlace.id;
+      }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByTestId("saved-place-sheet");
+    const select = await canvas.findByTestId("add-to-list");
+    await waitFor(async () => {
+      await expect(within(select).getByText("Weekend")).toBeInTheDocument();
+    });
+    await userEvent.selectOptions(select, "l1");
+    await expect(await canvas.findByTestId("sheet-message")).toHaveTextContent(
+      'Added to "Weekend"',
+    );
+    // Once a member, the list leaves the dropdown.
+    await waitFor(async () => {
+      await expect(within(select).queryByText("Weekend")).not.toBeInTheDocument();
+    });
+  },
+};
+
 export const NoteLifecycle: Story = {
   render: () => <Seeded seed={async (repo) => (await repo.savePoi(cafePoi, NOW)).savedPlace.id} />,
   play: async ({ canvasElement }) => {

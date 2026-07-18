@@ -77,6 +77,8 @@ export interface PlacemarksRepository {
   /** Tombstones the list, its blocks, attachments, and list-section notes atomically. */
   deleteList(listId: string, now: string): Promise<void>;
   getGuideBlocks(listId: string): Promise<GuideBlockView[]>;
+  /** Lists that currently contain this saved place (for add-to-list filtering). */
+  listIdsForSavedPlace(savedPlaceId: string): Promise<string[]>;
   /** A place may appear at most once in a list. */
   addPlaceBlock(listId: string, savedPlaceId: string, now: string): Promise<ListBlock>;
   /** Creates the section Note (target = list) and its block in one transaction. */

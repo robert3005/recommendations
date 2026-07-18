@@ -50,6 +50,15 @@ export function useLists(): List[] | undefined {
   return useLiveQuery(() => repo.listLists(), [repo]);
 }
 
+/** Ids of lists already containing this saved place (dropdown filtering). */
+export function useListIdsForSavedPlace(savedPlaceId: string | undefined): string[] | undefined {
+  const repo = useRepo();
+  return useLiveQuery(
+    () => (savedPlaceId ? repo.listIdsForSavedPlace(savedPlaceId) : []),
+    [repo, savedPlaceId],
+  );
+}
+
 export function useGuide(listId: string | undefined): List | undefined {
   const repo = useRepo();
   return useLiveQuery(() => (listId ? repo.getList(listId) : undefined), [repo, listId]);

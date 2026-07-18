@@ -6,7 +6,12 @@
  */
 import { displayFacts, linkPlaceToOsm, type Note } from "@placemarks/domain";
 import { useState } from "react";
-import { useNotesForPlace, useSavedPlaceView } from "../../data/hooks";
+import {
+  useListIdsForSavedPlace,
+  useLists,
+  useNotesForPlace,
+  useSavedPlaceView,
+} from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import { newId } from "../../lib/id";
 import { nowIso } from "../../lib/time";
@@ -23,8 +28,12 @@ export function SavedPlaceSheet({ savedPlaceId }: { savedPlaceId: string }) {
   const clearSelection = useUiStore((s) => s.clearSelection);
   const view = useSavedPlaceView(savedPlaceId);
   const notes = useNotesForPlace(view?.place.id);
+  const lists = useLists();
+  const memberListIds = useListIdsForSavedPlace(view?.savedPlace.id);
   const [editingNote, setEditingNote] = useState<Note>();
   const [linking, setLinking] = useState(false);
+  const [creatingList, setCreatingList] = useState(false);
+  const [newListName, setNewListName] = useState("");
   const [message, setMessage] = useState<string>();
 
   if (!view) return null;
@@ -95,6 +104,88 @@ export function SavedPlaceSheet({ savedPlaceId }: { savedPlaceId: string }) {
           {message}
         </p>
       ) : null}
+
+      {/* Lists: add this place to an existing list, or create one right here.
+          The Lists tab itself is browse/edit only (book/src/map-view.md). */}
+      <div className="mt-4">
+        <h3 className="text-xs font-semibold tracking-wide text-stone-500 uppercase">Lists</h3>
+        {creatingList ? (
+          <div className="mt-1 flex gap-2">
+            <input
+              type="text"
+              value={newListName}
+              onChange={(e) => setNewListName(e.target.value)}
+              placeholder="New list name"
+              aria-label="New list name"
+              // biome-ignore lint/a11y/noAutofocus: the input appears on explicit user intent
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setCreatingList(false);
+              }}
+              className="min-w-0 flex-1 rounded border border-stone-300 px-2 py-1 text-sm"
+            />
+            <button
+              type="button"
+              disabled={newListName.trim() === ""}
+              onClick={() => {
+                const name = newListName.trim();
+                if (name === "") return;
+                const listId = newId();
+                void (async () => {
+                  await repo.createList({ id: listId, name, createdAt: now, updatedAt: now });
+                  await repo.addPlaceBlock(listId, view.savedPlace.id, nowIso());
+                  setMessage(`Added to "${name}".`);
+                })();
+                setCreatingList(false);
+                setNewListName("");
+              }}
+              className="shrink-0 rounded bg-stone-800 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+              data-testid="create-list-and-add"
+            >
+              Create & add
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreatingList(false)}
+              className="shrink-0 rounded px-2 py-1 text-xs text-stone-600 hover:bg-stone-100"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <select
+            aria-label="Add to list"
+            className="mt-1 w-full rounded border border-stone-200 px-2 py-1 text-sm"
+            value=""
+            data-testid="add-to-list"
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === "__new__") {
+                setCreatingList(true);
+                return;
+              }
+              const list = (lists ?? []).find((l) => l.id === value);
+              if (!list) return;
+              void repo
+                .addPlaceBlock(list.id, view.savedPlace.id, nowIso())
+                .then(() => setMessage(`Added to "${list.name}".`))
+                .catch((err: unknown) =>
+                  setMessage(err instanceof Error ? err.message : String(err)),
+                );
+            }}
+          >
+            <option value="">Add to list…</option>
+            {(lists ?? [])
+              .filter((l) => !(memberListIds ?? []).includes(l.id))
+              .map((list) => (
+                <option key={list.id} value={list.id}>
+                  {list.name}
+                </option>
+              ))}
+            <option value="__new__">+ New list…</option>
+          </select>
+        )}
+      </div>
 
       {/* Notes */}
       <div className="mt-4">

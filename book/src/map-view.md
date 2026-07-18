@@ -55,9 +55,11 @@ The mobile sheet / desktop panel shows (decisions of 2026-07-18):
 - Name, category, address, normalized website link, phone, and opening-hours state.
 - **No state marker on healthy places.** The only badge is "Not linked to OSM" on unlinked manual
   pins; freshness/recovery badges are deferred with the freshness UI (below).
-- Personal actions: **Save**, **Add tag**, and **Add note**. There is deliberately **no
-  add-to-guide action here**: guides link to places from the guide editor, never the reverse.
-  A place → guides reverse lookup may come later.
+- Personal actions: **Save**, **Add tag**, **Add note**, and **Add to list** — pick an existing
+  list or create a new one inline right on the card (supersedes the earlier no-add-here rule,
+  2026-07-18). The place card is where lists are *created*; the **Lists tab is browse/edit only**
+  (describe, reorder, remove). Lists a place already belongs to leave the dropdown; a full
+  membership display / reverse navigation may come later.
 - The **single OSM affordance is a small "View on OpenStreetMap" portal link.** In-app
   Edit/Report/Directions/Check-for-updates actions are removed — the portal itself offers editing
   and issue reporting. An unlinked manual pin shows its owner-provided facts and a
