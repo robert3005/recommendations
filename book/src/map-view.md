@@ -21,7 +21,7 @@ panel.
 └─────────────────────────────────────────────┘
 ```
 
-The menu leads to All Saved, Tags, Guides, publication status, backup/restore, provider/privacy
+The menu leads to All Saved, Tags, Lists, publication status, backup/restore, provider/privacy
 information, and settings. The category chips map the detailed OSM taxonomy into the small
 top-level groups adopted from [prior art](./prior-art-step.md).
 

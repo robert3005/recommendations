@@ -36,8 +36,8 @@ test.describe("offline shell", () => {
     );
 
     // Client-side routes work offline too.
-    await page.getByRole("link", { name: "Guides" }).click();
-    await expect(page.getByTestId("guides-page")).toBeVisible();
+    await page.getByRole("link", { name: "Lists" }).click();
+    await expect(page.getByTestId("lists-page")).toBeVisible();
     await page.getByRole("link", { name: "Settings" }).click();
     await expect(page.getByTestId("settings-page")).toBeVisible();
 

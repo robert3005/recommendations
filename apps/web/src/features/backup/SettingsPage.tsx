@@ -53,7 +53,7 @@ export function SettingsPage() {
       <section className="mt-4">
         <h2 className="text-sm font-semibold text-stone-700">Backup</h2>
         <p className="mt-1 text-xs text-stone-500">
-          A versioned ZIP with your places, tags, notes, guides, media, and the OSM evidence needed
+          A versioned ZIP with your places, tags, notes, lists, media, and the OSM evidence needed
           to preserve place identity. Data is device-local — back up regularly.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">

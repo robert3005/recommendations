@@ -1,4 +1,4 @@
-/** All guides: list + create (book/src/data-model.md: a list is a rich guide). */
+/** All lists: create + browse. Lists are the primary grouping (book/src/vision.md). */
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useLists } from "../../data/hooks";
@@ -6,7 +6,7 @@ import { useRepo } from "../../data/RepoContext";
 import { newId } from "../../lib/id";
 import { nowIso } from "../../lib/time";
 
-export function GuidesPage() {
+export function ListsPage() {
   const repo = useRepo();
   const lists = useLists();
   const [name, setName] = useState("");
@@ -20,8 +20,9 @@ export function GuidesPage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl p-4" data-testid="guides-page">
-      <h1 className="text-xl font-semibold text-stone-900">Guides</h1>
+    <div className="mx-auto max-w-2xl p-4" data-testid="lists-page">
+      <h1 className="text-xl font-semibold text-stone-900">Lists</h1>
+      <p className="mt-1 text-sm text-stone-500">Group places together and describe the set.</p>
       <div className="mt-3 flex gap-2">
         <input
           type="text"
@@ -30,15 +31,15 @@ export function GuidesPage() {
           onKeyDown={(e) => {
             if (e.key === "Enter") create();
           }}
-          placeholder="New guide, e.g. Lisbon trip"
-          aria-label="New guide name"
+          placeholder="New list, e.g. Lisbon favourites"
+          aria-label="New list name"
           className="flex-1 rounded border border-stone-300 px-3 py-1.5 text-sm"
         />
         <button
           type="button"
           onClick={create}
           className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
-          data-testid="create-guide"
+          data-testid="create-list"
         >
           Create
         </button>
@@ -47,7 +48,7 @@ export function GuidesPage() {
         {(lists ?? []).map((list) => (
           <li key={list.id}>
             <Link
-              to="/guides/$listId"
+              to="/lists/$listId"
               params={{ listId: list.id }}
               className="block px-1 py-3 hover:bg-stone-50"
             >
@@ -60,7 +61,7 @@ export function GuidesPage() {
         ))}
         {lists !== undefined && lists.length === 0 ? (
           <li className="py-6 text-sm text-stone-500">
-            No guides yet. Create one, then add places from the map.
+            No lists yet. Create one, then add saved places to it.
           </li>
         ) : null}
       </ul>

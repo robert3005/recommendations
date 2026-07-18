@@ -16,9 +16,11 @@ A responsive web app with:
   available) **website**, hours, and phone, sourced from OSM.
 - **Durable saving & tagging** — save an existing OSM POI under an app-owned identity, copy bounded
   OSM evidence for offline/recovery use, and attach free-form tags and personal notes.
-- **Lists as guides** — group saved places into named lists, and enrich them into **rich guides**
-  by interleaving Markdown narrative sections with places (e.g. a "Lisbon trip" with intro,
-  "Morning coffee", "Where to eat" sections between the pins).
+- **Lists first** (flow inverted 2026-07-18) — group saved places into named **lists** and give
+  each a short description of what ties the set together. Lists are the primary grouping and the
+  primary UI surface. Enriching a list into a narrative **guide** (interleaved Markdown sections,
+  reading view) is a later, opt-in step on top of the same data — the v1 flow starts with lists,
+  not guides.
 - **Shareable lists** — publish a guide to a persistent, **read-only public link**. Only the creator
   can update/unpublish it using a separate private editor bearer token. It shows the latest successfully
   published guide revision and the latest OSM facts the viewer can resolve.

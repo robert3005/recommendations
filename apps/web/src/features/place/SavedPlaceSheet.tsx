@@ -1,7 +1,7 @@
 /**
  * Saved-place detail: facts, tags, Markdown notes (full-screen editor), and the
  * manual-pin link-to-OSM upgrade. The only OSM affordance is a portal link;
- * freshness/refresh UI is deferred, and guide membership is managed from guides
+ * freshness/refresh UI is deferred, and list membership is managed from lists
  * (book/src/map-view.md).
  */
 import { displayFacts, linkPlaceToOsm, type Note } from "@placemarks/domain";

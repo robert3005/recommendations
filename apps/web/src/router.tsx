@@ -1,7 +1,7 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet } from "@tanstack/react-router";
 import { SettingsPage } from "./features/backup/SettingsPage";
-import { GuidePage } from "./features/guides/GuidePage";
-import { GuidesPage } from "./features/guides/GuidesPage";
+import { ListPage } from "./features/lists/ListPage";
+import { ListsPage } from "./features/lists/ListsPage";
 import { MapPage } from "./features/map/MapPage";
 
 function RootLayout() {
@@ -17,11 +17,8 @@ function RootLayout() {
         <Link to="/" className="rounded px-4 py-2 text-sm font-medium [&.active]:bg-stone-200">
           Map
         </Link>
-        <Link
-          to="/guides"
-          className="rounded px-4 py-2 text-sm font-medium [&.active]:bg-stone-200"
-        >
-          Guides
+        <Link to="/lists" className="rounded px-4 py-2 text-sm font-medium [&.active]:bg-stone-200">
+          Lists
         </Link>
         <Link
           to="/settings"
@@ -42,16 +39,16 @@ const mapRoute = createRoute({
   component: MapPage,
 });
 
-const guidesRoute = createRoute({
+const listsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/guides",
-  component: GuidesPage,
+  path: "/lists",
+  component: ListsPage,
 });
 
-const guideRoute = createRoute({
+const listRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/guides/$listId",
-  component: GuidePage,
+  path: "/lists/$listId",
+  component: ListPage,
 });
 
 const settingsRoute = createRoute({
@@ -60,7 +57,7 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
-export const routeTree = rootRoute.addChildren([mapRoute, guidesRoute, guideRoute, settingsRoute]);
+export const routeTree = rootRoute.addChildren([mapRoute, listsRoute, listRoute, settingsRoute]);
 
 export const router = createRouter({ routeTree });
 

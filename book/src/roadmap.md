@@ -48,12 +48,14 @@ off to OpenStreetMap without creating a second public correction record.
   matching; ambiguous candidates require owner review.
 - Saved-place and clustered map layers; save/unsave; tags through `TagAssignment` edges.
 - Markdown place/list notes with local media.
-- Guides built from ranked `ListBlock` entities and explicit `BlockNoteAttachment` records.
+- **Lists first**: ordered place groupings with an owner-written description, built from ranked
+  `ListBlock` entities. Narrative guide enrichment (section blocks, `BlockNoteAttachment`,
+  reading view) is deferred to a later milestone on the same data model.
 - Offline views/edits from IndexedDB; live search, uncached tiles, OSM refresh, and creation show
   clear online requirements.
 - Versioned ZIP backup/restore with manifest, checksums, binary media, and attributed OSM evidence.
 
-**Done when:** I can build and edit a five-place Lisbon guide offline after first load, restore it
+**Done when:** I can build and edit a five-place, described Lisbon list offline after first load, restore it
 from backup, and repair a simulated OSM node→way replacement without losing notes or membership.
 
 ## Phase 3 — Snapshot sharing
