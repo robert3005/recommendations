@@ -10,9 +10,9 @@ import { withProviders } from "../../.storybook/decorators";
 import * as NoteEditorStories from "../features/notes/NoteEditor.stories";
 import * as CandidatePickerStories from "../features/picker/CandidatePicker.stories";
 import * as ManualPinDialogStories from "../features/picker/ManualPinDialog.stories";
+import * as PlaceDetailsSheetStories from "../features/place/PlaceDetailsSheet.stories";
 import * as PlaceFieldsStories from "../features/place/PlaceFields.stories";
 import * as PlaceSheetStories from "../features/place/PlaceSheet.stories";
-import * as SavedPlaceSheetStories from "../features/place/SavedPlaceSheet.stories";
 import * as StateBadgeStories from "../features/place/StateBadge.stories";
 import * as TagEditorStories from "../features/place/TagEditor.stories";
 import * as SearchBarStories from "../features/search/SearchBar.stories";
@@ -24,7 +24,7 @@ const modules = [
   ["StateBadge", StateBadgeStories],
   ["PlaceFields", PlaceFieldsStories],
   ["PlaceSheet", PlaceSheetStories],
-  ["SavedPlaceSheet", SavedPlaceSheetStories],
+  ["PlaceDetailsSheet", PlaceDetailsSheetStories],
   ["SearchBar", SearchBarStories],
   ["CandidatePicker", CandidatePickerStories],
   ["ManualPinDialog", ManualPinDialogStories],

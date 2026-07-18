@@ -26,10 +26,9 @@ function poi(id: string): ResolvedPoi {
 }
 
 async function seed(repo: DexieRepository) {
-  const view = await repo.savePoi(poi("101"), NOW);
-  await repo.assignTag(view.savedPlace.id, "coffee", NOW);
   await repo.createList({ id: "l1", name: "Lisbon", createdAt: NOW, updatedAt: NOW });
-  await repo.addPlaceBlock("l1", view.savedPlace.id, NOW);
+  const view = await repo.addToList("l1", { kind: "poi", poi: poi("101") }, NOW);
+  await repo.assignTag(view.place.id, "coffee", NOW);
   await repo.addSectionBlock("l1", "## Morning", NOW);
   await repo.createNote({
     id: "n1",
@@ -53,13 +52,13 @@ describe("backup roundtrip", () => {
     const result = await importBackup(target, backup, "replace", LATER);
     expect(result.imported).toBeGreaterThan(0);
 
-    const saved = await target.listSavedPlaces();
-    expect(saved).toHaveLength(1);
-    expect(saved[0]?.tags.map((t) => t.name)).toEqual(["coffee"]);
+    const places = await target.listPlaces();
+    expect(places).toHaveLength(1);
+    expect(places[0]?.tags.map((t) => t.name)).toEqual(["coffee"]);
     const blocks = await target.getGuideBlocks("l1");
     expect(blocks).toHaveLength(2);
     // PlaceId is preserved — backup restore is the trusted identity path.
-    expect(saved[0]?.place.id).toBe((await source.listSavedPlaces())[0]?.place.id);
+    expect(places[0]?.place.id).toBe((await source.listPlaces())[0]?.place.id);
   });
 
   it("merge keeps newer records and creates note conflict copies", async () => {

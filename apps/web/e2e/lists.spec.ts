@@ -25,16 +25,16 @@ test("adding to a list saves the place; the Lists tab reads the marked list", as
   await expect(placeSheet.getByTestId("marker-#dc2626")).toBeChecked();
   await placeSheet.getByTestId("create-list-and-add").click();
   // The act of adding was the save: the saved sheet takes over, mark on map.
-  const savedSheet = page.getByTestId("saved-place-sheet");
-  await expect(savedSheet).toBeVisible();
-  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-saved-pins", /^[1-9]/);
-  await savedSheet.getByRole("button", { name: "Close" }).click();
+  const details = page.getByTestId("place-details");
+  await expect(details).toBeVisible();
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", /^[1-9]/);
+  await details.getByRole("button", { name: "Close" }).click();
 
   // Café do Rio: straight into the existing list from the unsaved card.
   await openPlace(page, /Café do Rio/);
   await placeSheet.getByTestId("add-to-list").selectOption({ label: "Lisbon favourites" });
-  await expect(savedSheet).toBeVisible();
-  await savedSheet.getByRole("button", { name: "Close" }).click();
+  await expect(details).toBeVisible();
+  await details.getByRole("button", { name: "Close" }).click();
 
   // The Lists tab reads: marker + both places in order, no edit affordances.
   await page

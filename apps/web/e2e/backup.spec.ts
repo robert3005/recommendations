@@ -10,21 +10,24 @@ async function reopenSavedAtCenter(page: Page) {
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
   const mapEl = page.getByTestId("map-canvas");
   // The map reports painted saved pins via a data attribute — no sleeps.
-  await expect(mapEl).toHaveAttribute("data-saved-pins", /^[1-9]/, { timeout: 10_000 });
+  await expect(mapEl).toHaveAttribute("data-pins", /^[1-9]/, { timeout: 10_000 });
   const box = await mapEl.boundingBox();
   if (!box) throw new Error("no canvas");
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
-test("export → unsave → import(replace) restores the library", async ({ page }) => {
+test("export → remove-place → import(replace) restores the library", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
 
-  // Seed: save Café Central (map center at initial zoom) with a tag.
+  // Seed: Café Central enters the library via a new list, with a tag.
   await page.getByRole("combobox", { name: "Search places" }).fill("cafe");
   await page.getByRole("option", { name: /Café Central/ }).click();
-  await page.getByTestId("place-sheet").getByTestId("save-place").click();
-  const sheet = page.getByTestId("saved-place-sheet");
+  const placeSheet = page.getByTestId("place-sheet");
+  await placeSheet.getByTestId("add-to-list").selectOption("__new__");
+  await placeSheet.getByLabel("New list name").fill("Backup list");
+  await placeSheet.getByTestId("create-list-and-add").click();
+  const sheet = page.getByTestId("place-details");
   await expect(sheet).toBeVisible();
   await sheet.getByLabel("Add tag").fill("coffee");
   await sheet.getByLabel("Add tag").press("Enter");
@@ -42,15 +45,15 @@ test("export → unsave → import(replace) restores the library", async ({ page
   const backupPath = await download.path();
   await expect(page.getByTestId("settings-message")).toContainText("Backup exported");
 
-  // Destroy: unsave the place.
+  // Destroy: remove-place the place.
   await page
     .getByRole("navigation", { name: "Primary" })
     .getByRole("link", { name: "Map" })
     .click();
   await reopenSavedAtCenter(page);
-  await expect(page.getByTestId("saved-place-sheet")).toBeVisible();
-  await page.getByTestId("unsave").click();
-  await expect(page.getByTestId("saved-place-sheet")).toHaveCount(0);
+  await expect(page.getByTestId("place-details")).toBeVisible();
+  await page.getByTestId("remove-place").click();
+  await expect(page.getByTestId("place-details")).toHaveCount(0);
 
   // Restore: replace-import the downloaded archive.
   await page
@@ -67,7 +70,7 @@ test("export → unsave → import(replace) restores the library", async ({ page
     .getByRole("link", { name: "Map" })
     .click();
   await reopenSavedAtCenter(page);
-  const restored = page.getByTestId("saved-place-sheet");
+  const restored = page.getByTestId("place-details");
   await expect(restored).toBeVisible();
   await expect(restored.getByText("Café Central")).toBeVisible();
   await expect(restored.getByText("coffee")).toBeVisible();

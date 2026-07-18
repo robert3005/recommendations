@@ -2,6 +2,10 @@
  * Dexie schema — the durable primary store (book/src/storage-sync.md).
  * Rows carry derived index fields (refKeys, targetKey, kind/refId) next to the
  * domain shape; the repository strips/derives them at the boundary.
+ *
+ * v2/v3 (2026-07-18): the standalone "save" concept was removed — membership is
+ * existence. Tag assignments and place blocks join directly on PlaceId; the old
+ * savedPlaces rows are migrated through and then dropped.
  */
 import type {
   BlockNoteAttachment,
@@ -10,7 +14,6 @@ import type {
   MediaAsset,
   Note,
   Place,
-  SavedPlace,
   Tag,
   TagAssignment,
 } from "@placemarks/domain";
@@ -26,7 +29,6 @@ export interface MediaBlobRow {
 
 export class PlacemarksDb extends Dexie {
   places!: EntityTable<PlaceRow, "id">;
-  savedPlaces!: EntityTable<SavedPlace, "id">;
   tags!: EntityTable<Tag, "id">;
   tagAssignments!: EntityTable<TagAssignment, "id">;
   notes!: EntityTable<NoteRow, "id">;
@@ -50,5 +52,36 @@ export class PlacemarksDb extends Dexie {
       listBlocks: "id, listId, kind, refId, updatedAt",
       blockNoteAttachments: "id, blockId, noteId, [blockId+noteId], updatedAt",
     });
+    // v2: edges join on PlaceId directly; migrate via the old savedPlaces rows.
+    this.version(2)
+      .stores({
+        tagAssignments: "id, placeId, tagId, [placeId+tagId], updatedAt",
+      })
+      .upgrade(async (tx) => {
+        const saves = (await tx.table("savedPlaces").toArray()) as {
+          id: string;
+          placeId: string;
+        }[];
+        const placeIdBySaveId = new Map(saves.map((s) => [s.id, s.placeId]));
+        await tx
+          .table("tagAssignments")
+          .toCollection()
+          .modify((a: Record<string, unknown>) => {
+            a.placeId = placeIdBySaveId.get(a.savedPlaceId as string) ?? a.savedPlaceId;
+            delete a.savedPlaceId;
+          });
+        await tx
+          .table("listBlocks")
+          .toCollection()
+          .modify((b: Record<string, unknown>) => {
+            if (b.kind === "place") {
+              const placeId = placeIdBySaveId.get(b.refId as string) ?? (b.refId as string);
+              b.refId = placeId;
+              b.content = { type: "place", placeId };
+            }
+          });
+      });
+    // v3: the savedPlaces store is gone.
+    this.version(3).stores({ savedPlaces: null });
   }
 }

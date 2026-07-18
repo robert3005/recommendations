@@ -1,13 +1,16 @@
 /**
- * DexieRepository — the LocalRepository implementation. All cross-entity invariants
- * from book/src/data-model.md are enforced here, inside transactions:
- *  - at most one live SavedPlace per PlaceId;
- *  - one live TagAssignment per (savedPlaceId, tagId); tag reuse by normalized name;
- *  - a place appears at most once per list; section notes belong to their list;
+ * DexieRepository — the LocalRepository implementation. Core rule
+ * (book/src/data-model.md, 2026-07-18): **membership is existence** — a place
+ * persists only while it belongs to at least one list. Cross-entity invariants
+ * are enforced here, inside transactions:
+ *  - a place appears at most once per list; losing its last membership removes
+ *    the place with its tags and notes;
+ *  - one live TagAssignment per (placeId, tagId); tag reuse by normalized name;
  *  - attachments join a place block to a note about the SAME PlaceId;
  *  - deletes tombstone dependents in the same transaction.
  */
 import {
+  type AddToListSource,
   allRefKeys,
   type BlockNoteAttachment,
   compareByRank,
@@ -17,7 +20,6 @@ import {
   type GuideBlockView,
   type List,
   type ListBlock,
-  type ManualFacts,
   type MediaAsset,
   type Note,
   normalizeTagName,
@@ -26,12 +28,11 @@ import {
   type Place,
   type PlaceId,
   type PlacemarksRepository,
+  type PlaceView,
   type ResolvedPoi,
   rankAfter,
   rankBetween,
   refKey,
-  type SavedPlace,
-  type SavedPlaceView,
   sameRef,
   type Tag,
   type TagAssignment,
@@ -51,7 +52,7 @@ function toBlockRow(block: ListBlock): ListBlockRow {
   return {
     ...block,
     kind: block.content.type,
-    refId: block.content.type === "section" ? block.content.noteId : block.content.savedPlaceId,
+    refId: block.content.type === "section" ? block.content.noteId : block.content.placeId,
   };
 }
 
@@ -77,135 +78,81 @@ export class DexieRepository implements PlacemarksRepository {
     return rows.find((row) => !row.deleted);
   }
 
-  private async liveSaveForPlace(placeId: PlaceId): Promise<SavedPlace | undefined> {
-    const rows = await this.db.savedPlaces.where("placeId").equals(placeId).toArray();
-    return rows.find((row) => !row.deleted);
-  }
-
   async updatePlace(place: Place): Promise<void> {
     await this.db.places.put(toPlaceRow(place));
   }
 
-  private async viewOf(savedPlace: SavedPlace): Promise<SavedPlaceView> {
-    const place = await this.db.places.get(savedPlace.placeId);
-    if (!place) throw new Error(`missing place ${savedPlace.placeId}`);
+  private async tagsOf(placeId: PlaceId): Promise<Tag[]> {
     const assignments = (
-      await this.db.tagAssignments.where("savedPlaceId").equals(savedPlace.id).toArray()
+      await this.db.tagAssignments.where("placeId").equals(placeId).toArray()
     ).filter((a) => !a.deleted);
-    const tags = (await Promise.all(assignments.map((a) => this.db.tags.get(a.tagId)))).filter(
+    return (await Promise.all(assignments.map((a) => this.db.tags.get(a.tagId)))).filter(
       (t): t is Tag => t !== undefined && !t.deleted,
     );
-    return { savedPlace, place, tags };
   }
 
-  async savePoi(poi: ResolvedPoi, now: string): Promise<SavedPlaceView> {
-    return this.db.transaction(
-      "rw",
-      [this.db.places, this.db.savedPlaces, this.db.tagAssignments, this.db.tags],
-      async () => {
-        const found = (
-          await this.db.places.where("refKeys").equals(refKey(poi.osmRef)).toArray()
-        ).find((row) => !row.deleted);
-        let place: Place;
-        if (found) {
-          // Current-ref match refreshes evidence; a historical-ref match means this
-          // element was already replaced — reuse the place, keep the newer binding.
-          if (found.currentOsmRef && sameRef(found.currentOsmRef, poi.osmRef)) {
-            place = {
-              ...found,
-              lastVerified: evidenceFromPoi(poi),
-              resolutionState: "resolved",
-              lastResolutionAttemptAt: now,
-              updatedAt: now,
-            };
-            await this.db.places.put(toPlaceRow(place));
-          } else {
-            place = found;
-          }
-        } else {
-          place = createOsmPlace(newId(), poi, now);
-          await this.db.places.put(toPlaceRow(place));
-        }
-        const existingSave = await this.liveSaveForPlace(place.id);
-        if (existingSave) return this.viewOf(existingSave);
-        const savedPlace: SavedPlace = {
-          id: newId(),
-          placeId: place.id,
-          createdAt: now,
-          updatedAt: now,
-        };
-        await this.db.savedPlaces.put(savedPlace);
-        return this.viewOf(savedPlace);
-      },
+  private async livePlaceBlocks(placeId: PlaceId): Promise<ListBlockRow[]> {
+    const liveListIds = new Set((await this.listLists()).map((l) => l.id));
+    return (await this.db.listBlocks.where("refId").equals(placeId).toArray()).filter(
+      (b) => !b.deleted && b.kind === "place" && liveListIds.has(b.listId),
     );
   }
 
-  async saveManual(facts: ManualFacts, now: string): Promise<SavedPlaceView> {
-    return this.db.transaction("rw", [this.db.places, this.db.savedPlaces], async () => {
-      const place = createManualPlace(newId(), facts, now);
-      await this.db.places.put(toPlaceRow(place));
-      const savedPlace: SavedPlace = {
-        id: newId(),
-        placeId: place.id,
-        createdAt: now,
-        updatedAt: now,
-      };
-      await this.db.savedPlaces.put(savedPlace);
-      return { savedPlace, place, tags: [] };
-    });
+  async listPlaces(): Promise<PlaceView[]> {
+    const membership = await this.listMembershipByPlace();
+    const views = await Promise.all(
+      Object.keys(membership).map(async (placeId): Promise<PlaceView | undefined> => {
+        const place = live(await this.db.places.get(placeId));
+        if (!place) return undefined;
+        return { place, tags: await this.tagsOf(placeId) };
+      }),
+    );
+    return views.filter((v): v is PlaceView => v !== undefined);
   }
 
-  async listSavedPlaces(): Promise<SavedPlaceView[]> {
-    const saves = (await this.db.savedPlaces.toArray()).filter((s) => !s.deleted);
-    return Promise.all(saves.map((s) => this.viewOf(s)));
+  async getPlaceView(placeId: PlaceId): Promise<PlaceView | undefined> {
+    const place = live(await this.db.places.get(placeId));
+    if (!place) return undefined;
+    return { place, tags: await this.tagsOf(placeId) };
   }
 
-  async getSavedPlace(id: string): Promise<SavedPlaceView | undefined> {
-    const savedPlace = live(await this.db.savedPlaces.get(id));
-    if (!savedPlace) return undefined;
-    return this.viewOf(savedPlace);
+  /** Tombstone the place with its tags, notes, and every membership block. */
+  private async tombstonePlace(place: Place, now: string): Promise<void> {
+    await this.db.places.put(toPlaceRow({ ...place, deleted: true, updatedAt: now }));
+    const assignments = (
+      await this.db.tagAssignments.where("placeId").equals(place.id).toArray()
+    ).filter((a) => !a.deleted);
+    for (const a of assignments) {
+      await this.db.tagAssignments.put({ ...a, deleted: true, updatedAt: now });
+    }
+    const notes = (
+      await this.db.notes.where("targetKey").equals(`place:${place.id}`).toArray()
+    ).filter((n) => !n.deleted);
+    for (const note of notes) {
+      await this.tombstoneNote(note, now);
+    }
+    const blocks = (await this.db.listBlocks.where("refId").equals(place.id).toArray()).filter(
+      (b) => !b.deleted && b.kind === "place",
+    );
+    for (const block of blocks) {
+      await this.tombstoneBlock(block, now);
+    }
   }
 
-  async findSavedPlaceByPlaceId(placeId: PlaceId): Promise<SavedPlace | undefined> {
-    return this.liveSaveForPlace(placeId);
-  }
-
-  async unsave(savedPlaceId: string, now: string): Promise<void> {
+  async removePlace(placeId: PlaceId, now: string): Promise<void> {
     await this.db.transaction(
       "rw",
       [
-        this.db.savedPlaces,
+        this.db.places,
         this.db.tagAssignments,
+        this.db.notes,
         this.db.listBlocks,
         this.db.blockNoteAttachments,
-        this.db.notes,
+        this.db.lists,
       ],
       async () => {
-        const savedPlace = live(await this.db.savedPlaces.get(savedPlaceId));
-        if (!savedPlace) return;
-        await this.db.savedPlaces.put({ ...savedPlace, deleted: true, updatedAt: now });
-        // Tombstone tag assignments.
-        const assignments = await this.db.tagAssignments
-          .where("savedPlaceId")
-          .equals(savedPlaceId)
-          .toArray();
-        for (const a of assignments.filter((a) => !a.deleted)) {
-          await this.db.tagAssignments.put({ ...a, deleted: true, updatedAt: now });
-        }
-        // Tombstone place blocks in every guide (and their attachments).
-        const blocks = (
-          await this.db.listBlocks.where("refId").equals(savedPlaceId).toArray()
-        ).filter((b) => !b.deleted && b.kind === "place");
-        for (const block of blocks) {
-          await this.tombstoneBlock(block, now);
-        }
-        // Tombstone private place notes.
-        const notes = (
-          await this.db.notes.where("targetKey").equals(`place:${savedPlace.placeId}`).toArray()
-        ).filter((n) => !n.deleted);
-        for (const note of notes) {
-          await this.tombstoneNote(note, now);
-        }
+        const place = live(await this.db.places.get(placeId));
+        if (place) await this.tombstonePlace(place, now);
       },
     );
   }
@@ -216,51 +163,44 @@ export class DexieRepository implements PlacemarksRepository {
     return (await this.db.tags.toArray()).filter((t) => !t.deleted);
   }
 
-  async assignTag(savedPlaceId: string, tagName: string, now: string): Promise<TagAssignment> {
-    return this.db.transaction(
+  async assignTag(placeId: PlaceId, tagName: string, now: string): Promise<void> {
+    await this.db.transaction(
       "rw",
-      [this.db.tags, this.db.tagAssignments, this.db.savedPlaces],
+      [this.db.tags, this.db.tagAssignments, this.db.places],
       async () => {
-        const savedPlace = live(await this.db.savedPlaces.get(savedPlaceId));
-        if (!savedPlace) throw new Error("cannot tag: saved place not found");
+        if (!live(await this.db.places.get(placeId))) {
+          throw new Error("cannot tag: place not found");
+        }
         const nameNorm = normalizeTagName(tagName);
         if (nameNorm === "") throw new Error("cannot tag: empty tag name");
         let tag = (await this.db.tags.where("nameNorm").equals(nameNorm).toArray()).find(
           (t) => !t.deleted,
         );
         if (!tag) {
-          tag = {
-            id: newId(),
-            name: tagName.trim(),
-            nameNorm,
-            createdAt: now,
-            updatedAt: now,
-          };
+          tag = { id: newId(), name: tagName.trim(), nameNorm, createdAt: now, updatedAt: now };
           await this.db.tags.put(tag);
         }
         const pair = await this.db.tagAssignments
-          .where("[savedPlaceId+tagId]")
-          .equals([savedPlaceId, tag.id])
+          .where("[placeId+tagId]")
+          .equals([placeId, tag.id])
           .toArray();
-        const existing = pair.find((a) => !a.deleted);
-        if (existing) return existing;
+        if (pair.find((a) => !a.deleted)) return;
         const assignment: TagAssignment = {
           id: newId(),
-          savedPlaceId,
+          placeId,
           tagId: tag.id,
           createdAt: now,
           updatedAt: now,
         };
         await this.db.tagAssignments.put(assignment);
-        return assignment;
       },
     );
   }
 
-  async removeTagAssignment(savedPlaceId: string, tagId: string, now: string): Promise<void> {
+  async removeTagAssignment(placeId: PlaceId, tagId: string, now: string): Promise<void> {
     const pair = await this.db.tagAssignments
-      .where("[savedPlaceId+tagId]")
-      .equals([savedPlaceId, tagId])
+      .where("[placeId+tagId]")
+      .equals([placeId, tagId])
       .toArray();
     const existing = pair.find((a) => !a.deleted);
     if (existing) {
@@ -286,7 +226,7 @@ export class DexieRepository implements PlacemarksRepository {
 
   private async tombstoneNote(note: Note, now: string): Promise<void> {
     await this.db.notes.put(toNoteRow({ ...note, deleted: true, updatedAt: now }));
-    // A deleted note disappears from every guide attachment…
+    // A deleted note disappears from every attachment…
     const attachments = (
       await this.db.blockNoteAttachments.where("noteId").equals(note.id).toArray()
     ).filter((a) => !a.deleted);
@@ -332,7 +272,7 @@ export class DexieRepository implements PlacemarksRepository {
     return { asset, blob: blobRow.blob };
   }
 
-  // ---------- lists / guides ----------
+  // ---------- lists ----------
 
   async listLists(): Promise<List[]> {
     return (await this.db.lists.toArray()).filter((l) => !l.deleted);
@@ -363,7 +303,14 @@ export class DexieRepository implements PlacemarksRepository {
   async deleteList(listId: string, now: string): Promise<void> {
     await this.db.transaction(
       "rw",
-      [this.db.lists, this.db.listBlocks, this.db.blockNoteAttachments, this.db.notes],
+      [
+        this.db.lists,
+        this.db.listBlocks,
+        this.db.blockNoteAttachments,
+        this.db.notes,
+        this.db.places,
+        this.db.tagAssignments,
+      ],
       async () => {
         const list = live(await this.db.lists.get(listId));
         if (!list) return;
@@ -374,12 +321,20 @@ export class DexieRepository implements PlacemarksRepository {
         for (const block of blocks) {
           await this.tombstoneBlock(block, now);
         }
-        // Section notes belong to the guide and die with it; place notes do not.
+        // Section notes belong to the list and die with it.
         const sectionNotes = (
           await this.db.notes.where("targetKey").equals(`list:${listId}`).toArray()
         ).filter((n) => !n.deleted);
         for (const note of sectionNotes) {
           await this.db.notes.put(toNoteRow({ ...note, deleted: true, updatedAt: now }));
+        }
+        // Membership is existence: places whose only membership was here go too.
+        for (const block of blocks.filter((b) => b.kind === "place")) {
+          const remaining = await this.livePlaceBlocks(block.refId);
+          if (remaining.length === 0) {
+            const place = live(await this.db.places.get(block.refId));
+            if (place) await this.tombstonePlace(place, now);
+          }
         }
       },
     );
@@ -400,8 +355,7 @@ export class DexieRepository implements PlacemarksRepository {
           const sectionNote = live(await this.db.notes.get(block.content.noteId));
           return { block, ...(sectionNote ? { sectionNote } : {}) };
         }
-        const savedPlace = live(await this.db.savedPlaces.get(block.content.savedPlaceId));
-        const place = savedPlace ? live(await this.db.places.get(savedPlace.placeId)) : undefined;
+        const place = live(await this.db.places.get(block.content.placeId));
         const attachmentRows = (
           await this.db.blockNoteAttachments.where("blockId").equals(block.id).toArray()
         )
@@ -419,17 +373,16 @@ export class DexieRepository implements PlacemarksRepository {
             ),
           )
         ).filter((x): x is { attachment: BlockNoteAttachment; note: Note } => x !== undefined);
-        return {
-          block,
-          ...(savedPlace ? { savedPlace } : {}),
-          ...(place ? { place } : {}),
-          attachments,
-        };
+        return { block, ...(place ? { place } : {}), attachments };
       }),
     );
   }
 
-  async listMembershipBySavedPlace(): Promise<Record<string, string[]>> {
+  async listIdsForPlace(placeId: PlaceId): Promise<string[]> {
+    return [...new Set((await this.livePlaceBlocks(placeId)).map((b) => b.listId))];
+  }
+
+  async listMembershipByPlace(): Promise<Record<string, string[]>> {
     const liveListIds = new Set((await this.listLists()).map((l) => l.id));
     const blocks = (await this.db.listBlocks.toArray()).filter(
       (b) => !b.deleted && b.kind === "place" && liveListIds.has(b.listId),
@@ -443,39 +396,64 @@ export class DexieRepository implements PlacemarksRepository {
     return membership;
   }
 
-  async listIdsForSavedPlace(savedPlaceId: string): Promise<string[]> {
-    const blocks = (await this.db.listBlocks.where("refId").equals(savedPlaceId).toArray()).filter(
-      (b) => !b.deleted && b.kind === "place",
-    );
-    const listIds = [...new Set(blocks.map((b) => b.listId))];
-    const lists = await Promise.all(listIds.map((id) => this.db.lists.get(id)));
-    return lists.filter((l) => l && !l.deleted).map((l) => (l as { id: string }).id);
-  }
-
-  async addPlaceBlock(listId: string, savedPlaceId: string, now: string): Promise<ListBlock> {
+  async addToList(listId: string, source: AddToListSource, now: string): Promise<PlaceView> {
     return this.db.transaction(
       "rw",
-      [this.db.lists, this.db.listBlocks, this.db.savedPlaces],
+      [this.db.lists, this.db.listBlocks, this.db.places, this.db.tagAssignments],
       async () => {
         if (!live(await this.db.lists.get(listId))) throw new Error("list not found");
-        if (!live(await this.db.savedPlaces.get(savedPlaceId)))
-          throw new Error("saved place not found");
+
+        // Resolve or create the place — adding to a list is how it comes to exist.
+        let place: Place;
+        if (source.kind === "existing") {
+          const existing = live(await this.db.places.get(source.placeId));
+          if (!existing) throw new Error("place not found");
+          place = existing;
+        } else if (source.kind === "manual") {
+          place = createManualPlace(newId(), source.facts, now);
+          await this.db.places.put(toPlaceRow(place));
+        } else {
+          const poi: ResolvedPoi = source.poi;
+          const found = (
+            await this.db.places.where("refKeys").equals(refKey(poi.osmRef)).toArray()
+          ).find((row) => !row.deleted);
+          if (found) {
+            // Current-ref match refreshes evidence; a historical-ref match means
+            // the element was replaced — reuse the place, keep the newer binding.
+            if (found.currentOsmRef && sameRef(found.currentOsmRef, poi.osmRef)) {
+              place = {
+                ...found,
+                lastVerified: evidenceFromPoi(poi),
+                resolutionState: "resolved",
+                lastResolutionAttemptAt: now,
+                updatedAt: now,
+              };
+              await this.db.places.put(toPlaceRow(place));
+            } else {
+              place = found;
+            }
+          } else {
+            place = createOsmPlace(newId(), poi, now);
+            await this.db.places.put(toPlaceRow(place));
+          }
+        }
+
         const blocks = await this.liveBlocks(listId);
-        // A place may appear at most once in a list (book/src/data-model.md).
-        if (blocks.some((b) => b.kind === "place" && b.refId === savedPlaceId)) {
-          throw new Error("place already in this guide");
+        // A place may appear at most once in a list.
+        if (blocks.some((b) => b.kind === "place" && b.refId === place.id)) {
+          throw new Error("place already in this list");
         }
         const lastRank = blocks.length > 0 ? (blocks[blocks.length - 1]?.rank ?? null) : null;
         const block: ListBlock = {
           id: newId(),
           listId,
           rank: rankAfter(lastRank),
-          content: { type: "place", savedPlaceId },
+          content: { type: "place", placeId: place.id },
           createdAt: now,
           updatedAt: now,
         };
         await this.db.listBlocks.put(toBlockRow(block));
-        return block;
+        return { place, tags: await this.tagsOf(place.id) };
       },
     );
   }
@@ -541,15 +519,31 @@ export class DexieRepository implements PlacemarksRepository {
   async removeBlock(blockId: string, now: string): Promise<void> {
     await this.db.transaction(
       "rw",
-      [this.db.listBlocks, this.db.blockNoteAttachments, this.db.notes],
+      [
+        this.db.listBlocks,
+        this.db.blockNoteAttachments,
+        this.db.notes,
+        this.db.places,
+        this.db.tagAssignments,
+        this.db.lists,
+      ],
       async () => {
         const block = live(await this.db.listBlocks.get(blockId));
         if (!block) return;
         await this.tombstoneBlock(block, now);
-        // A removed section block takes its guide-owned note with it.
+        // A removed section block takes its list-owned note with it.
         if (block.content.type === "section") {
           const note = live(await this.db.notes.get(block.content.noteId));
-          if (note) await this.db.notes.put(toNoteRow({ ...note, deleted: true, updatedAt: now }));
+          if (note) {
+            await this.db.notes.put(toNoteRow({ ...note, deleted: true, updatedAt: now }));
+          }
+          return;
+        }
+        // Membership is existence: dropping the last membership removes the place.
+        const remaining = await this.livePlaceBlocks(block.content.placeId);
+        if (remaining.length === 0) {
+          const place = live(await this.db.places.get(block.content.placeId));
+          if (place) await this.tombstonePlace(place, now);
         }
       },
     );
@@ -562,7 +556,7 @@ export class DexieRepository implements PlacemarksRepository {
   ): Promise<BlockNoteAttachment> {
     return this.db.transaction(
       "rw",
-      [this.db.listBlocks, this.db.notes, this.db.savedPlaces, this.db.blockNoteAttachments],
+      [this.db.listBlocks, this.db.notes, this.db.blockNoteAttachments],
       async () => {
         const block = live(await this.db.listBlocks.get(blockId));
         if (block?.content.type !== "place") {
@@ -570,10 +564,8 @@ export class DexieRepository implements PlacemarksRepository {
         }
         const note = live(await this.db.notes.get(noteId));
         if (!note) throw new Error("note not found");
-        const savedPlace = live(await this.db.savedPlaces.get(block.content.savedPlaceId));
-        if (!savedPlace) throw new Error("saved place not found");
         // The invariant: an attached note is about the SAME place as the block.
-        if (note.target.kind !== "place" || note.target.placeId !== savedPlace.placeId) {
+        if (note.target.kind !== "place" || note.target.placeId !== block.content.placeId) {
           throw new Error("note targets a different place than this block");
         }
         const pair = await this.db.blockNoteAttachments

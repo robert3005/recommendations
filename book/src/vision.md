@@ -14,8 +14,10 @@ A responsive web app with:
 - A **map view** as the home screen — pan/zoom, current location, search.
 - **Place lookup** — tap a pin or search to see a place's name, category, address, and (when
   available) **website**, hours, and phone, sourced from OSM.
-- **Durable saving & tagging** — save an existing OSM POI under an app-owned identity, copy bounded
-  OSM evidence for offline/recovery use, and attach free-form tags and personal notes.
+- **Durable places & tagging** — a place enters the library by being **added to a list** (there
+  is no standalone save): an existing OSM POI resolves under an app-owned identity with bounded
+  copied evidence, then carries free-form tags and personal notes. **Membership is existence** —
+  a place removed from its last list is gone.
 - **Lists first** (flow inverted 2026-07-18) — group saved places into named **lists**. A list
   is a name plus a **user-selected marker colour** over an ordered set of places: created and
   populated **from a place's card** ("add to new list" — and adding to a list *is* the save),

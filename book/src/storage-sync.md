@@ -13,8 +13,9 @@ primary store for the web client.
 
 - `places` — app-owned `PlaceId`, current/historical OSM bindings, first-seen evidence,
   last-verified evidence, and resolution state.
-- `savedPlaces`, `notes`, `tags`, `tagAssignments`, `lists`, `listBlocks`,
-  `blockNoteAttachments`, and `blockTagSelections` — personal domain entities.
+- `notes`, `tags`, `tagAssignments`, `lists`, `listBlocks`, `blockNoteAttachments`, and
+  `blockTagSelections` — personal domain entities. There is no saves store (2026-07-18:
+  membership is existence — tag assignments and place blocks join directly on `PlaceId`).
 - `media` — binary image blobs keyed separately from portable `MediaAsset` metadata.
 - `publications` — private publication state, public slug, revisions, status, and a reference to a
   local credential.

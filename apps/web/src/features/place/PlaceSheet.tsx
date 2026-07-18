@@ -4,8 +4,8 @@
  * (book/src/map-view.md).
  */
 import { refKey } from "@placemarks/domain";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { useLists, useSavedPlaceForRef } from "../../data/hooks";
+import { useQuery } from "@tanstack/react-query";
+import { useLists, usePlaceForRef } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import { newId } from "../../lib/id";
 import { nowIso } from "../../lib/time";
@@ -13,8 +13,8 @@ import { poiResolver } from "../../providers";
 import { type Selection, useUiStore } from "../../state/ui";
 import { AddToList } from "./AddToList";
 import { OsmLink } from "./OsmLink";
+import { PlaceDetailsSheet } from "./PlaceDetailsSheet";
 import { PlaceFields } from "./PlaceFields";
-import { SavedPlaceSheet } from "./SavedPlaceSheet";
 
 function SheetShell({ children, label }: { children: React.ReactNode; label: string }) {
   const clearSelection = useUiStore((s) => s.clearSelection);
@@ -41,20 +41,12 @@ function SheetShell({ children, label }: { children: React.ReactNode; label: str
 function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind: "osm" }> }) {
   const { ref, hint } = selection;
   const repo = useRepo();
-  const selectSaved = useUiStore((s) => s.selectSaved);
-  const existingSave = useSavedPlaceForRef(ref);
+  const selectPlace = useUiStore((s) => s.selectPlace);
+  const existingPlace = usePlaceForRef(ref);
   const lists = useLists();
   const resolveQuery = useQuery({
     queryKey: ["resolve", refKey(ref)],
     queryFn: ({ signal }) => poiResolver.resolveExact(ref, { signal }),
-  });
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      const outcome = resolveQuery.data;
-      if (outcome?.type !== "ok") throw new Error("not resolved");
-      return repo.savePoi(outcome.poi, nowIso());
-    },
-    onSuccess: (view) => selectSaved(view.savedPlace.id),
   });
 
   const outcome = resolveQuery.data;
@@ -112,40 +104,30 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
         {...(poi.openingHours ? { openingHours: poi.openingHours } : {})}
         source="live"
       />
-      <div className="mt-3">
-        {existingSave ? (
+      {existingPlace ? (
+        <div className="mt-3">
           <button
             type="button"
-            onClick={() => selectSaved(existingSave.id)}
+            onClick={() => selectPlace(existingPlace.id)}
             className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
-            data-testid="open-saved"
+            data-testid="open-place"
           >
-            Open saved place
+            Open place
           </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending}
-            className="rounded bg-rose-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
-            data-testid="save-place"
-          >
-            {saveMutation.isPending ? "Saving…" : "Save"}
-          </button>
-        )}
-      </div>
-      {!existingSave ? (
+        </div>
+      ) : null}
+      {!existingPlace ? (
         <div className="mt-3">
           <h3 className="text-xs font-semibold tracking-wide text-stone-500 uppercase">Lists</h3>
           <AddToList
             lists={lists}
             memberListIds={[]}
             onPick={(target) => {
-              // Adding a place to a list IS the save (book/src/map-view.md).
+              // Adding a place to a list is how it comes to exist (membership is existence).
               void (async () => {
-                const saved = await repo.savePoi(poi, nowIso());
+                let listId: string;
                 if (target.kind === "new") {
-                  const listId = newId();
+                  listId = newId();
                   await repo.createList({
                     id: listId,
                     name: target.name,
@@ -153,11 +135,11 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
                     createdAt: nowIso(),
                     updatedAt: nowIso(),
                   });
-                  await repo.addPlaceBlock(listId, saved.savedPlace.id, nowIso());
                 } else {
-                  await repo.addPlaceBlock(target.list.id, saved.savedPlace.id, nowIso());
+                  listId = target.list.id;
                 }
-                selectSaved(saved.savedPlace.id);
+                const view = await repo.addToList(listId, { kind: "poi", poi }, nowIso());
+                selectPlace(view.place.id);
               })();
             }}
           />
@@ -174,5 +156,5 @@ export function PlaceSheet() {
   const selection = useUiStore((s) => s.selection);
   if (!selection) return null;
   if (selection.kind === "osm") return <OsmSelectionSheet selection={selection} />;
-  return <SavedPlaceSheet savedPlaceId={selection.savedPlaceId} />;
+  return <PlaceDetailsSheet placeId={selection.placeId} />;
 }

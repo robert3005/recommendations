@@ -3,11 +3,12 @@ import { displayFacts, refKey } from "@placemarks/domain";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { DISCOVER_MIN_ZOOM, MAP_STYLE_URL } from "../../config";
-import { useListMembership, useLists, useSavedPlaceViews } from "../../data/hooks";
+import { useLibraryPlaces, useListMembership, useLists } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
+import { newId } from "../../lib/id";
 import { pinColorForLists } from "../../lib/markers";
 import { nowIso } from "../../lib/time";
-import { MapView, type PoiPinFeature, type SavedPinFeature } from "../../map/MapView";
+import { MapView, type PlacePinFeature, type PoiPinFeature } from "../../map/MapView";
 import { poiResolver } from "../../providers";
 import { useUiStore } from "../../state/ui";
 import { CandidatePicker } from "../picker/CandidatePicker";
@@ -30,12 +31,12 @@ export function MapPage() {
   const flyTo = useUiStore((s) => s.flyTo);
   const pickerAt = useUiStore((s) => s.pickerAt);
   const selectOsm = useUiStore((s) => s.selectOsm);
-  const selectSaved = useUiStore((s) => s.selectSaved);
+  const selectPlace = useUiStore((s) => s.selectPlace);
   const openPicker = useUiStore((s) => s.openPicker);
   const closePicker = useUiStore((s) => s.closePicker);
   const requestFlyTo = useUiStore((s) => s.requestFlyTo);
 
-  const savedViews = useSavedPlaceViews();
+  const libraryPlaces = useLibraryPlaces();
   const lists = useLists();
   const membership = useListMembership();
   const [manualAt, setManualAt] = useState<{ lat: number; lng: number } | null>(null);
@@ -65,16 +66,16 @@ export function MapPage() {
     : [];
 
   const listsById = new Map((lists ?? []).map((l) => [l.id, l]));
-  const savedPins: SavedPinFeature[] = (savedViews ?? []).flatMap((view) => {
+  const placePins: PlacePinFeature[] = (libraryPlaces ?? []).flatMap((view) => {
     const facts = displayFacts(view.place);
     if (!facts) return [];
-    const memberLists = (membership?.[view.savedPlace.id] ?? [])
+    const memberLists = (membership?.[view.place.id] ?? [])
       .map((id) => listsById.get(id))
       .filter((l): l is NonNullable<typeof l> => l !== undefined);
     return [
       {
-        savedPlaceId: view.savedPlace.id,
-        name: facts.name ?? "Saved place",
+        placeId: view.place.id,
+        name: facts.name ?? "Place",
         lat: facts.lat,
         lng: facts.lng,
         unlinked: view.place.resolutionState === "unlinked",
@@ -83,13 +84,13 @@ export function MapPage() {
     ];
   });
 
-  // The selection is marked on the map immediately, saved or not.
+  // The selection is marked on the map immediately, listed or not.
   const selectionPin =
     selection?.kind === "osm" && selection.hint
       ? { lat: selection.hint.lat, lng: selection.hint.lng }
-      : selection?.kind === "saved"
+      : selection?.kind === "place"
         ? (() => {
-            const view = (savedViews ?? []).find((v) => v.savedPlace.id === selection.savedPlaceId);
+            const view = (libraryPlaces ?? []).find((v) => v.place.id === selection.placeId);
             const facts = view ? displayFacts(view.place) : undefined;
             return facts ? { lat: facts.lat, lng: facts.lng } : null;
           })()
@@ -99,11 +100,11 @@ export function MapPage() {
     <div className="relative h-full" data-testid="map-page">
       <MapView
         styleUrl={MAP_STYLE_URL}
-        savedPins={savedPins}
+        placePins={placePins}
         poiPins={poiPins}
         selectionPin={selectionPin}
         flyTo={flyTo}
-        onSelectSaved={selectSaved}
+        onSelectPlace={selectPlace}
         onSelectPoi={(pin) =>
           selectOsm(pin.ref, { name: pin.name, lat: pin.lat, lng: pin.lng, category: pin.category })
         }
@@ -153,9 +154,26 @@ export function MapPage() {
         <ManualPinDialog
           lat={manualAt.lat}
           lng={manualAt.lng}
-          onSave={(facts) => {
+          lists={lists}
+          onSave={(facts, listTarget) => {
             setManualAt(null);
-            void repo.saveManual(facts, nowIso()).then((view) => selectSaved(view.savedPlace.id));
+            void (async () => {
+              let listId: string;
+              if (listTarget.kind === "new") {
+                listId = newId();
+                await repo.createList({
+                  id: listId,
+                  name: listTarget.name,
+                  color: listTarget.color,
+                  createdAt: nowIso(),
+                  updatedAt: nowIso(),
+                });
+              } else {
+                listId = listTarget.listId;
+              }
+              const view = await repo.addToList(listId, { kind: "manual", facts }, nowIso());
+              selectPlace(view.place.id);
+            })();
           }}
           onCancel={() => setManualAt(null)}
         />

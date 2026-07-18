@@ -10,7 +10,7 @@ import { z } from "zod";
 import type { DexieRepository } from "../../data/repo";
 import { newId } from "../../lib/id";
 
-export const BACKUP_SCHEMA_VERSION = 1;
+export const BACKUP_SCHEMA_VERSION = 2;
 
 const entityBase = {
   id: z.string(),
@@ -34,10 +34,9 @@ const manifestSchema = z.object({
 // Structural validation; domain invariants are enforced by the repository layer.
 const dataSchema = z.object({
   places: z.array(z.object({ ...entityBase, origin: z.enum(["osm", "manual"]) }).loose()),
-  savedPlaces: z.array(z.object({ ...entityBase, placeId: z.string() }).loose()),
   tags: z.array(z.object({ ...entityBase, name: z.string(), nameNorm: z.string() }).loose()),
   tagAssignments: z.array(
-    z.object({ ...entityBase, savedPlaceId: z.string(), tagId: z.string() }).loose(),
+    z.object({ ...entityBase, placeId: z.string(), tagId: z.string() }).loose(),
   ),
   notes: z.array(z.object({ ...entityBase, body: z.string(), targetKey: z.string() }).loose()),
   mediaAssets: z.array(z.object({ ...entityBase, localBlobKey: z.string() }).loose()),
@@ -70,7 +69,6 @@ export async function exportBackup(repo: DexieRepository, exportedAt: string): P
   const db = repo.db;
   const data: BackupData = {
     places: await db.places.toArray(),
-    savedPlaces: await db.savedPlaces.toArray(),
     tags: await db.tags.toArray(),
     tagAssignments: await db.tagAssignments.toArray(),
     notes: await db.notes.toArray(),
@@ -139,7 +137,6 @@ export async function importBackup(
   const db = repo.db;
   const tables = [
     ["places", db.places],
-    ["savedPlaces", db.savedPlaces],
     ["tags", db.tags],
     ["tagAssignments", db.tagAssignments],
     ["notes", db.notes],

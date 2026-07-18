@@ -11,14 +11,14 @@ export interface SelectionHint {
 
 export type Selection =
   | { kind: "osm"; ref: OsmElementRef; hint?: SelectionHint }
-  | { kind: "saved"; savedPlaceId: string };
+  | { kind: "place"; placeId: string };
 
 interface UiState {
   selection: Selection | null;
   flyTo: { lat: number; lng: number; zoom?: number } | null;
   pickerAt: { lat: number; lng: number } | null;
   selectOsm: (ref: OsmElementRef, hint?: SelectionHint) => void;
-  selectSaved: (savedPlaceId: string) => void;
+  selectPlace: (placeId: string) => void;
   clearSelection: () => void;
   openPicker: (pos: { lat: number; lng: number }) => void;
   closePicker: () => void;
@@ -30,7 +30,7 @@ export const useUiStore = create<UiState>((set) => ({
   flyTo: null,
   pickerAt: null,
   selectOsm: (ref, hint) => set({ selection: { kind: "osm", ref, ...(hint ? { hint } : {}) } }),
-  selectSaved: (savedPlaceId) => set({ selection: { kind: "saved", savedPlaceId } }),
+  selectPlace: (placeId) => set({ selection: { kind: "place", placeId } }),
   clearSelection: () => set({ selection: null }),
   openPicker: (pos) => set({ pickerAt: pos }),
   closePicker: () => set({ pickerAt: null }),

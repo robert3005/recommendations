@@ -1,16 +1,44 @@
-/** Name an unlinked manual pin before saving (book/src/place-identity.md). */
+/**
+ * Name an unlinked manual pin and choose its list — places don't exist outside
+ * lists (book/src/data-model.md: membership is existence), so the pin is born
+ * into one: an existing list or a new one created here.
+ */
+import type { List } from "@placemarks/domain";
 import { useState } from "react";
+import { MARKER_COLORS, nextUnusedColor } from "../../lib/markers";
+
+export type ManualPinListTarget =
+  | { kind: "existing"; listId: string }
+  | { kind: "new"; name: string; color: string };
 
 export interface ManualPinDialogProps {
   lat: number;
   lng: number;
-  onSave: (facts: { name: string; lat: number; lng: number; category?: string }) => void;
+  lists: List[] | undefined;
+  onSave: (
+    facts: { name: string; lat: number; lng: number; category?: string },
+    listTarget: ManualPinListTarget,
+  ) => void;
   onCancel: () => void;
 }
 
-export function ManualPinDialog({ lat, lng, onSave, onCancel }: ManualPinDialogProps) {
+export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPinDialogProps) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
+  const [listChoice, setListChoice] = useState<string>((lists ?? []).length > 0 ? "" : "__new__");
+  const [newListName, setNewListName] = useState("");
+  const [color, setColor] = useState<string>();
+
+  const selectedColor = color ?? nextUnusedColor(lists ?? []);
+  const listTarget: ManualPinListTarget | undefined =
+    listChoice === "__new__"
+      ? newListName.trim() !== ""
+        ? { kind: "new", name: newListName.trim(), color: selectedColor }
+        : undefined
+      : listChoice !== ""
+        ? { kind: "existing", listId: listChoice }
+        : undefined;
+  const canSave = name.trim() !== "" && listTarget !== undefined;
 
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: backdrop click-to-dismiss is supplementary; the Cancel button is the accessible path
@@ -22,15 +50,16 @@ export function ManualPinDialog({ lat, lng, onSave, onCancel }: ManualPinDialogP
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Save unlinked pin"
+        aria-label="Add unlinked pin to a list"
         className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={() => {}}
         data-testid="manual-pin-dialog"
       >
-        <h2 className="text-base font-semibold text-stone-900">Save as unlinked pin</h2>
+        <h2 className="text-base font-semibold text-stone-900">Add unlinked pin</h2>
         <p className="mt-1 text-xs text-orange-700">
-          Owner-provided details, not linked to OpenStreetMap. You can link it later.
+          Owner-provided details, not linked to OpenStreetMap. The pin lives in the list you choose
+          — you can link it to OSM later.
         </p>
         <label className="mt-3 block text-xs font-medium text-stone-600">
           Name
@@ -53,6 +82,60 @@ export function ManualPinDialog({ lat, lng, onSave, onCancel }: ManualPinDialogP
             className="mt-1 w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
           />
         </label>
+        <label className="mt-2 block text-xs font-medium text-stone-600">
+          List
+          <select
+            value={listChoice}
+            onChange={(e) => setListChoice(e.target.value)}
+            className="mt-1 w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+            data-testid="manual-list-choice"
+          >
+            <option value="">Choose a list…</option>
+            {(lists ?? []).map((list) => (
+              <option key={list.id} value={list.id}>
+                {list.name}
+              </option>
+            ))}
+            <option value="__new__">+ New list…</option>
+          </select>
+        </label>
+        {listChoice === "__new__" ? (
+          <div className="mt-2">
+            <input
+              type="text"
+              value={newListName}
+              onChange={(e) => setNewListName(e.target.value)}
+              placeholder="New list name"
+              aria-label="New list name"
+              className="w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+              data-testid="manual-new-list-name"
+            />
+            <div
+              className="mt-2 flex items-center gap-1.5"
+              role="radiogroup"
+              aria-label="List marker"
+            >
+              {MARKER_COLORS.map((option) => (
+                <label
+                  key={option}
+                  className={`inline-block h-5 w-5 cursor-pointer rounded-full border-2 ${
+                    option === selectedColor ? "border-stone-800" : "border-transparent"
+                  }`}
+                  style={{ backgroundColor: option }}
+                >
+                  <input
+                    type="radio"
+                    name="manual-list-marker"
+                    checked={option === selectedColor}
+                    onChange={() => setColor(option)}
+                    aria-label={`Marker colour ${option}`}
+                    className="sr-only"
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <p className="mt-2 text-xs text-stone-400">
           at {lat.toFixed(5)}, {lng.toFixed(5)}
         </p>
@@ -66,19 +149,23 @@ export function ManualPinDialog({ lat, lng, onSave, onCancel }: ManualPinDialogP
           </button>
           <button
             type="button"
-            disabled={name.trim() === ""}
-            onClick={() =>
-              onSave({
-                name: name.trim(),
-                lat,
-                lng,
-                ...(category.trim() ? { category: category.trim() } : {}),
-              })
-            }
+            disabled={!canSave}
+            onClick={() => {
+              if (!listTarget) return;
+              onSave(
+                {
+                  name: name.trim(),
+                  lat,
+                  lng,
+                  ...(category.trim() ? { category: category.trim() } : {}),
+                },
+                listTarget,
+              );
+            }}
             className="rounded bg-orange-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
             data-testid="manual-save"
           >
-            Save pin
+            Add pin
           </button>
         </div>
       </div>

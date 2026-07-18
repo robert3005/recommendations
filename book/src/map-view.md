@@ -58,10 +58,10 @@ The mobile sheet / desktop panel shows (decisions of 2026-07-18):
 - Name, category, address, normalized website link, phone, and opening-hours state.
 - **No state marker on healthy places.** The only badge is "Not linked to OSM" on unlinked manual
   pins; freshness/recovery badges are deferred with the freshness UI (below).
-- Personal actions: **Save**, **Add tag**, **Add note**, and **Add to list** — pick an existing
-  list or create a new one inline right on the card. **Add to list appears on unsaved place
-  cards too, and adding a place to a list IS the save** (2026-07-18) — no separate save step is
-  required. Creating a list picks its **marker colour** from a swatch row (default: the next
+- Personal actions: **Add tag**, **Add note**, and **Add to list** — pick an existing list or
+  create a new one inline right on the card. **There is no Save button** (2026-07-18: membership
+  is existence): adding a place to a list is the only way it enters the library, and **Remove
+  place** takes it out of every list — which removes it entirely. Creating a list picks its **marker colour** from a swatch row (default: the next
   unused palette colour). The place card is the *only* write surface for lists; the **Lists tab
   is read-only**. Reordering, removal, and editorial text (guides = editorialised lists) are
   deferred until a dedicated editing surface returns with the guide milestone. Lists a place

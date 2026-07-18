@@ -9,8 +9,8 @@ import maplibregl from "maplibre-gl";
 import { useEffect, useRef } from "react";
 import { DISCOVER_DEBOUNCE_MS, OSM_ATTRIBUTION } from "../config";
 
-export interface SavedPinFeature {
-  savedPlaceId: string;
+export interface PlacePinFeature {
+  placeId: string;
   name: string;
   lat: number;
   lng: number;
@@ -30,12 +30,12 @@ export interface PoiPinFeature {
 
 export interface MapViewProps {
   styleUrl: string;
-  savedPins: SavedPinFeature[];
+  placePins: PlacePinFeature[];
   poiPins: PoiPinFeature[];
   /** The currently selected place — marked immediately with a ring. */
   selectionPin?: { lat: number; lng: number } | null;
   flyTo?: { lat: number; lng: number; zoom?: number } | null;
-  onSelectSaved?: (savedPlaceId: string) => void;
+  onSelectPlace?: (placeId: string) => void;
   onSelectPoi?: (poi: PoiPinFeature) => void;
   onLongPress?: (pos: { lat: number; lng: number }) => void;
   onViewportChange?: (view: { bbox: BBox; zoom: number }) => void;
@@ -44,14 +44,14 @@ export interface MapViewProps {
 const LONG_PRESS_MS = 600;
 const LONG_PRESS_TOLERANCE_PX = 8;
 
-function savedToGeoJSON(pins: SavedPinFeature[]): FeatureCollection {
+function placesToGeoJSON(pins: PlacePinFeature[]): FeatureCollection {
   return {
     type: "FeatureCollection",
     features: pins.map((pin) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [pin.lng, pin.lat] },
       properties: {
-        savedPlaceId: pin.savedPlaceId,
+        placeId: pin.placeId,
         name: pin.name,
         unlinked: pin.unlinked ? 1 : 0,
         color: pin.color,
@@ -73,19 +73,19 @@ function poisToGeoJSON(pins: PoiPinFeature[]): FeatureCollection {
 
 export function MapView({
   styleUrl,
-  savedPins,
+  placePins,
   poiPins,
   selectionPin,
   flyTo,
-  onSelectSaved,
+  onSelectPlace,
   onSelectPoi,
   onLongPress,
   onViewportChange,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const callbacksRef = useRef({ onSelectSaved, onSelectPoi, onLongPress, onViewportChange });
-  callbacksRef.current = { onSelectSaved, onSelectPoi, onLongPress, onViewportChange };
+  const callbacksRef = useRef({ onSelectPlace, onSelectPoi, onLongPress, onViewportChange });
+  callbacksRef.current = { onSelectPlace, onSelectPoi, onLongPress, onViewportChange };
   const poiPinsRef = useRef(poiPins);
   poiPinsRef.current = poiPins;
 
@@ -145,7 +145,7 @@ export function MapView({
       });
       map.addSource("saved", {
         type: "geojson",
-        data: savedToGeoJSON([]),
+        data: placesToGeoJSON([]),
         cluster: true,
         clusterRadius: 44,
       });
@@ -205,8 +205,8 @@ export function MapView({
 
       map.on("click", "saved-pins", (e) => {
         const feature = e.features?.[0];
-        const id = feature?.properties?.savedPlaceId as string | undefined;
-        if (id) callbacksRef.current.onSelectSaved?.(id);
+        const id = feature?.properties?.placeId as string | undefined;
+        if (id) callbacksRef.current.onSelectPlace?.(id);
       });
       map.on("click", "saved-clusters", async (e) => {
         const feature = e.features?.[0];
@@ -292,19 +292,19 @@ export function MapView({
     if (!map) return;
     const apply = () => {
       (map.getSource("saved") as maplibregl.GeoJSONSource | undefined)?.setData(
-        savedToGeoJSON(savedPins),
+        placesToGeoJSON(placePins),
       );
       // Observable render state: the count appears only after the layer has
       // actually painted (tests wait on this instead of sleeping).
       map.once("idle", () => {
         if (containerRef.current) {
-          containerRef.current.dataset.savedPins = String(savedPins.length);
+          containerRef.current.dataset.pins = String(placePins.length);
         }
       });
     };
     if (map.getSource("saved")) apply();
     else map.once("load", apply);
-  }, [savedPins]);
+  }, [placePins]);
 
   useEffect(() => {
     const map = mapRef.current;

@@ -109,23 +109,17 @@ interface ResolvedPoi {
 External URLs are untrusted data. Only normalized `http:` and `https:` destinations are rendered
 as links, with safe external-link attributes and a restrictive Content Security Policy.
 
-## SavedPlace (personal, owned)
+## Membership is existence (no saves)
 
-`Place` owns identity and copied OSM evidence. `SavedPlace` represents the user's decision to keep
-that place. There is at most one live `SavedPlace` per `PlaceId` in a library.
+There is **no standalone "save" entity** (2026-07-18: the notion of saves was removed). A place
+exists in the library **iff it belongs to at least one list**:
 
-```ts
-interface SavedPlace {
-  id: string;
-  placeId: PlaceId;
-  createdAt: string;
-  updatedAt: string;
-  deleted?: boolean;
-}
-```
-
-List membership and tag assignment are separate edge entities below. Reverse relationships are
-queries, not duplicated arrays on `SavedPlace`.
+- The only way a place comes to exist is being **added to a list** (from its card, or the manual
+  pin dialog — which therefore requires choosing a list).
+- Removing a place's **last** membership — by removing the block, or deleting the list that held
+  it — removes the place together with its tags and notes, in the same transaction.
+- Tag assignments and list blocks join directly on `PlaceId`. Reverse relationships are queries,
+  not duplicated arrays.
 
 ## Note (personal, rich page, eligible for sharing)
 
@@ -192,7 +186,7 @@ interface Tag {
 
 interface TagAssignment {
   id: string;
-  savedPlaceId: string;
+  placeId: PlaceId;
   tagId: string;
   createdAt: string;
   updatedAt: string;
@@ -200,7 +194,7 @@ interface TagAssignment {
 }
 ```
 
-The repository enforces one live assignment for each `(savedPlaceId, tagId)` pair. Tag names are
+The repository enforces one live assignment for each `(placeId, tagId)` pair. Tag names are
 normalized for uniqueness while preserving the user's display casing.
 
 ## List (a named group of places)
@@ -226,7 +220,7 @@ interface List {
 
 type ListBlockContent =
   | { type: "section"; noteId: string }
-  | { type: "place"; savedPlaceId: string };
+  | { type: "place"; placeId: PlaceId };
 
 interface ListBlock {
   id: string;

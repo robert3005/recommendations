@@ -1,17 +1,12 @@
 /**
- * Saved-place detail: facts, tags, Markdown notes (full-screen editor), and the
- * manual-pin link-to-OSM upgrade. The only OSM affordance is a portal link;
- * freshness/refresh UI is deferred, and list membership is managed from lists
- * (book/src/map-view.md).
+ * Details for a place in the library (i.e. in at least one list — membership is
+ * existence, book/src/data-model.md): facts, tags, Markdown notes, add-to-list,
+ * the manual-pin link-to-OSM upgrade, and Remove (from all lists, which removes
+ * the place).
  */
 import { displayFacts, linkPlaceToOsm, type Note } from "@placemarks/domain";
 import { useState } from "react";
-import {
-  useListIdsForSavedPlace,
-  useLists,
-  useNotesForPlace,
-  useSavedPlaceView,
-} from "../../data/hooks";
+import { useListIdsForPlace, useLists, useNotesForPlace, usePlaceView } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import { newId } from "../../lib/id";
 import { nowIso } from "../../lib/time";
@@ -24,13 +19,13 @@ import { OsmLink } from "./OsmLink";
 import { PlaceFields } from "./PlaceFields";
 import { TagEditor } from "./TagEditor";
 
-export function SavedPlaceSheet({ savedPlaceId }: { savedPlaceId: string }) {
+export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
   const repo = useRepo();
   const clearSelection = useUiStore((s) => s.clearSelection);
-  const view = useSavedPlaceView(savedPlaceId);
+  const view = usePlaceView(placeId);
   const notes = useNotesForPlace(view?.place.id);
   const lists = useLists();
-  const memberListIds = useListIdsForSavedPlace(view?.savedPlace.id);
+  const memberListIds = useListIdsForPlace(view?.place.id);
   const [editingNote, setEditingNote] = useState<Note>();
   const [linking, setLinking] = useState(false);
   const [message, setMessage] = useState<string>();
@@ -42,9 +37,9 @@ export function SavedPlaceSheet({ savedPlaceId }: { savedPlaceId: string }) {
   return (
     <section
       role="dialog"
-      aria-label={facts?.name ?? "Saved place"}
+      aria-label={facts?.name ?? "Place"}
       className="absolute inset-x-0 bottom-0 z-20 max-h-[70%] overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-4 shadow-xl md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-2xl"
-      data-testid="saved-place-sheet"
+      data-testid="place-details"
     >
       <button
         type="button"
@@ -70,8 +65,8 @@ export function SavedPlaceSheet({ savedPlaceId }: { savedPlaceId: string }) {
       <div className="mt-3">
         <TagEditor
           tags={view.tags}
-          onAdd={(name) => void repo.assignTag(view.savedPlace.id, name, now)}
-          onRemove={(tagId) => void repo.removeTagAssignment(view.savedPlace.id, tagId, now)}
+          onAdd={(name) => void repo.assignTag(view.place.id, name, now)}
+          onRemove={(tagId) => void repo.removeTagAssignment(view.place.id, tagId, now)}
         />
       </div>
 
@@ -90,12 +85,12 @@ export function SavedPlaceSheet({ savedPlaceId }: { savedPlaceId: string }) {
         <button
           type="button"
           onClick={() => {
-            void repo.unsave(view.savedPlace.id, now).then(clearSelection);
+            void repo.removePlace(view.place.id, now).then(clearSelection);
           }}
           className="ml-auto text-[11px] font-medium text-red-700 underline hover:text-red-900"
-          data-testid="unsave"
+          data-testid="remove-place"
         >
-          Unsave
+          Remove place
         </button>
       </div>
       {message ? (
@@ -122,10 +117,18 @@ export function SavedPlaceSheet({ savedPlaceId }: { savedPlaceId: string }) {
                     createdAt: now,
                     updatedAt: now,
                   });
-                  await repo.addPlaceBlock(listId, view.savedPlace.id, nowIso());
+                  await repo.addToList(
+                    listId,
+                    { kind: "existing", placeId: view.place.id },
+                    nowIso(),
+                  );
                   setMessage(`Added to "${target.name}".`);
                 } else {
-                  await repo.addPlaceBlock(target.list.id, view.savedPlace.id, nowIso());
+                  await repo.addToList(
+                    target.list.id,
+                    { kind: "existing", placeId: view.place.id },
+                    nowIso(),
+                  );
                   setMessage(`Added to "${target.list.name}".`);
                 }
               } catch (err) {

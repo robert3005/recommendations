@@ -8,20 +8,15 @@ interface BaseEntity {
   deleted?: boolean;
 }
 
-/** The user's decision to keep a place. At most one live SavedPlace per PlaceId. */
-export interface SavedPlace extends BaseEntity {
-  placeId: PlaceId;
-}
-
 export interface Tag extends BaseEntity {
   name: string; // display casing preserved
   nameNorm: string; // normalized for uniqueness
   color?: string;
 }
 
-/** Independently mergeable edge; one live assignment per (savedPlaceId, tagId). */
+/** Independently mergeable edge; one live assignment per (placeId, tagId). */
 export interface TagAssignment extends BaseEntity {
-  savedPlaceId: string;
+  placeId: PlaceId;
   tagId: string;
 }
 
@@ -57,7 +52,7 @@ export interface List extends BaseEntity {
 
 export type ListBlockContent =
   | { type: "section"; noteId: string }
-  | { type: "place"; savedPlaceId: string };
+  | { type: "place"; placeId: PlaceId };
 
 /** Blocks are their own entities so reordering one item never replaces a whole array. */
 export interface ListBlock extends BaseEntity {

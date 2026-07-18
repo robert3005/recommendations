@@ -45,7 +45,7 @@ export const AddToListSavesImplicitly: Story = {
     await userEvent.type(canvas.getByLabelText("New list name"), "Coffee crawl");
     await userEvent.click(canvas.getByTestId("create-list-and-add"));
     // Adding to a list IS the save: the saved sheet takes over.
-    await expect(await canvas.findByTestId("saved-place-sheet")).toBeInTheDocument();
+    await expect(await canvas.findByTestId("place-details")).toBeInTheDocument();
   },
 };
 
