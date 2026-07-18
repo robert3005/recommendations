@@ -1,6 +1,6 @@
 /**
- * Lists-first flow (book/src/vision.md): lists are created from a place's card;
- * the Lists tab is browse/edit — describe, reorder, remove, persist.
+ * Lists-first flow (book/src/vision.md): lists are created and populated from
+ * place cards; the Lists tab is a read-only reading surface.
  */
 import { expect, type Page, test } from "@playwright/test";
 
@@ -17,7 +17,7 @@ async function closeSavedSheet(page: Page) {
   await page.getByTestId("saved-place-sheet").getByRole("button", { name: "Close" }).click();
 }
 
-test("create a list from a place card, group, describe, reorder, persist", async ({ page }) => {
+test("build a list from place cards; the Lists tab reads it", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
 
@@ -40,7 +40,7 @@ test("create a list from a place card, group, describe, reorder, persist", async
   ).toHaveCount(0);
   await closeSavedSheet(page);
 
-  // The Lists tab is browse/edit: open the list, describe it, reorder, remove.
+  // The Lists tab is read-only: it presents the grouped places, in order.
   await page
     .getByRole("navigation", { name: "Primary" })
     .getByRole("link", { name: "Lists" })
@@ -53,22 +53,15 @@ test("create a list from a place card, group, describe, reorder, persist", async
   await expect(items).toHaveCount(2);
   await expect(items.nth(0)).toContainText("Café Central");
   await expect(items.nth(1)).toContainText("Café do Rio");
+  // Reading surface: the website is a click away…
+  await expect(items.nth(0).getByRole("link")).toHaveAttribute("href", "https://cafecentral.pt/");
+  // …and no editing affordances exist here.
+  await expect(page.getByRole("button", { name: "Move up" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Remove from list" })).toHaveCount(0);
+  await expect(page.getByLabel("Add saved place")).toHaveCount(0);
 
-  await page.getByTestId("edit-description").click();
-  await page.getByTestId("description-input").fill("Places I keep coming back to.");
-  await page.getByTestId("save-description").click();
-  await expect(page.getByTestId("list-description")).toHaveText("Places I keep coming back to.");
-
-  await items.nth(1).getByRole("button", { name: "Move up" }).click();
-  await expect(items.nth(0)).toContainText("Café do Rio");
-
-  await items.nth(1).getByRole("button", { name: "Remove from list" }).click();
-  await expect(items).toHaveCount(1);
-
-  // Everything persists across a full reload.
+  // Persists across a full reload.
   await page.reload();
   await expect(page.getByTestId("list-page")).toBeVisible();
-  await expect(page.getByTestId("list-description")).toHaveText("Places I keep coming back to.");
-  await expect(page.getByTestId("place-item")).toHaveCount(1);
-  await expect(page.getByTestId("place-item")).toContainText("Café do Rio");
+  await expect(page.getByTestId("place-item")).toHaveCount(2);
 });

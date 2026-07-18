@@ -18,8 +18,9 @@ A responsive web app with:
   OSM evidence for offline/recovery use, and attach free-form tags and personal notes.
 - **Lists first** (flow inverted 2026-07-18) — group saved places into named **lists** and give
   each a short description of what ties the set together. Lists are the primary grouping and the
-  primary UI surface: they are **created from a place's card** ("add to new list"), while the
-  Lists tab is for browsing and editing. Enriching a list into a narrative **guide** (interleaved
+  primary UI surface: they are **created and populated from a place's card** ("add to new
+  list"), while the Lists tab is a **read-only reading surface**. Enriching a list into a
+  narrative **guide** (interleaved
   Markdown sections, reading view) is a later, opt-in step on top of the same data — the v1 flow
   starts with lists, not guides.
 - **Shareable lists** — publish a guide to a persistent, **read-only public link**. Only the creator
