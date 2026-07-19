@@ -1,4 +1,4 @@
--- Share-service D1 schema (book/src/sharing.md §Share service).
+-- Share-service D1 schema (spec/src/sharing.md §Share service).
 CREATE TABLE IF NOT EXISTS documents (
   slug TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('list', 'note')),

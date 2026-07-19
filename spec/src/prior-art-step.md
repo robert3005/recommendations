@@ -53,7 +53,9 @@ These are the design bets that differentiate us — mostly by being *lighter and
    sign-up. We start as a **responsive web app**, **local-first, no account** — dramatically lower
    friction to first value.
 5. **No heavy recommender in v1.** Step leans on AWS Personalize. Personalized ML recs are an
-   explicit **non-goal** for us; curation is human and list-based.
+   explicit **non-goal** for us; curation is human — lists the user edits and
+   [posts](./posts.md) the user writes, closer to a geolocated blog than to Step's in-app
+   curated city guides.
 
 ## Honest boundaries on import
 

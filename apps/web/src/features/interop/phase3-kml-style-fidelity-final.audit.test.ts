@@ -1,5 +1,5 @@
 /**
- * KML source styles become list marker colours (book/src/interop.md).
+ * KML source styles become list marker colours (spec/src/interop.md).
  * StyleMap's normal style is the resting marker, and loose document-level
  * placemarks keep their own style when folders are present beside them.
  */

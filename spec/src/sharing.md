@@ -1,15 +1,31 @@
-# Lists & Sharing
+# Sharing — Lists & Posts
 
-Lists are the app's unit of curation. A
-[named list](./data-model.md#list-a-named-group-of-places) becomes a guide when the later editorial
-layer adds narrative sections, selected notes, and a reading experience; that guide is the unit
-published for sharing. Three requirements drive the design:
+Two things publish (2026-07-19, the lists-and-posts pivot): a **list** — the curation itself,
+name plus ordered places — and a **[post](./posts.md)** — the editorialised article about a list.
+Both share the same machinery and differ only in projection; the word "guide" in dated rulings
+below is the pre-pivot name for this published document. Three requirements drive the design:
 
-1. **Private by default** — only explicitly selected guide content leaves the device.
+1. **Private by default** — only explicitly selected content leaves the device.
 2. **Durable place context** — each place carries its current OSM link plus bounded copied evidence
    so it still renders and can be re-resolved if that OSM element is replaced.
-3. **Persistent named links** — hosted links show the latest successfully published guide revision
+3. **Persistent named links** — hosted links show the latest successfully published revision
    and the latest OSM data the viewer can successfully resolve.
+
+## One block document, two projections
+
+The versioned block document below serves both public pages:
+
+- A **shared list** projects the list's place blocks (each place's shareable notes may ride
+  along) — no narrative sections. Title = list name.
+- A **shared post** projects the post's full block sequence — prose sections interleaved with
+  place embeds, attached notes, and selected tags — plus a **reference to its list**: the list's
+  title always, and the list's public slug when the list itself has a hosted publication, so the
+  post page can offer *"From the list: 〈name〉"* as a working link
+  ([Posts](./posts.md#publishing)).
+
+One schema, one viewer component, one share service; a list page is simply the degenerate,
+sections-free case. Documents published before the pivot (guides) parse as posts whose sections
+happen to live on a list — the wire schema is unchanged.
 
 “Latest successfully published” is deliberate. A local edit made offline, or a failed publish,
 cannot change an already-public document. The owner UI always distinguishes local draft, queued,
@@ -41,14 +57,14 @@ semantics differ.
 
 ### Mode A — Snapshot link
 
-The guide document is compressed into the URL fragment:
+The document is compressed into the URL fragment:
 
 ```text
-https://app.example/l#<base64url(compress(sharedGuide))>
+https://app.example/l#<base64url(compress(sharedDocument))>
 ```
 
 - No backend receives the document.
-- Guide membership and prose are immutable at share time.
+- Membership and prose are immutable at share time.
 - OSM facts may still refresh or recover through the resolver.
 - Copied evidence keeps the page useful when offline or when an OSM element disappeared.
 - Images are omitted. A no-backend snapshot cannot hold a durable media lease; the share preview
@@ -81,10 +97,10 @@ https://app.example/l/lisbon-trip
 No account is required. Bearer-token authorization solves write ownership without introducing user
 profiles or exposing an editing secret in the share URL.
 
-## Shared guide document
+## Shared document schema
 
-The document mirrors ordered list blocks while keeping the owner's private `PlaceId`, database ids,
-and editor bearer token out of the payload.
+The document mirrors ordered blocks (a list's place blocks, or a post's full sequence) while
+keeping the owner's private `PlaceId`, database ids, and editor bearer token out of the payload.
 
 ```ts
 interface SharedPlaceEvidence {
@@ -140,11 +156,13 @@ type SharedBlock =
       tags?: string[];         // only explicit BlockTagSelection values
     };
 
-interface SharedGuide {
+interface SharedDocument {
   v: 1;
+  kind?: "list" | "post";     // absent in pre-pivot documents, which read as posts
   slug?: string;              // hosted mode only
   title: string;
   description?: string;
+  list?: { title: string; slug?: string }; // posts: the list this post editorialises
   cover?: { hostedMediaId: string };
   blocks: SharedBlock[];
   contentHash: string;
@@ -152,7 +170,15 @@ interface SharedGuide {
 }
 ```
 
-A live section block includes its own list note only when that note is shareable. A place note is
+*(Implementation note: the schema package still calls this type `SharedGuide`; `kind` and `list`
+are additive optional fields, so `v: 1` documents remain wire-compatible.)*
+
+A shared **list** contains only place blocks. A shared **post** may interleave sections and
+carries `list` — its list's title, plus the list's public slug when the list is itself hosted;
+the client drops a slug whose list page was revoked at the next successful publish
+([Posts](./posts.md#publishing)).
+
+A live section block includes its own post note only when that note is shareable. A place note is
 included only through a live `BlockNoteAttachment`, and a personal tag only through a live
 `BlockTagSelection`. `Note.shareable` is a prerequisite, not sufficient publication state.
 
@@ -161,7 +187,7 @@ included only through a live `BlockNoteAttachment`, and a personal tag only thro
 > note of its place** directly (`shareable` acts as the attachment), and **no tags are shared at
 > all** — more private than the eventual explicit `BlockTagSelection` model, never less. The
 > schema keeps both fields so documents stay forward-compatible. On import, unresolved OSM
-> anchors become **pending items in the interop review queue** (book/src/interop.md) rather than
+> anchors become **pending items in the interop review queue** (spec/src/interop.md) rather than
 > a bespoke pending surface; the snapshot viewer route is `/l` inside the app shell.
 Disabling sharing or detaching content queues a new hosted revision; the previous public revision
 remains visible until that update succeeds.
@@ -173,7 +199,7 @@ leave the device. Public pages default to `noindex`; discoverability can be a la
 
 The private [`Publication`](./data-model.md#publication-state) entity tracks the target, slug,
 credential reference, local revision, server revision, hash, status, and errors. The editor token
-itself lives in private local credential storage and never appears in `SharedGuide`.
+itself lives in private local credential storage and never appears in `SharedDocument`.
 
 Publication follows a durable state machine:
 
@@ -192,7 +218,7 @@ The UI derives “changes pending” from
 `localRevision !== lastPublishedLocalRevision`, not from one transient request status.
 
 Losing the only device-held editor token makes the hosted page uneditable. Recovery exports may
-include tokens only inside an explicitly encrypted secrets bundle; ordinary guide exports do
+include tokens only inside an explicitly encrypted secrets bundle; ordinary list/post exports do
 not include them.
 
 > **Implementation decisions (2026-07-19, Phase 5).**
@@ -246,21 +272,24 @@ not include them.
 > - **Selection follows resolution.** In the public viewer, selecting an article entry recentres
 >   at the live-resolved coordinates when resolution succeeded, never stale copied ones.
 
-## Public guide viewer
+## Public viewer
 
-The public route is read-only and needs no account:
+The public route is read-only and needs no account. A shared post renders as an article beside a
+synchronized map, with its *"From the list"* link when one is carried; a shared list renders as
+the place sequence on the same viewer:
 
-1. Decode the fragment or fetch the current hosted `SharedGuide` revision.
+1. Decode the fragment or fetch the current hosted `SharedDocument` revision.
 2. Paint sections and place cards immediately from copied evidence or manual facts.
 3. Resolve each `kind: "osm"` anchor's `currentOsmRef` through the production resolver. Manual
    anchors are never resolved: they render as labeled unlinked pins with owner-provided facts.
 4. On a confirmed missing/incompatible element, attempt a unique high-confidence evidence match.
 5. On ambiguity or provider failure, retain the fallback and show its state/timestamp.
 6. Render the interleaved article and synchronized map without exposing editing controls.
-7. Offer **Add this guide to my library**. Reuse an existing local place where possible; create a
-   new one only after the shared ref or a unique high-confidence replacement resolves. Unresolved
-   OSM items remain pending previews rather than silently degrading into unlinked pins; a shared
-   **manual** anchor imports as a manual place per the
+7. Offer **Add these places to my library** (a shared list imports as a list; a shared post's
+   embeds import into a list named after it). Reuse an existing local place where possible;
+   create a new one only after the shared ref or a unique high-confidence replacement resolves.
+   Unresolved OSM items remain pending previews rather than silently degrading into unlinked
+   pins; a shared **manual** anchor imports as a manual place per the
    [deduplication rules](./place-identity.md#import-and-deduplication).
 
 The viewer never modifies the author's document after a temporary match. A confirmed owner-side
@@ -270,7 +299,10 @@ reference.
 ## Share service
 
 The service is separate from account sync. Reads are public; mutations use a bearer token from the
-first hosted release.
+first hosted release. Three kinds publish under the same protocol — `/s/lists` (implemented;
+pre-pivot guide documents live here and keep their slugs), `/s/posts` (the post projection), and
+`/s/notes` ([note pages](./notes.md#publishing-a-note-page)); the `/s/lists` contract below is
+normative for all three:
 
 ```text
 POST   /s/lists
@@ -280,7 +312,7 @@ POST   /s/lists
        → 201 { slug, revision }
 
 GET    /s/lists/:slug
-       → 200 SharedGuide + ETag
+       → 200 SharedDocument + ETag
 
 PUT    /s/lists/:slug
        Authorization: Bearer <editor-token>
@@ -348,6 +380,7 @@ be remotely erased.
 ## Relationship to sync
 
 Publishing and multi-device sync solve different problems. The publication outbox sends only
-explicit public projections; a future sync transport moves private owned entities. Adding accounts
-may allow editor-token recovery and private readership later, but public named links and their URL
-shape do not depend on accounts.
+explicit public projections; the sync transport (in v1 since 2026-07-19 —
+[Storage & Sync](./storage-sync.md#multi-device-sync)) moves private owned entities between the
+owner's devices. A sync account may allow editor-token recovery and private readership later, but
+public named links and their URL shape do not depend on accounts.

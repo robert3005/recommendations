@@ -1,5 +1,5 @@
 /**
- * Import parsers (book/src/interop.md §Import pipeline): Takeout archives,
+ * Import parsers (spec/src/interop.md §Import pipeline): Takeout archives,
  * standalone CSV, KML/KMZ, GPX, and GeoJSON — parsed locally, never fetched.
  * Every source row becomes a ParsedItem or an explicit `unusable` entry; rows
  * are never silently dropped.
@@ -279,7 +279,7 @@ function kmlFragmentToList(container: Element, doc: Document, name: string): Par
 
 /**
  * Folders become separate source lists, keeping their marker styles
- * (book/src/interop.md). A folderless document stays one list.
+ * (spec/src/interop.md). A folderless document stays one list.
  */
 export function parseKml(text: string, fallbackName: string): ParsedList[] {
   const doc = xmlDoc(text);
@@ -353,7 +353,7 @@ export function parseGpx(text: string, fallbackName: string): ParsedList {
  * geometry but no list structure. Rows are joined **by Google feature id**; a
  * title join is only trusted when the row carries no id at all and the title
  * is unique in the geometry file. Geometry rows no CSV references remain their
- * own "Saved places" list — never silently lost (book/src/interop.md).
+ * own "Saved places" list — never silently lost (spec/src/interop.md).
  */
 export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
   const entries = unzipSync(bytes);

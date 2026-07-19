@@ -1,10 +1,11 @@
 # Notes & Rich Content
 
-Notes are rich Markdown pages anchored to either a place or a list. A place note is a write-up about
-a durable `PlaceId`; a list note becomes a narrative section when a
-[list gains the guide layer](./data-model.md#list-a-named-group-of-places).
-A note is private by default, may be selected for a read-only shared guide, and may optionally be
-published as its own read-only page at `/n/<slug>`.
+Notes are rich Markdown pages anchored to either a place or a [post](./posts.md) (2026-07-19: the
+pivot retargeted list notes to posts). A place note is a write-up about a durable `PlaceId`; a
+post note is a narrative section of the post's article. A note is private by default, may be
+selected for a read-only shared list or post, and may optionally be published as its own
+read-only page at `/n/<slug>` (a surface [under question](./posts.md#standalone-note-pages-questioned)
+since posts landed).
 
 ## Markdown as the source of truth
 
@@ -17,7 +18,7 @@ We store CommonMark + GFM Markdown, not HTML.
 - **Flexible authoring** — a future WYSIWYG editor can still serialize to Markdown.
 
 GFM headings, emphasis, lists, task lists, tables, blockquotes, code, links, and images cover the
-guide-writing use case without inventing a proprietary document format.
+post-writing use case without inventing a proprietary document format.
 
 ## Authoring
 
@@ -59,7 +60,7 @@ Markdown references images through stable asset ids:
 | Context | Resolution |
 |---|---|
 | Authoring/offline | Local object URL backed by the IndexedDB media blob |
-| Hosted guide/note | Server-issued media id on the trusted media origin |
+| Hosted list/post/note | Server-issued media id on the trusted media origin |
 | Snapshot link | Text placeholder; no media is included in a no-backend snapshot |
 
 On import, the client checks type and size and downscales large images. Before hosting, the media
@@ -75,14 +76,14 @@ owner deletes it. Already-downloaded copies cannot be remotely erased.
 
 ## Share eligibility versus publication
 
-`Note.shareable = true` only makes a note eligible for selection. Actual guide attachment is stored
+`Note.shareable = true` only makes a note eligible for selection. Actual post attachment is stored
 in `BlockNoteAttachment`; standalone publishing is stored in the private `Publication` entity.
 
 Changing `shareable` to false:
 
 1. Prevents the note from entering new public projections.
 2. Marks every hosted publication containing it dirty.
-3. Queues an updated guide or note-page revocation.
+3. Queues an updated list/post or note-page revocation.
 4. Leaves the previous public revision visible until that network operation succeeds.
 
 This makes delayed/offline revocation explicit instead of pretending a local boolean instantly
@@ -96,7 +97,7 @@ update or unpublish it; the token never appears in the URL or `SharedNote`.
 ```ts
 type SharedNoteContext =
   | { kind: "place"; place: SharedPlaceAnchor }
-  | { kind: "list"; listTitle: string };
+  | { kind: "post"; postTitle: string };   // pre-pivot documents carry { kind: "list"; listTitle }
 
 interface SharedNote {
   v: 1;
@@ -110,7 +111,7 @@ interface SharedNote {
 }
 ```
 
-Place context uses [`SharedPlaceAnchor`](./sharing.md#shared-guide-document): the current OSM
+Place context uses [`SharedPlaceAnchor`](./sharing.md#shared-document-schema): the current OSM
 reference plus copied recovery evidence. The viewer follows
 [Durable Place Identity](./place-identity.md) and falls back to timestamped evidence when OSM or the
 provider is unavailable.
@@ -155,12 +156,12 @@ publication outbox, and shows the last successfully published revision. Public p
 >   cascade) queues revocation of its standalone page, and making a note private deletes its
 >   pending publish jobs — the revocation supersedes every unsent page update.
 
-## How notes build a guide
+## How notes build a post
 
-- A list note appears as a `section` block between places.
-- A place note attaches through a `BlockNoteAttachment` and renders inside that place card.
+- A post note appears as a `section` block between place embeds.
+- A place note attaches through a `BlockNoteAttachment` and renders inside that embed's card.
 - Short place notes may render inline; longer ones can collapse behind “read more.” If the note has
   its own page publication, that action may link to `/n/<slug>`.
 
-Guide publishing includes a live section block's matching shareable list note and live
-`BlockNoteAttachment` place notes. Other notes on the same place or list never leave the device.
+Post publishing includes a live section block's matching shareable post note and live
+`BlockNoteAttachment` place notes. Other notes on the same place or post never leave the device.

@@ -1,5 +1,5 @@
 /**
- * Mode B viewer route `/l/:slug` (book/src/sharing.md): fetches the latest
+ * Mode B viewer route `/l/:slug` (spec/src/sharing.md): fetches the latest
  * successfully published revision — public, read-only, noindex. A revoked or
  * unknown slug gets a designed error, never a blank page.
  */

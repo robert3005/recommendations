@@ -46,6 +46,28 @@ describe("Phase 0 production provider hostname canonicalization", () => {
 
   test.each([
     {
+      label: "a malformed production provider URL",
+      url: "not-a-provider-url",
+    },
+    {
+      label: "a trailing-dot spelling of a demo hostname",
+      url: "https://tiles.openfreemap.org./styles/bright",
+    },
+  ])(
+    "rejects $label",
+    ({ url }) => {
+      const result = productionBuild(url);
+
+      expect(result.status, result.output).not.toBe(0);
+      expect(result.output).toMatch(
+        /configuration|development|demo|invalid|production provider|url/i,
+      );
+    },
+    30_000,
+  );
+
+  test.each([
+    {
       label: "a longer unrelated hostname",
       url: "https://tiles.openfreemap.org.production.example/styles/bright",
     },

@@ -1,6 +1,6 @@
 /**
  * GeoJSON is the Phase 3 full-fidelity interchange format
- * (book/src/interop.md). A field emitted by our writer must survive its parser.
+ * (spec/src/interop.md). A field emitted by our writer must survive its parser.
  */
 import { createOsmPlace, type List, type ResolvedPoi } from "@placemarks/domain";
 import { strToU8 } from "fflate";

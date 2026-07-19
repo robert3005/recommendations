@@ -1,5 +1,5 @@
 /**
- * Create a list: a name plus a marker colour (book/src/map-view.md). Used
+ * Create a list: a name plus a marker colour (spec/src/map-view.md). Used
  * directly on the Lists tab (2026-07-18: lists can be created in the app,
  * before any place joins them) and inline while adding a place to a new list.
  */

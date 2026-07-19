@@ -1,8 +1,8 @@
 /**
- * Exact OSM element resolution via the OSM API 0.6 (book/src/tech-stack.md:
+ * Exact OSM element resolution via the OSM API 0.6 (spec/src/tech-stack.md:
  * per-element reads at save/refresh volume; Overpass handles area queries).
  *
- * Outcome mapping is the identity-critical part (book/src/place-identity.md):
+ * Outcome mapping is the identity-critical part (spec/src/place-identity.md):
  * only a definitive 404/410 is `gone`; every other failure is `error`
  * (unavailability), which must never trigger relinking.
  */

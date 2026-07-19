@@ -1,6 +1,6 @@
 /**
  * Durable place identity — an immutable app-owned PlaceId over a repairable OSM binding.
- * See book/src/place-identity.md.
+ * See spec/src/place-identity.md.
  */
 import { type OsmElementRef, refKey } from "./osm";
 import type { ResolvedPoi } from "./poi";
@@ -54,7 +54,7 @@ export interface ManualFacts {
 }
 
 /**
- * A retained pointer into another ecosystem (book/src/interop.md): provenance
+ * A retained pointer into another ecosystem (spec/src/interop.md): provenance
  * and the deep link back. Opaque — the URL is never fetched.
  */
 export interface ExternalRef {
@@ -120,7 +120,7 @@ export function createOsmPlace(id: PlaceId, poi: ResolvedPoi, now: string): Plac
   };
 }
 
-/** A manual place starts unlinked with owner-provided facts (book/src/place-identity.md). */
+/** A manual place starts unlinked with owner-provided facts (spec/src/place-identity.md). */
 export function createManualPlace(id: PlaceId, facts: ManualFacts, now: string): Place {
   return {
     id,
@@ -134,7 +134,7 @@ export function createManualPlace(id: PlaceId, facts: ManualFacts, now: string):
 }
 
 /**
- * An imported place (book/src/interop.md) rides the manual-pin machinery:
+ * An imported place (spec/src/interop.md) rides the manual-pin machinery:
  * unlinked, with imported facts and the source URL retained as an external ref.
  * OSM linkage is an optional upgrade, never an import gate.
  */
@@ -253,7 +253,7 @@ export function displayFacts(place: Place): DisplayFacts | undefined {
 
 export const DEFAULT_RESOLUTION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** A resolved observation older than its TTL becomes stale (book/src/storage-sync.md). */
+/** A resolved observation older than its TTL becomes stale (spec/src/storage-sync.md). */
 export function isResolutionExpired(
   place: Place,
   nowIso: string,

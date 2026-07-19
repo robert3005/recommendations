@@ -57,7 +57,7 @@ describe("Phase 5 create commit ordering", () => {
     const claim = storage.events.indexOf("atomic-slug-claim");
     const success = storage.events.indexOf("replayable-success");
 
-    // The book requires both durable prerequisites before the claim and the
+    // The spec requires both durable prerequisites before the claim and the
     // replayable acknowledgement last. It does not prescribe whether audit or
     // reservation is written first inside that prerequisite pair.
     expect(audit).toBeGreaterThanOrEqual(0);

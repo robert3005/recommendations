@@ -136,7 +136,7 @@ export const overpassNearby = {
 export const overpassDiscover = overpassNearby;
 
 /**
- * The node→way replacement scenario (book/src/place-identity.md recovery):
+ * The node→way replacement scenario (spec/src/place-identity.md recovery):
  * node/599 "Café Migrado" resolves once, then is deleted upstream (410).
  * Its real-world place was redrawn as way/777 with the same identity.
  */

@@ -1,5 +1,5 @@
 /**
- * Mode A viewer route `/l#…` (book/src/sharing.md): the document lives in the
+ * Mode A viewer route `/l#…` (spec/src/sharing.md): the document lives in the
  * URL fragment — decoded and schema-validated client-side, never sent to any
  * server. Damaged or oversized links get a designed error, not a blank page.
  */

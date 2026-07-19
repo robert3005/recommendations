@@ -1,5 +1,5 @@
 /**
- * Import places (book/src/interop.md): drop a Google Takeout archive, CSV,
+ * Import places (spec/src/interop.md): drop a Google Takeout archive, CSV,
  * KML/KMZ, GPX, or GeoJSON. Shows the every-row-accounted-for report and the
  * persisted review queue — candidate pick, place-on-map, or skip.
  */
@@ -167,7 +167,7 @@ export function ImportSection() {
 }
 
 /**
- * A labelled mini map for ambiguous candidates (book/src/interop.md review):
+ * A labelled mini map for ambiguous candidates (spec/src/interop.md review):
  * relative positions make "which Central Café?" answerable at a glance without
  * spinning up a full map instance per review row.
  */

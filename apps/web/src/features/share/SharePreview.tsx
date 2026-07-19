@@ -1,5 +1,5 @@
 /**
- * The share preview (book/src/sharing.md): before a link exists, list exactly
+ * The share preview (spec/src/sharing.md): before a link exists, list exactly
  * what leaves the device — the actual names, addresses, prose, and copied OSM
  * evidence, not summaries — and the final URL size. Nothing is truncated
  * silently.

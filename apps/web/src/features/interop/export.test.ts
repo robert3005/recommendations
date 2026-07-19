@@ -1,5 +1,5 @@
 /**
- * Golden tests for the export writers (book/src/interop.md §Export): exact
+ * Golden tests for the export writers (spec/src/interop.md §Export): exact
  * output for a fixed list — an OSM-linked place with evidence and an imported
  * unlinked pin with an external ref. ODbL attribution appears exactly when
  * OSM-derived facts are present; the CSV keeps the Takeout shape and

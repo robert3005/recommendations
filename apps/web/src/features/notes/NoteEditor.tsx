@@ -1,7 +1,7 @@
 /**
- * Full-screen Markdown note editor (book/src/map-view.md): a writing surface
+ * Full-screen Markdown note editor (spec/src/map-view.md): a writing surface
  * with a live sanitized preview. Markdown source is what gets persisted
- * (book/src/notes.md — Markdown is the source of truth).
+ * (spec/src/notes.md — Markdown is the source of truth).
  */
 import type { Note } from "@placemarks/domain";
 import { useRef, useState } from "react";

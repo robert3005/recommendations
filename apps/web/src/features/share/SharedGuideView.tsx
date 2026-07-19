@@ -1,5 +1,5 @@
 /**
- * The public read-only guide viewer (book/src/sharing.md §Public guide viewer):
+ * The public read-only guide viewer (spec/src/sharing.md §Public guide viewer):
  * paints immediately from copied evidence / manual facts, live-resolves OSM
  * anchors (evidence stays visibly timestamped when resolution fails), renders
  * the interleaved article with a synchronized map, and offers

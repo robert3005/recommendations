@@ -1,5 +1,5 @@
 /**
- * The one Markdown pipeline (book/src/notes.md): CommonMark+GFM → sanitized HTML.
+ * The one Markdown pipeline (spec/src/notes.md): CommonMark+GFM → sanitized HTML.
  * Raw HTML is disabled; remote images are blocked — images must use app-controlled
  * asset: ids; external links get hardened rel attributes.
  */

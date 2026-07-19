@@ -1,4 +1,4 @@
-/** OSM element references — see book/src/place-identity.md. OSM ids are serialized as strings. */
+/** OSM element references — see spec/src/place-identity.md. OSM ids are serialized as strings. */
 
 export type OsmElementType = "node" | "way" | "relation";
 

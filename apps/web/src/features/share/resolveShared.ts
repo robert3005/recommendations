@@ -1,5 +1,5 @@
 /**
- * Viewer-side resolution (book/src/sharing.md §Public guide viewer): paint from
+ * Viewer-side resolution (spec/src/sharing.md §Public guide viewer): paint from
  * copied evidence immediately, resolve each OSM anchor live, and on a confirmed
  * disappearance attempt a unique high-confidence evidence match — temporarily,
  * never rewriting the author's document. Provider failure is not a missing

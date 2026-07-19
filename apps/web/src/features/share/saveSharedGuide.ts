@@ -1,5 +1,5 @@
 /**
- * "Add this guide to my library" (book/src/sharing.md §Public guide viewer):
+ * "Add this guide to my library" (spec/src/sharing.md §Public guide viewer):
  * reuse existing local places via the normal dedup ladders; create OSM-backed
  * places only from an exact resolve or a unique high-confidence recovery.
  * Unresolved OSM anchors become pending review items (the interop queue) —

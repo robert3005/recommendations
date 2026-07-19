@@ -1,5 +1,5 @@
 /**
- * Phase 6 privacy/recovery contracts from book/src/roadmap.md.
+ * Hardening-phase privacy/recovery contracts (spec/src/roadmap.md Phase 9, formerly Phase 6).
  *
  * These cases intentionally cover malformed local/browser input too: telemetry
  * must never forward a fragment merely because it is not a valid snapshot, and

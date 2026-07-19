@@ -1,5 +1,5 @@
 /**
- * Mode A — snapshot links (book/src/sharing.md): the SharedGuide compressed
+ * Mode A — snapshot links (spec/src/sharing.md): the SharedGuide compressed
  * into the URL fragment. No backend receives the document; explicit compressed
  * and inflated byte limits guard generation and decoding (decompression-bomb
  * protection); the decoder schema-validates before anything renders.

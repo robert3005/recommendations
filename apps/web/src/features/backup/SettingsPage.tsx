@@ -19,7 +19,7 @@ export function SettingsPage() {
   const dexieRepo = (repo as DexieRepository).db ? (repo as DexieRepository) : getDefaultRepo();
 
   // A non-empty library is anything worth losing — lists and notes count even
-  // before the first place block exists (book/src/roadmap.md Phase 6).
+  // before the first place block exists (spec/src/roadmap.md Phase 9 (hardening, formerly Phase 6)).
   const otherContentCount = useLiveQuery(async () => {
     const db = dexieRepo.db as Partial<DexieRepository["db"]> | undefined;
     if (!db?.lists || !db.notes) return 0;

@@ -14,11 +14,26 @@ our own map cannot be the front door. Instead: **import from the tools people ac
 make our UI the place where a list is adjusted and read for navigation, and hand navigation back
 out through deep links and exports ([Import & Export](./interop.md)).
 
+**Second sharpening (2026-07-19, the lists-and-posts pivot):** Placemarks is a **blog platform
+with a heavy geolocation focus**. Google Maps import/export is the basic building block the whole
+flow centres on; **lists** are the curation primitive built on it — import places, group them
+into lists, add notes to places; **posts** — editorialised articles about lists, embedding items
+from those lists — are the product's voice ([Posts](./posts.md)); and the map binds every piece
+of writing to physical locations. The home screen is the **Lists view**, each list with a
+fixed-length inline preview; the paired view is the **all-lists map**, every point wearing its
+list's unique marker ([Views](./map-view.md)). The initial version is **local storage with
+remote sync**, and both **lists and posts share** as read-only links.
+
 ## What we're building (v1)
 
 A responsive web app with:
 
-- A **map view** as the home screen — pan/zoom, current location, search.
+- A **Lists home screen** (2026-07-19) — every list with its marker, name, place count, and a
+  **fixed-length, truncated inline preview** of its contents; tapping opens the list, one switch
+  opens the map.
+- The **all-lists map** as the paired view — every library point at once, each wearing its
+  **list's unique marker (icon + colour)**; lists toggle on/off as the map's primary filter.
+  Pan/zoom, current location, and search as before.
 - **Place lookup** — tap a pin or search to see a place's name, category, address, and (when
   available) **website**, hours, and phone, sourced from OSM.
 - **Durable places & tagging** — a place enters the library by being **added to a list** (there
@@ -26,24 +41,27 @@ A responsive web app with:
   copied evidence, then carries free-form tags and personal notes. **Membership is existence** —
   a place removed from its last list is gone.
 - **Lists first** (flow inverted 2026-07-18) — group places into named **lists**. A list
-  is a name plus a **user-selected marker colour** over an ordered set of places: created
+  is a name plus a **unique marker (icon + colour)** over an ordered set of places: created
   **directly on the Lists tab** (a list may exist before any place joins it — 2026-07-18, late)
   or inline **from a place's card** ("add to new list" — membership is how the place persists).
-  The Lists tab reads list contents; its places wear the marker on the map. **Guides come
-  later as editorialised lists** — the same list enriched with prose, interleaved Markdown
-  sections, and a reading experience. Descriptive text belongs to the guide layer, not the
-  list.
+  Lists are **edited in place** — reorder, remove, rename, remark — and gain members from their
+  page or **from the map**. Descriptive prose belongs to posts, not lists.
+- **Posts** (2026-07-19) — editorialised articles about lists: interleaved Markdown sections and
+  **place embeds** drawn from the author's lists, read as an article beside a synchronized map.
+  See [Posts](./posts.md).
 - **Google Maps import & export** (2026-07-18) — a Google Takeout archive (per-list CSVs +
   `Saved Places.json` GeoJSON), KML/KMZ, GPX, or GeoJSON imports into lists through a review queue;
   lists export as KML (Google My Maps ingests it), Takeout-shaped CSV, GeoJSON, and GPX. Each
   imported place keeps its Google URL as an external ref — provenance and a **deep link** for
   navigation handoff (Google/Apple Maps). See [Import & Export](./interop.md).
-- **Shareable guides** — publish a guide to a persistent, **read-only public link**. Only the
-  creator can update or unpublish it using a separate private editor bearer token. It shows the
-  latest successfully published guide revision and the latest OSM facts the viewer can resolve.
-- **Local-first storage** — library data and editing work without an account and, after the app shell
-  loads, without a network. Search, uncached maps, OSM refresh, uploads, and publishing are online
-  capabilities.
+- **Shareable lists & posts** — publish a list or a post to a persistent, **read-only public
+  link**. Only the creator can update or unpublish it using a separate private editor bearer
+  token. It shows the latest successfully published revision and the latest OSM facts the viewer
+  can resolve.
+- **Local-first storage with remote sync** (sync promoted into v1, 2026-07-19) — library data and
+  editing work without an account and, after the app shell loads, without a network; an optional
+  account keeps several devices converged in the background. Search, uncached maps, OSM refresh,
+  uploads, publishing, and sync are online capabilities.
 - **Upstream corrections** — open an existing POI on the OpenStreetMap portal and edit/report it
   there, or add a missing POI and return to link it after OSM-derived services update.
 - **Unlinked manual pins** — drop a clearly-labeled local pin for spots that aren't in OSM (or
@@ -52,7 +70,8 @@ A responsive web app with:
 
 ## Explicit non-goals (v1)
 
-- ❌ No reviews, ratings aggregation, or user-generated content beyond your own notes/tags.
+- ❌ No reviews, ratings aggregation, or user-generated content beyond your own notes, tags, and
+  posts.
 - ❌ No social graph, following, or feeds.
 - ❌ No proprietary places API **calls** (Google/Foursquare/Yelp). OSM is the only live
   geographic source. Parsing files the user exported of their own data (Takeout, KML, GPX) is
@@ -72,15 +91,20 @@ A responsive web app with:
 
 ## Success criteria for v1
 
-- The map is visible and usable within ~2 seconds of launch on a mid-range phone over 4G; denied
-  or slow geolocation never blocks first use. (Formal p75/p95 budgets on reference devices are a
+- Launch opens the **Lists home** within ~2 seconds on a mid-range phone over 4G; one interaction
+  switches to the map, where every list's points wear that list's marker. Denied or slow
+  geolocation never blocks first use. (Formal p75/p95 budgets on reference devices are a
   [hardening-phase](./roadmap.md) concern.)
-- Find a place, add it to a list, and tag it in < 15s.
+- Find a place on the map, add it to a list, and tag it in < 15s.
 - Import a 50-place Google Takeout list and see it on the map with every row accounted for —
   placed, in review, or explicitly skipped; nothing silently dropped.
 - Create a list, add 5 places, and share a working link in < 1 min.
-- A recipient can read but cannot modify a shared guide; its creator can publish an update.
+- Write a post — two prose sections around three place embeds from a list — and publish it as a
+  read-only link whose article and map stay in sync.
+- A recipient can read but cannot modify a shared list or post; its creator can publish an update.
+- A second device signed into the same sync account converges to the same library — lists, posts,
+  notes, tags — without silently losing a concurrent edit.
 - If an OSM node is replaced by a way/relation, the library place retains its notes and either
   re-resolves with high confidence or asks the owner to review candidates.
 - A month-old link still renders copied evidence and clearly reports whether live OSM refresh
-  succeeded, while preserving the latest successfully published guide revision.
+  succeeded, while preserving the latest successfully published revision.

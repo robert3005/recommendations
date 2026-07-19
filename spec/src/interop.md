@@ -23,8 +23,8 @@ would kill the product at the front door. So:
 
 1. **Import is the primary way places enter Placemarks.** Google Maps first (Takeout), then the
    file formats the rest of the ecosystem speaks (KML/KMZ, GPX, GeoJSON).
-2. **Our UI is the editorial layer**: adjust the list — order, membership, markers, notes,
-   sections — and read it, on the map, for navigation.
+2. **Our UI is the editorial layer**: adjust the list — order, membership, marker, notes — read
+   it on the map for navigation, and write [posts](./posts.md) about it.
 3. **Export and deep links hand back to the tools people actually navigate with.** We are not
    trying to replace Google Maps as a navigator; we link out to it per place and export whole
    lists it (and others) can ingest.
@@ -105,8 +105,8 @@ recorded. It can be linked later through the same candidate picker.
 **Materialize.** Import goes through the one door that exists
 ([membership is existence](./data-model.md#membership-is-existence-no-saves)):
 
-- each source list becomes a `List` (marker colour auto-assigned from the palette; name from the
-  filename/folder, deduplicated);
+- each source list becomes a `List` (marker — icon + colour — auto-assigned as the next unused
+  combination; name from the filename/folder, deduplicated);
 - each placed item enters via `addToList` — the import *is* the adding-to-a-list;
 - the CSV Note column becomes a place note (plain text imported as a Markdown paragraph);
 - the Google Maps URL is retained as an **external ref** on the place — provenance and the best
@@ -202,10 +202,10 @@ Turn-by-turn routing stays a non-goal; deep links *are* the navigation story.
 
 Imported lists arrive with 30–200 places; curating them one place-card at a time does not scale.
 The 2026-07-18 interop decision brings list editing back as a **deliberate Edit mode on the list
-page** — reorder, remove, rename, recolour — while the default list view stays read-only for
+page** — reorder, remove, rename, remark — while the default list view stays read-only for
 reading and navigation. This supersedes the earlier "no edit functionality on the Lists tab"
-ruling *for the edit mode only*, and is the first slice of the guide editing surface (guides are
-editorialised lists — sections and prose land on the same blocks later).
+ruling *for the edit mode only*. Narrative prose never lands on the list: it belongs to
+[posts](./posts.md), whose block editor reuses this same interaction (2026-07-19).
 
 ## Licensing hygiene
 

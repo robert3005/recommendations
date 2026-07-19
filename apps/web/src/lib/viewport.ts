@@ -1,5 +1,5 @@
 /**
- * The starting camera (book/src/map-view.md): the last viewport when one is
+ * The starting camera (spec/src/map-view.md): the last viewport when one is
  * stored; otherwise an **approximate location derived locally from the device
  * timezone** — no permission prompt, no network request, nothing leaves the
  * device. Precise location stays behind the user-triggered Locate button.

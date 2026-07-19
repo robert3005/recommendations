@@ -1,6 +1,6 @@
 /**
  * Conservative evidence-based candidate matching for identity recovery.
- * Scoring order per book/src/place-identity.md §"Search using durable evidence":
+ * Scoring order per spec/src/place-identity.md §"Search using durable evidence":
  * stable external ids → website/phone → name+address → category+distance.
  * Distance alone can never establish identity.
  */

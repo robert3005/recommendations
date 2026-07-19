@@ -13,14 +13,16 @@ primary store for the web client.
 
 - `places` — app-owned `PlaceId`, current/historical OSM bindings, first-seen evidence,
   last-verified evidence, and resolution state.
-- `notes`, `tags`, `tagAssignments`, `lists`, `listBlocks`, `blockNoteAttachments`, and
-  `blockTagSelections` — personal domain entities. There is no saves store (2026-07-18:
-  membership is existence — tag assignments and place blocks join directly on `PlaceId`).
+- `notes`, `tags`, `tagAssignments`, `lists`, `listBlocks`, `posts`, `postBlocks`,
+  `blockNoteAttachments`, and `blockTagSelections` — personal domain entities (2026-07-19:
+  attachment/selection edges hang off post blocks; list blocks carry membership only). There is
+  no saves store (2026-07-18: membership is existence — tag assignments and place blocks join
+  directly on `PlaceId`).
 - `media` — binary image blobs keyed separately from portable `MediaAsset` metadata.
 - `publications` — private publication state, public slug, revisions, status, and a reference to a
   local credential.
 - `credentials` — hosted-share editor bearer tokens; never included in public documents.
-- `mutationOutbox` — durable local mutation ids for future sync.
+- `mutationOutbox` — durable local mutation ids drained by the sync transport.
 - `publicationOutbox` — idempotent publish and revoke jobs.
 
 There is no separate authoritative `poiCache`: `Place.lastVerified` is the durable display fallback
@@ -63,8 +65,8 @@ interface SyncTransport {
 }
 ```
 
-Creating a place by adding it to a list, deleting a list with its owned section blocks and orphaned
-places, or changing a guide and queuing its publication are aggregate transactions. A failed
+Creating a place by adding it to a list, deleting a list with its orphaned places and affected
+post embeds, or changing a post and queuing its publication are aggregate transactions. A failed
 network effect never rolls back a committed local edit.
 
 ## Offline behavior
@@ -74,7 +76,8 @@ offline. The UI exposes capability rather than using a blanket “offline capabl
 
 | Capability | Offline behavior |
 |---|---|
-| View/edit library places, tags, notes, and lists/guides | Works from IndexedDB |
+| View/edit library places, tags, notes, lists, and posts | Works from IndexedDB |
+| Multi-device sync | Mutations queue in the outbox; push/pull resume online |
 | View stored OSM facts | Uses `lastVerified` evidence; freshness timestamps return with that surface |
 | View previously cached map area | Best effort, subject to tile-provider policy/cache |
 | Search or browse live POIs | Unavailable |
@@ -140,7 +143,7 @@ before any decompression, and coalescing duplicate exact-OSM places grafts the d
 last-verified (and older first-seen) evidence onto the retained place instead of discarding it.
 A central directory that cannot be walked as declared is refused outright — never interpreted as
 declaring zero. Export itself fails closed when the archive would exceed the restore caps: a
-successful export is always restorable. Guide attachments restore only to shareable notes, and a
+successful export is always restorable. Block note attachments restore only to shareable notes, and a
 merged duplicate membership block hands its attachments to the retained block instead of leaving
 them dangling.
 The user chooses merge or replace. Merge uses the place-deduplication order from
@@ -153,13 +156,13 @@ membership-is-existence, every formerly saved place must either retain an existi
 or be placed in an explicit migration-created list; it may never become a hidden live orphan.
 
 Editor bearer tokens are excluded by default. A separate explicitly encrypted recovery bundle may
-include them; exporting a guide or ordinary JSON must never leak write access to public pages.
+include them; exporting a list, a post, or ordinary JSON must never leak write access to public pages.
 
 ## Publication while offline
 
-The [share service](./sharing.md#share-service) is independent of sync. A guide edit updates local
-state, increments `Publication.localRevision`, and adds an idempotent outbox job in the same
-transaction.
+The [share service](./sharing.md#share-service) is independent of sync. A list or post edit
+updates local state, increments `Publication.localRevision`, and adds an idempotent outbox job in
+the same transaction.
 
 Every outbox job is immutable and includes the projected local revision, content hash, idempotency
 key, and expected server ETag. The publisher moves an attempt through
@@ -168,32 +171,37 @@ it cannot set `lastPublishedLocalRevision` past, or clear, a newer queued edit. 
 “changes pending” whenever `localRevision !== lastPublishedLocalRevision`. Revocation uses the same
 durable mechanism and an idempotent delete job.
 
-## Optional multi-device sync
+## Multi-device sync
 
-Sync can be added later without changing local read/write semantics:
+> **Promoted into v1 (2026-07-19; previously "optional, add later").** The initial version is
+> local storage **with remote sync**: a personal library that exists on one browser's IndexedDB
+> only is too fragile to be the system of record for years of curation and writing. Sync stays
+> exactly what the architecture always reserved room for — a background transport draining the
+> mutation outbox — and does not change local read/write semantics. An account exists **only**
+> to name the sync scope; solo, account-free use remains fully supported.
 
 - Every mutation has a globally unique id, actor id, entity id, and deterministic revision stamp
   such as a hybrid logical clock. Client `updatedAt` is display metadata, not the conflict order.
 - Push is idempotent; pull uses a server-monotonic cursor.
 - Tombstones remain until all active devices have acknowledged them or a documented retention
   horizon expires.
-- Tag assignments, list blocks, and note attachments sync as independent edge entities, so
-  concurrent changes do not replace an entire list array.
+- Tag assignments, list blocks, post blocks, and note attachments sync as independent edge
+  entities, so concurrent changes do not replace an entire list or post array.
 - Concurrent Markdown edits preserve both bodies and create a recoverable conflict copy rather
   than silently applying last-writer-wins.
 - Relinking a `Place` merges append-only OSM history conservatively. Conflicting candidate choices
   become `needs-review`.
 
-CRDTs are unnecessary for the initial single-owner workflow. They remain an option for true
-collaborative editing, but are not a substitute for explicit identity and publication semantics.
+CRDTs are unnecessary for the single-owner workflow. They remain an option for true collaborative
+editing, but are not a substitute for explicit identity and publication semantics.
 
 ## Data ownership summary
 
 | Data | Location | Update mechanism |
 |---|---|---|
 | Place identity and OSM evidence | IndexedDB; included in backup | Exact resolve and conservative relink |
-| List membership, tags, notes, lists/guides | IndexedDB | Local edits; optional future sync |
+| List membership, tags, notes, lists, posts | IndexedDB | Local edits; background multi-device sync |
 | Media bytes | IndexedDB media store | Local import; explicit hosted upload |
 | Publication editor token | Private local credential store | Created once; optional encrypted recovery |
-| Hosted public guide/note | Share-service storage | Last successful Bearer-authorized publish |
+| Hosted public list/post/note | Share-service storage | Last successful Bearer-authorized publish |
 | OSM source facts | OSM-derived production resolver | TTL refresh; user edits occur upstream in OSM |

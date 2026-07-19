@@ -1,5 +1,5 @@
 /**
- * Publish a shareable note as a standalone read-only page (book/src/notes.md):
+ * Publish a shareable note as a standalone read-only page (spec/src/notes.md):
  * `/n/<slug>` shows the latest successfully published revision only.
  */
 import type { Note } from "@placemarks/domain";

@@ -1,5 +1,5 @@
 /**
- * The conservative refresh / re-resolution state machine from book/src/place-identity.md.
+ * The conservative refresh / re-resolution state machine from spec/src/place-identity.md.
  * Attaching a person's notes to the wrong business is worse than showing stale data.
  */
 import { distanceMeters } from "./geo";

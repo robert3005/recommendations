@@ -1,7 +1,7 @@
 /**
  * Client-side image import: type/size check + downscale/re-encode to WebP.
  * The canvas re-encode strips EXIF/location metadata — the privacy half of
- * book/src/notes.md. Where no re-encode path exists, the import is REJECTED:
+ * spec/src/notes.md. Where no re-encode path exists, the import is REJECTED:
  * retaining the original bytes (and their embedded location) is never safe.
  */
 const MAX_DIMENSION = 1600;

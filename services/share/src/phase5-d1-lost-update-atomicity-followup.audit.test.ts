@@ -3,7 +3,7 @@
  * that affects zero rows is still a successful SQL statement, so a concurrent
  * writer must not let the following replayable acknowledgement commit.
  *
- * Book contract: create/update are one all-or-nothing storage unit and an
+ * Spec contract: create/update are one all-or-nothing storage unit and an
  * interrupted or lost-race commit leaves nothing durable.
  */
 import { describe, expect, it } from "vitest";

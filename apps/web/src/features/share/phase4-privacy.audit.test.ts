@@ -130,7 +130,7 @@ describe("Phase 4 public projection privacy", () => {
     }
   });
 
-  it("matches the SharedGuide schema in the book and does not add an undocumented colour field", async () => {
+  it("matches the SharedGuide schema in the spec and does not add an undocumented colour field", async () => {
     const repo = new DexieRepository(`phase4-schema-drift-${crypto.randomUUID()}`);
     try {
       await repo.createList({

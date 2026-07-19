@@ -1,5 +1,5 @@
 /**
- * Thin MapLibre adapter (book/src/tech-stack.md: no wrapper library — we own this boundary).
+ * Thin MapLibre adapter (spec/src/tech-stack.md: no wrapper library — we own this boundary).
  * Renders the basemap with required OSM attribution, saved pins (clustered), transient
  * viewport POIs, and reports gestures upward. No domain logic lives here.
  */
@@ -15,7 +15,7 @@ export interface PlacePinFeature {
   lat: number;
   lng: number;
   unlinked: boolean;
-  /** List marker colour (or the default) — book/src/map-view.md. */
+  /** List marker colour (or the default) — spec/src/map-view.md. */
   color: string;
 }
 
@@ -98,7 +98,7 @@ export function MapView({
   const poiPinsRef = useRef(poiPins);
   poiPinsRef.current = poiPins;
   // A basemap that never establishes itself is a designed state, not a blank
-  // canvas (book/src/map-view.md §Offline and failure states).
+  // canvas (spec/src/map-view.md §Offline and failure states).
   const [unavailable, setUnavailable] = useState(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the initial camera applies once at map creation — re-running on center/zoom changes would recreate the map.

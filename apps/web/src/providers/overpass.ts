@@ -1,6 +1,6 @@
 /**
  * Overpass adapter for area queries: nearby candidates (long-press picker, identity
- * recovery) and bounded viewport discovery. Budgets per book/src/data-sources.md.
+ * recovery) and bounded viewport discovery. Budgets per spec/src/data-sources.md.
  * The public instance is development-only; production points OVERPASS_URL elsewhere.
  */
 import {

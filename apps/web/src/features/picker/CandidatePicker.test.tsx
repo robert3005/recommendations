@@ -1,5 +1,5 @@
 /**
- * Missing-POI escape paths (book/src/place-identity.md): when nothing is mapped
+ * Missing-POI escape paths (spec/src/place-identity.md): when nothing is mapped
  * at a location the picker offers "Add it on OpenStreetMap" (preferred for real
  * public POIs) and, when wired, "Save as unlinked pin" for spots that don't
  * belong in OSM.

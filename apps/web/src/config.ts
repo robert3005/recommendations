@@ -1,14 +1,14 @@
 /**
  * Provider endpoints. The defaults are public/demo services and are DEVELOPMENT-ONLY
- * per book/src/data-sources.md — a production release must point these at contracted
+ * per spec/src/data-sources.md — a production release must point these at contracted
  * or self-hosted deployments via VITE_* env configuration.
  */
 /**
  * Default basemap: OpenFreeMap "bright" — the OSM Bright GL style on full
  * street-level OSM vector tiles, no API key, explicitly free to use
  * (https://openfreemap.org). Alternatives for development live in
- * .env.example / book/src/data-sources.md. Still a swappable provider;
- * production contracts land per the book. E2e overrides this with a local,
+ * .env.example / spec/src/data-sources.md. Still a swappable provider;
+ * production contracts land per the spec. E2e overrides this with a local,
  * network-free style fixture.
  */
 export const MAP_STYLE_URL: string =
@@ -27,13 +27,13 @@ export const OSM_ATTRIBUTION = "© OpenStreetMap contributors" as const;
 export const OSM_ATTRIBUTION_HTML =
   '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>' as const;
 
-/** Viewport POI discovery budgets (book/src/data-sources.md §Viewport discovery). */
+/** Viewport POI discovery budgets (spec/src/data-sources.md §Viewport discovery). */
 export const DISCOVER_MIN_ZOOM = 15;
 export const DISCOVER_LIMIT = 60;
 export const DISCOVER_DEBOUNCE_MS = 400;
 
 /**
- * Share-service base URL (book/src/sharing.md). Empty = same origin, which the
+ * Share-service base URL (spec/src/sharing.md). Empty = same origin, which the
  * dev/e2e MSW worker intercepts; production points at the deployed Worker.
  */
 export const SHARE_API_URL: string = import.meta.env.VITE_SHARE_API_URL ?? "";

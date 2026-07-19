@@ -1,5 +1,5 @@
 /**
- * Phase 3 interop (book/src/interop.md): a Takeout archive imports through the
+ * Phase 3 interop (spec/src/interop.md): a Takeout archive imports through the
  * coordinate ladder into a list, the review queue resolves by map placement,
  * pins land on the map, deep links hand navigation out, and the list exports
  * as My Maps-compatible KML with ODbL attribution.

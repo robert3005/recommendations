@@ -1,5 +1,5 @@
 /**
- * Merge and identity-shape regressions from book/src/storage-sync.md.
+ * Merge and identity-shape regressions from spec/src/storage-sync.md.
  * These cases focus on final-state LWW/edge invariants not exercised by the
  * existing replace-graph and identity-coalescing audit suites.
  */

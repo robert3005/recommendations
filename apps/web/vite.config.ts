@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-/** Public/demo OSM endpoints are development-only (book/src/data-sources.md). */
+/** Public/demo OSM endpoints are development-only (spec/src/data-sources.md). */
 const REQUIRED_PROVIDER_VARS = [
   "VITE_MAP_STYLE_URL",
   "VITE_PHOTON_URL",
@@ -11,7 +11,7 @@ const REQUIRED_PROVIDER_VARS = [
   "VITE_OVERPASS_URL",
 ] as const;
 
-/** The community/demo hosts the book designates development-only. */
+/** The community/demo hosts the spec designates development-only. */
 const DEVELOPMENT_ONLY_HOSTS = [
   "photon.komoot.io",
   "overpass-api.de",
@@ -30,7 +30,7 @@ export default defineConfig(({ command, mode }) => {
     if (missing.length > 0) {
       throw new Error(
         `production build fails closed: missing provider configuration ${missing.join(", ")} — ` +
-          "public/demo OSM endpoints are development-only (book/src/data-sources.md); point " +
+          "public/demo OSM endpoints are development-only (spec/src/data-sources.md); point " +
           "every VITE_ provider variable at a contracted or self-hosted deployment.",
       );
     }
@@ -52,7 +52,7 @@ export default defineConfig(({ command, mode }) => {
     if (demo.length > 0) {
       throw new Error(
         `production build fails closed: ${demo.join(", ")} point at development/demo provider ` +
-          "endpoints (book/src/data-sources.md); a production provider path must be a contracted " +
+          "endpoints (spec/src/data-sources.md); a production provider path must be a contracted " +
           "or self-hosted deployment.",
       );
     }

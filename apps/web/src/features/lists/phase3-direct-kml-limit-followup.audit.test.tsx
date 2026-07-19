@@ -6,6 +6,7 @@
 import type { GuideBlockView, List, Note, Place } from "@placemarks/domain";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { exportListKml } from "../interop/export";
 import { ListPage } from "./ListPage";
 
 const NOW = "2026-07-19T12:00:00.000Z";
@@ -41,8 +42,41 @@ const blocks: GuideBlockView[] = [
 
 const mocks = vi.hoisted(() => ({
   downloadText: vi.fn(),
-  listNotesForPlace: vi.fn<() => Promise<Note[]>>(),
+  listNotesForPlace: vi.fn<(placeId: string) => Promise<Note[]>>(),
 }));
+
+function setBlockCount(count: number): Place[] {
+  const places = Array.from(
+    { length: count },
+    (_, index): Place => ({
+      ...place,
+      id: `direct-kml-place-${index.toString()}`,
+      manual: {
+        name: `Place ${index.toString()}`,
+        lat: 38.7 + index / 1_000_000,
+        lng: -9.1,
+      },
+    }),
+  );
+  blocks.splice(
+    0,
+    blocks.length,
+    ...places.map(
+      (itemPlace, index): GuideBlockView => ({
+        block: {
+          id: `direct-kml-block-${index.toString()}`,
+          listId: list.id,
+          rank: index.toString().padStart(5, "0"),
+          content: { type: "place", placeId: itemPlace.id },
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+        place: itemPlace,
+      }),
+    ),
+  );
+  return places;
+}
 
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
@@ -110,36 +144,14 @@ describe("Phase 3 direct KML My Maps limits", () => {
     expect(
       outputs.every((output) => new TextEncoder().encode(output).byteLength <= MY_MAPS_FILE_LIMIT),
     ).toBe(true);
+    const error = screen.getByText(/Export failed/i);
+    expect(error).toHaveTextContent(/5 MB/i);
+    expect(error).not.toHaveTextContent(/notes could not be read/i);
   });
 
   it("splits direct KML export before a layer exceeds 2,000 features", async () => {
     mocks.listNotesForPlace.mockReset().mockResolvedValue([]);
-    blocks.splice(
-      0,
-      blocks.length,
-      ...Array.from({ length: 2001 }, (_, index): GuideBlockView => {
-        const itemPlace: Place = {
-          ...place,
-          id: `direct-kml-place-${index.toString()}`,
-          manual: {
-            name: `Place ${index.toString()}`,
-            lat: 38.7 + index / 1_000_000,
-            lng: -9.1,
-          },
-        };
-        return {
-          block: {
-            id: `direct-kml-block-${index.toString()}`,
-            listId: list.id,
-            rank: index.toString().padStart(5, "0"),
-            content: { type: "place", placeId: itemPlace.id },
-            createdAt: NOW,
-            updatedAt: NOW,
-          },
-          place: itemPlace,
-        };
-      }),
-    );
+    setBlockCount(2001);
 
     render(<ListPage />);
     fireEvent.click(screen.getByTestId("export-kml"));
@@ -148,6 +160,46 @@ describe("Phase 3 direct KML My Maps limits", () => {
     const outputs = mocks.downloadText.mock.calls.map((call) => call[2] as string);
     expect(outputs.length).toBeGreaterThan(1);
     expect(outputs.every((output) => (output.match(/<Placemark>/g) ?? []).length <= 2000)).toBe(
+      true,
+    );
+  });
+
+  it("measures multipart KML after adding its final part name", async () => {
+    const places = setBlockCount(2001);
+    const emptyViews = places.slice(0, 2000).map((itemPlace) => ({
+      place: itemPlace,
+      notes: [] as Note[],
+    }));
+    const probe: Note = {
+      id: "direct-kml-boundary-note",
+      target: { kind: "place", placeId: places[0]?.id ?? place.id },
+      body: "x",
+      mediaIds: [],
+      shareable: false,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    const oneCharacterViews = emptyViews.map((view, index) =>
+      index === 0 ? { ...view, notes: [probe] } : view,
+    );
+    const encoder = new TextEncoder();
+    const baseBytes = encoder.encode(exportListKml(list, emptyViews)).byteLength;
+    const noteWrapperBytes =
+      encoder.encode(exportListKml(list, oneCharacterViews)).byteLength - baseBytes - 1;
+    const bodyLength = MY_MAPS_FILE_LIMIT - baseBytes - noteWrapperBytes;
+    expect(bodyLength).toBeGreaterThan(0);
+    const boundaryNote = { ...probe, body: "x".repeat(bodyLength) };
+    mocks.listNotesForPlace
+      .mockReset()
+      .mockImplementation(async (placeId) => (placeId === places[0]?.id ? [boundaryNote] : []));
+
+    render(<ListPage />);
+    fireEvent.click(screen.getByTestId("export-kml"));
+
+    await waitFor(() => expect(mocks.downloadText).toHaveBeenCalled());
+    const outputs = mocks.downloadText.mock.calls.map((call) => call[2] as string);
+    expect(outputs.length).toBeGreaterThan(1);
+    expect(outputs.every((output) => encoder.encode(output).byteLength <= MY_MAPS_FILE_LIMIT)).toBe(
       true,
     );
   });

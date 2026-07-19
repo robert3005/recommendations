@@ -1,6 +1,6 @@
 /**
  * Pure display of a place's fields. Manual pins are labeled as owner-provided;
- * healthy OSM-backed places carry no state marker (book/src/map-view.md).
+ * healthy OSM-backed places carry no state marker (spec/src/map-view.md).
  */
 import type { ResolutionState } from "@placemarks/domain";
 import { OpenNow } from "./OpenNow";

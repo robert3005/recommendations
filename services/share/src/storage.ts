@@ -1,5 +1,5 @@
 /**
- * Share-service storage port (book/src/sharing.md §Share service): a
+ * Share-service storage port (spec/src/sharing.md §Share service): a
  * transactional, consistent store — atomic slug claims and conditional
  * revision updates. D1/SQL in deployment; the in-memory adapter backs tests
  * and mirrors the same semantics.

@@ -1,7 +1,7 @@
 /**
  * Focused regressions for Phase 5 local publication atomicity and queue ordering.
  *
- * The book requires a guide edit, every affected Publication revision, and its
+ * The spec requires a guide edit, every affected Publication revision, and its
  * durable outbox job to commit as one aggregate transaction. Queue ordering is
  * per publication: a failure for one public page must not starve another page.
  */

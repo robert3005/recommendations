@@ -1,5 +1,5 @@
 /**
- * D1 adapter (book/src/tech-stack.md: transactional SQL for atomic slug claims
+ * D1 adapter (spec/src/tech-stack.md: transactional SQL for atomic slug claims
  * and conditional revision updates — not KV). Minimal structural typing keeps
  * the package free of a workers-types dependency.
  */

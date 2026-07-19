@@ -1,5 +1,5 @@
 /**
- * Versioned ZIP backup/restore (book/src/storage-sync.md §Backup and restore):
+ * Versioned ZIP backup/restore (spec/src/storage-sync.md §Backup and restore):
  * manifest + checksummed data.json + binary media. Import validates schema and
  * checksums before any write; merge is per-id LWW that never silently discards
  * a conflicting note body (a conflict copy is created instead).
@@ -82,7 +82,7 @@ export async function exportBackup(repo: DexieRepository, exportedAt: string): P
   const files: Record<string, Uint8Array> = { "data.json": dataBytes };
   const checksums: Record<string, string> = { "data.json": await sha256Hex(dataBytes) };
   // Fail closed: an apparently complete archive with silently omitted media is
-  // worse than no archive (book/src/storage-sync.md §Backup and restore).
+  // worse than no archive (spec/src/storage-sync.md §Backup and restore).
   for (const asset of data.mediaAssets.filter((a) => !a.deleted)) {
     const blobRow = await db.mediaBlobs.get(asset.localBlobKey as string);
     if (!blobRow?.blob) {
@@ -158,7 +158,7 @@ const validRef = (ref: RefLike | undefined): boolean =>
     /^\d+$/.test(ref.id));
 
 /**
- * Graph invariants before any write (book/src/storage-sync.md): every live
+ * Graph invariants before any write (spec/src/storage-sync.md): every live
  * place has a live list membership (replace mode — merge may complete
  * membership from existing data), OSM references are well-formed, and live
  * media metadata has matching bytes in the archive.
@@ -396,7 +396,7 @@ function validateGraph(
 /**
  * Merge safety: an incoming row reusing an existing PlaceId must actually be
  * the same place — disjoint OSM identities under one id are a collision, not
- * an update (book/src/place-identity.md).
+ * an update (spec/src/place-identity.md).
  */
 /** Canonical identity keys — derived from the domain fields, never from a (forgeable) refKeys index. */
 function canonicalKeys(row: {
@@ -604,7 +604,7 @@ function validateCoordinates(data: BackupData): void {
   }
 }
 
-/** Import resource caps (book/src/storage-sync.md: archive bytes, entry count, inflated bytes). */
+/** Import resource caps (spec/src/storage-sync.md: archive bytes, entry count, inflated bytes). */
 export const ARCHIVE_BYTE_LIMIT = 256 * 1024 * 1024;
 export const ARCHIVE_ENTRY_LIMIT = 4096;
 export const INFLATED_BYTE_LIMIT = 48 * 1024 * 1024;
@@ -767,7 +767,7 @@ export async function importBackup(
         imported += data[key].length;
       }
     } else {
-      // Identity merge (book/src/place-identity.md): the same exact OSM element —
+      // Identity merge (spec/src/place-identity.md): the same exact OSM element —
       // by current or historical ref — must not become two library places.
       // Incoming duplicates are dropped and their edges rewritten to the retained
       // PlaceId before the per-id merge.

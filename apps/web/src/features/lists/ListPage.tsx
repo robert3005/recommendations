@@ -1,6 +1,6 @@
 /**
  * A list: read by default; a deliberate **Edit mode** (Phase 3 interop,
- * book/src/interop.md §List curation returns) adds reorder/remove/rename/
+ * spec/src/interop.md §List curation returns) adds reorder/remove/rename/
  * recolour — imported lists are too large for place-card-only curation.
  * Every list exports as KML / Takeout-shaped CSV / GeoJSON / GPX.
  */

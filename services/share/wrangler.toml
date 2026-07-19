@@ -1,4 +1,4 @@
-# Share service deployment (book/src/tech-stack.md: Hono on Workers + D1).
+# Share service deployment (spec/src/tech-stack.md: Hono on Workers + D1).
 # Apply schema.sql with: wrangler d1 execute placemarks-share --file=schema.sql
 name = "placemarks-share"
 main = "src/worker.ts"

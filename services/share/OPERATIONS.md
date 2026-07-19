@@ -28,4 +28,4 @@ DELETE FROM idempotency WHERE createdAt < datetime('now', '-90 days');
 
 Public CDN entries for updated or revoked documents are purged by
 `Surrogate-Key` (`<kind>/<slug>`) within the service window described in
-book/src/sharing.md.
+spec/src/sharing.md.

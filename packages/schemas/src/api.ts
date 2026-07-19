@@ -1,5 +1,5 @@
 /**
- * Share-service request/response DTOs (book/src/sharing.md §Share service).
+ * Share-service request/response DTOs (spec/src/sharing.md §Share service).
  * Reads are public; mutations carry a Bearer editor token the server only ever
  * stores as a hash.
  */

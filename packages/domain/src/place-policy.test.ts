@@ -1,4 +1,4 @@
-/** Place-creation policy (book/src/place-identity.md). */
+/** Place-creation policy (spec/src/place-identity.md). */
 import { describe, expect, it } from "vitest";
 import * as placeModule from "./place";
 

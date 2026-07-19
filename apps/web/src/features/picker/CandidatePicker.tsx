@@ -1,5 +1,5 @@
 /**
- * Long-press flow (book/src/place-identity.md): pick the existing OSM POI, or —
+ * Long-press flow (spec/src/place-identity.md): pick the existing OSM POI, or —
  * when absent — add it upstream, or keep the spot as an unlinked manual pin.
  */
 import { distanceMeters, osmEditAtUrl, type ResolvedPoi } from "@placemarks/domain";
@@ -17,7 +17,7 @@ export interface CandidatePickerProps {
   /**
    * The OSM-editor handoff. Off for imported places: their coordinates are
    * Google-derived and must never pre-fill an OSM contribution
-   * (book/src/interop.md §Licensing hygiene).
+   * (spec/src/interop.md §Licensing hygiene).
    */
   allowOsmAdd?: boolean;
 }

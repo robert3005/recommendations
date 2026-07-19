@@ -1,6 +1,6 @@
 /**
  * Details for a place in the library (i.e. in at least one list — membership is
- * existence, book/src/data-model.md): facts, tags, Markdown notes, add-to-list,
+ * existence, spec/src/data-model.md): facts, tags, Markdown notes, add-to-list,
  * the manual-pin link-to-OSM upgrade, and Remove (from all lists, which removes
  * the place).
  */

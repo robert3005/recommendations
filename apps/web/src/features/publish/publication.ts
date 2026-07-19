@@ -1,5 +1,5 @@
 /**
- * Hosted publication (book/src/sharing.md §Mode B, §Local publication record):
+ * Hosted publication (spec/src/sharing.md §Mode B, §Local publication record):
  * the client generates a ≥256-bit editor token and persists it before the
  * first request; jobs are durable, idempotent (job id = Idempotency-Key), and
  * conditional (If-Match on the server revision). A failed or offline publish
@@ -26,7 +26,7 @@ export async function publicationForNote(
   return rows.find((p) => p.status !== "revoked") ?? rows[0];
 }
 
-/** Publish (or update) a standalone note page (book/src/notes.md). */
+/** Publish (or update) a standalone note page (spec/src/notes.md). */
 export async function publishNote(
   repo: DexieRepository,
   note: Note,
@@ -269,7 +269,7 @@ const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
 /**
  * The private Bearer credential never crosses an explicitly insecure
  * transport: an absolute non-localhost http: share URL blocks all mutations
- * (book/src/sharing.md: TLS is mandatory).
+ * (spec/src/sharing.md: TLS is mandatory).
  */
 function insecureShareTransport(): boolean {
   if (!SHARE_API_URL) return false; // same-origin relative path
@@ -342,7 +342,7 @@ export async function runPublicationOutbox(
     // A payload-less job is a passive dirty marker: only an explicit publish
     // action for its publication attaches a payload and sends it. A launch
     // retry (or a drain for another page) must never auto-publish local edits
-    // (book/src/sharing.md: the page changes only when the creator publishes).
+    // (spec/src/sharing.md: the page changes only when the creator publishes).
     if (job.action === "publish" && job.payload === undefined) continue;
     const payload = job.payload;
     const localRevision = job.localRevision;

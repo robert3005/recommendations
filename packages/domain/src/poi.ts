@@ -1,6 +1,6 @@
 /**
  * Resolved POI — the transient source view of an OSM element, and the tag-derivation
- * rules from book/src/data-sources.md ("Fields we derive").
+ * rules from spec/src/data-sources.md ("Fields we derive").
  */
 import type { OsmElementRef } from "./osm";
 
@@ -45,7 +45,7 @@ export function deriveCategory(tags: Record<string, string>): string {
 
 /**
  * External URLs are untrusted data: only normalized http:/https: destinations are ever
- * rendered as links (book/src/data-model.md).
+ * rendered as links (spec/src/data-model.md).
  */
 export function normalizeWebsite(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
@@ -113,7 +113,7 @@ const IDENTITY_TAG_LIMIT = 24;
 
 /**
  * Bounded subset of tags useful for identity matching — not an unfiltered OSM copy
- * (book/src/place-identity.md).
+ * (spec/src/place-identity.md).
  */
 export function identityTagsFrom(tags: Record<string, string>): Record<string, string> {
   const picked: Record<string, string> = {};

@@ -1,4 +1,4 @@
-/** Metrics redaction (book/src/roadmap.md): no fragments, tokens, or precise coordinates. */
+/** Metrics redaction (spec/src/roadmap.md): no fragments, tokens, or precise coordinates. */
 import { describe, expect, it } from "vitest";
 import { count, metricsSnapshot, redact, reportError } from "./metrics";
 

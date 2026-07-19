@@ -1,5 +1,5 @@
 /**
- * Phase 4 invariants (book/src/sharing.md): the projection carries no private
+ * Phase 4 invariants (spec/src/sharing.md): the projection carries no private
  * ids/tags/non-shareable notes; snapshot links round-trip, enforce byte limits,
  * and resist decompression bombs; saving a shared guide dedups against the
  * local library and queues unresolved anchors for review.

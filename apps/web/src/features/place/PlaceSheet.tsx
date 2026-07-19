@@ -1,7 +1,7 @@
 /**
  * Place detail sheet for a selected OSM element: exact resolution with live
  * fields, designed failure states, and a single OSM portal link
- * (book/src/map-view.md).
+ * (spec/src/map-view.md).
  */
 import { refKey } from "@placemarks/domain";
 import { useQuery } from "@tanstack/react-query";
@@ -93,7 +93,7 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
   }
 
   if (outcome.type === "gone") {
-    // A confirmed deletion keeps its designed affordances (book/src/map-view.md):
+    // A confirmed deletion keeps its designed affordances (spec/src/map-view.md):
     // retry, nearby-candidate review, and the OSM portal (history survives deletion).
     return (
       <SheetShell label={label}>

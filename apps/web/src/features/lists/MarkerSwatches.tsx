@@ -1,5 +1,5 @@
 /**
- * The list marker colour picker (book/src/map-view.md: every list carries a
+ * The list marker colour picker (spec/src/map-view.md: every list carries a
  * user-selected marker its places wear on the map) — one swatch row shared by
  * every surface that creates a list. Semantic radios: the sr-only input carries
  * selection state for keyboards, screen readers, and tests.

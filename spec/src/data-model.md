@@ -1,4 +1,12 @@
-# Places, Tags & Lists — Data Model
+# Places, Lists & Posts — Data Model
+
+> **Lists-and-posts pivot (2026-07-19).** The editorial layer moves off `List` into a standalone
+> [`Post`](./posts.md) entity. A list is pure curation — name, unique marker, ordered place
+> membership. Section blocks, note attachments, and tag selections become **post** structure;
+> list-targeted notes become post-targeted notes. The implemented list-block machinery is the
+> storage substrate this pivot relocates ([migration](./posts.md#migration-from-the-guide-layer));
+> rulings below that predate the pivot and say "guide" describe what is now a published list or a
+> post.
 
 > **Repository-boundary rulings (2026-07-19).** `updatePlace` treats durable identity as
 > immutable: origin and first-seen never change, completed link history only grows, and an update
@@ -15,7 +23,7 @@ The model separates two kinds of data:
 
 1. **OSM observations** — source facts that Placemarks copies for display, offline fallback, and
    identity recovery. OSM remains the upstream source of truth.
-2. **Owned data** — durable place identities, list memberships, tags, notes, guides, imported
+2. **Owned data** — durable place identities, list memberships, tags, notes, posts, imported
    facts/external refs, and publication state.
 
 There is deliberately no Placemarks-wide POI contribution layer. If a website, phone number,
@@ -26,7 +34,7 @@ opening time, location, or POI is wrong or missing, the product sends the user t
 
 An OSM element id is not the durable identity of a real-world place. Every persisted place gets an
 immutable app-owned `PlaceId`; its OSM link may be repaired without moving the user's notes, tags,
-or guide entries to a new identity.
+list memberships, or post embeds to a new identity.
 
 ```ts
 type PlaceId = string;
@@ -145,21 +153,24 @@ exists in the library **iff it belongs to at least one list**:
   manual pin dialog — which therefore requires choosing a list — or by an
   [import](./interop.md) materializing rows into their list).
 - Removing a place's **last** membership — by removing the block, or deleting the list that held
-  it — removes the place together with its tags and notes, in the same transaction.
+  it — removes the place together with its tags and notes, in the same transaction. Live post
+  embeds of the place are tombstoned in that transaction too — an embed never sustains existence
+  ([Posts](./posts.md#where-embeds-come-from)).
 - Tag assignments and list blocks join directly on `PlaceId`. Reverse relationships are queries,
   not duplicated arrays.
 
 ## Note (personal, rich page, eligible for sharing)
 
-A note is a Markdown page anchored to either a place or a list:
+A note is a Markdown page anchored to either a place or a post (list-targeted notes were
+retargeted to posts by the 2026-07-19 pivot):
 
 - **Place notes** — write-ups about a single durable `PlaceId`; a place can have several.
-- **List notes** — narrative sections of a guide, interleaved with place blocks.
+- **Post sections** — narrative passages of a [post](./posts.md), interleaved with place embeds.
 
 ```ts
 type NoteTarget =
   | { kind: "place"; placeId: PlaceId }
-  | { kind: "list"; listId: string };
+  | { kind: "post"; postId: string };
 
 interface Note {
   id: string;
@@ -174,8 +185,8 @@ interface Note {
 }
 ```
 
-`shareable` permits a note to be selected for a guide or note-page publication; it does not mean
-the note is currently public. Publication and revocation state live in `Publication`. Turning it
+`shareable` permits a note to be selected for a post, shared-list, or note-page publication; it
+does not mean the note is currently public. Publication and revocation state live in `Publication`. Turning it
 off prevents new publication and queues removal from existing hosted publications.
 
 ## MediaAsset
@@ -227,33 +238,74 @@ normalized for uniqueness while preserving the user's display casing.
 
 ## List (a named group of places)
 
-A list is a **named, ordered group of places — nothing more** (2026-07-18: descriptions were
-removed; lists have names). A list may be **empty**: membership-is-existence constrains places,
-not lists — a list created on the Lists tab exists before any place joins it. A **guide is an
-editorialised list**: the same list enriched with the editorial layer — prose descriptions,
-interleaved narrative sections, attached notes, a reading experience. That layer arrives at the guide milestone; descriptive text belongs to it, not to the
-list. Blocks are their own entities so adding, removing, or reordering one item does not replace
-a whole array during future sync.
+A list is a **named, marked, ordered group of places — nothing more** (2026-07-18: descriptions
+were removed; 2026-07-19: section blocks moved to posts). A list may be **empty**:
+membership-is-existence constrains places, not lists — a list created on the Lists tab exists
+before any place joins it. Editorial prose about a list lives in [posts](./posts.md), never on
+the list. Blocks are their own entities so adding, removing, or reordering one item does not
+replace a whole array during sync.
 
 ```ts
+interface ListMarker {
+  color: string;               // palette colour
+  icon: string;                // symbol from the app's marker icon set
+}
+
 interface List {
   id: string;
   name: string;
-  color?: string; // the list's user-selected marker colour, worn by its places' pins
+  marker: ListMarker;          // unique per live list; worn by its places' pins on the map
   createdAt: string;
   updatedAt: string;
   deleted?: boolean;
 }
 
-type ListBlockContent =
-  | { type: "section"; noteId: string }
-  | { type: "place"; placeId: PlaceId };
-
 interface ListBlock {
   id: string;
   listId: string;
   rank: string;                // sortable fractional rank
-  content: ListBlockContent;
+  content: { type: "place"; placeId: PlaceId };
+  createdAt: string;
+  updatedAt: string;
+  deleted?: boolean;
+}
+```
+
+The **marker** replaces the earlier colour-only field (2026-07-19): on the all-lists map, points
+from each list must be attributable at a glance, and colour alone runs out of legible distinctions
+fast. A marker is a `(colour, icon)` pair, auto-assigned as the next unused combination and
+user-adjustable; the repository keeps live markers unique. Existing `color` values migrate to
+`marker.color` with an auto-assigned icon.
+
+Membership is the set of live place blocks, ordered by `(rank, id)` with deterministic rank
+rebalancing when ranks become dense or collide. A place may appear at most once in a list.
+
+## Post (an editorialised list)
+
+A [post](./posts.md) is the editorial layer — **the post is the guide: an editorialised list**.
+Each post editorialises exactly one list, interleaving narrative sections with embeds of that
+list's places; a list may have several posts.
+
+```ts
+interface Post {
+  id: string;
+  title: string;
+  listId: string;              // the list this post editorialises
+  coverMediaId?: string;
+  createdAt: string;
+  updatedAt: string;
+  deleted?: boolean;
+}
+
+type PostBlockContent =
+  | { type: "section"; noteId: string }   // a post-targeted note
+  | { type: "place"; placeId: PlaceId };  // an embed of a library place
+
+interface PostBlock {
+  id: string;
+  postId: string;
+  rank: string;                // sortable fractional rank
+  content: PostBlockContent;
   createdAt: string;
   updatedAt: string;
   deleted?: boolean;
@@ -261,7 +313,7 @@ interface ListBlock {
 
 interface BlockNoteAttachment {
   id: string;
-  blockId: string;             // must identify a place block
+  blockId: string;             // must identify a post place block
   noteId: string;              // a shareable place note
   rank: string;
   createdAt: string;
@@ -271,7 +323,7 @@ interface BlockNoteAttachment {
 
 interface BlockTagSelection {
   id: string;
-  blockId: string;             // must identify a place block
+  blockId: string;             // must identify a post place block
   tagId: string;               // tag assigned to that block's place
   createdAt: string;
   updatedAt: string;
@@ -279,17 +331,17 @@ interface BlockTagSelection {
 }
 ```
 
-Membership is the set of live place blocks, ordered by `(rank, id)` with deterministic rank
-rebalancing when ranks become dense or collide. A simple list contains only place blocks; adding
-section blocks turns it into a narrative guide. A place may appear at most once in a list. Attached
-notes and public tag selections are explicit, durable edges rather than ephemeral publish-UI
-choices.
+Post blocks order like list blocks. Attached notes and public tag selections are explicit,
+durable edges rather than ephemeral publish-UI choices. A place embed **references** a member of
+the post's list; it never sustains the place's existence
+([ruling](./posts.md#where-embeds-come-from)).
 
 Repository transactions enforce these cross-entity invariants:
 
-- a section note targets the same list as its section block;
-- an attached place note targets the same `PlaceId` as the block's place;
-- a selected tag is actually assigned to the block's place;
+- a section note targets the same post as its section block;
+- a live place embed's place is a live member of the post's list;
+- an attached place note targets the same `PlaceId` as the embed's place;
+- a selected tag is actually assigned to the embed's place;
 - live `(blockId, noteId)` and `(blockId, tagId)` edges are unique.
 
 ## Publication state
@@ -301,7 +353,7 @@ cannot be confused.
 ```ts
 interface Publication {
   id: string;
-  target: { kind: "list" | "note"; id: string };
+  target: { kind: "list" | "post" | "note"; id: string };
   mode: "snapshot" | "hosted";
   slug?: string;               // hosted mode; public and guessable
   credentialId?: string;       // points to a private local editor bearer token
@@ -332,7 +384,7 @@ displayed place = Place.lastVerified facts for an OSM-linked place
 ```
 
 TTL refresh, evidence timestamps, and stale/error badges belong to the deferred freshness surface;
-stored evidence is not described as a fresh live observation. Personal notes and guide prose are
+stored evidence is not described as a fresh live observation. Personal notes and post prose are
 separate owned content. Wrong OSM facts lead to the **View on OpenStreetMap** portal, where the
 user may inspect/edit/report the source. The app retries search or matching only after upstream
 services update. This keeps one public geographic source and avoids introducing a second
@@ -341,28 +393,34 @@ moderation-heavy places database.
 ## Relationships
 
 ```text
-List ──1:*── ListBlock ──place────▶ PlaceId ──▶ Place
-  │             │                       │          │
-  │             ├─section──▶ Note       ├─* TagAssignment ─▶ Tag
-  │             │                       └─* Note   │
-  │             ├─* BlockNoteAttachment ──▶ Note   ├─▶ current OSM ref + evidence
-  │             └─* BlockTagSelection ────▶ Tag    └─▶ external refs (imports)
-  │
-  └──────────────── Publication
+List ──1:*── ListBlock ──place──▶ PlaceId ──▶ Place
+  │                                  ▲ │          │
+  │   ┌── Post (listId) ─1:*─ PostBlock┘├─* TagAssignment ─▶ Tag
+  └───┤        │                │       └─* Note  │
+      │        ├─section──▶ Note│                 ├─▶ current OSM ref + evidence
+      │        ├─* BlockNoteAttachment ──▶ Note   └─▶ external refs (imports)
+      │        └─* BlockTagSelection ────▶ Tag
+      │
+      └──────────────── Publication (list | post | note)
 ```
 
-- Deleting a list tombstones its blocks, attachments, and list-section notes in one local
-  transaction. Places whose **only** membership it held are removed with their tags and notes
-  (membership is existence); places shared with other lists survive.
+- Deleting a list tombstones its place blocks in one local transaction. Places whose **only**
+  membership it held are removed with their tags and notes (membership is existence); places
+  shared with other lists survive. Posts about the list survive **detached** with tombstoned
+  embeds after an explicit warning ([Posts](./posts.md#where-embeds-come-from)).
+- Deleting a post tombstones its blocks, section notes, attachments, and selections; it never
+  touches the list, its places, or place notes.
 - Removing a place takes it out of every list and tombstones its tag assignments, place blocks,
-  and private place notes; it never changes OSM.
+  post embeds, and private place notes; it never changes OSM.
 - Removing or disabling already-published content marks the relevant publication dirty. The old
   public revision remains visible until the revocation/update succeeds.
-- Mutating a list name/marker/order, or future guide prose/cover/section, attached place note/media,
-  selected tag, or place OSM binding increments every affected publication's `localRevision` and
-  queues/coalesces an immutable revision-bearing job in the same transaction.
+- Mutating a list name/marker/order, post title/prose/cover/section/order, attached place
+  note/media, selected tag, or place OSM binding increments every affected publication's
+  `localRevision` and queues/coalesces an immutable revision-bearing job in the same transaction.
+  A post's publications are also affected by mutations of its list's membership/order only insofar
+  as embeds are tombstoned; a shared post projects its own blocks, not the list's.
 - Place-link history is preserved as immutable completed intervals when an OSM element is replaced;
-  notes and guide membership stay attached to the same `PlaceId`.
+  notes, list membership, and post embeds stay attached to the same `PlaceId`.
 
 ## Why this separation matters
 

@@ -1,5 +1,5 @@
 /**
- * Lists-first flow (book/src/vision.md): adding a place to a list IS the save;
+ * Lists-first flow (spec/src/vision.md): adding a place to a list IS the save;
  * lists carry a user-selected marker; the Lists tab reads list contents and can
  * create lists (2026-07-18) — contents are edited elsewhere.
  */

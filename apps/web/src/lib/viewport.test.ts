@@ -1,5 +1,5 @@
 /**
- * The starting camera (book/src/map-view.md): stored last viewport wins; else
+ * The starting camera (spec/src/map-view.md): stored last viewport wins; else
  * the timezone-derived approximation — city zone, continent fallback, world
  * default. Corrupt storage is ignored, never fatal.
  */

@@ -1,5 +1,5 @@
 /**
- * The share service (book/src/sharing.md §Share service): public reads, Bearer
+ * The share service (spec/src/sharing.md §Share service): public reads, Bearer
  * mutations. The client generates the editor token; only its SHA-256 hash is
  * stored; comparison is constant-time; slugs claim atomically; If-Match guards
  * every mutation; idempotency keys make retries safe; revoked slugs tombstone
@@ -53,7 +53,7 @@ function parseIfMatch(value: string | undefined): number | undefined {
 
 /**
  * The media pipeline issues server-side ids bound to a publication and token
- * (book/src/notes.md); until it exists, no document may claim one. Structural:
+ * (spec/src/notes.md); until it exists, no document may claim one. Structural:
  * inspects the parsed value, so JSON escape spellings cannot slip through.
  */
 function claimsHostedMedia(value: unknown): boolean {
@@ -143,7 +143,7 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
       if (!idKey) return c.text("missing Idempotency-Key", 400, MUTATION_HEADERS);
       // Abuse quotas apply before any attacker-controlled parsing — malformed
       // attempts are still attempts. Creation quotas bind per token AND per
-      // source: rotating tokens is not an escape hatch (book/src/sharing.md).
+      // source: rotating tokens is not an escape hatch (spec/src/sharing.md).
       const mutations = await storage.hit(`mutate:${tokenHash}`, 60_000, Date.now());
       const sourceCreates = await storage.hit(
         `create-ip:${c.req.header("cf-connecting-ip") ?? "local"}`,

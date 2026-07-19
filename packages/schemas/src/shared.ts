@@ -1,6 +1,6 @@
 /**
- * The versioned wire contract for shared documents (book/src/sharing.md
- * §Shared guide document, book/src/notes.md §Publishing a note page). Both
+ * The versioned wire contract for shared documents (spec/src/sharing.md
+ * §Shared guide document, spec/src/notes.md §Publishing a note page). Both
  * sharing modes and the share service validate against these schemas — the
  * document never carries private PlaceIds, database ids, or editor tokens.
  */

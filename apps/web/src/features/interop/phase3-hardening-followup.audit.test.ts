@@ -1,6 +1,6 @@
 /**
  * Follow-up black-box checks for the hardening decisions now recorded in
- * book/src/interop.md. These extend writer-to-parser checks through actual
+ * spec/src/interop.md. These extend writer-to-parser checks through actual
  * repository materialization and exercise nested KML source-list styling.
  */
 import {

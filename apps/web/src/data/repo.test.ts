@@ -1,5 +1,5 @@
 /**
- * DexieRepository invariants (book/src/data-model.md) on fake-indexeddb.
+ * DexieRepository invariants (spec/src/data-model.md) on fake-indexeddb.
  * Core rule under test: membership is existence — a place persists only while
  * it belongs to at least one list.
  */

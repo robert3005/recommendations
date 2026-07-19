@@ -34,7 +34,7 @@ if (!rootElement) throw new Error("missing #root");
 
 void prepare().then(() => {
   // Durable publication outbox: interrupted jobs from earlier sessions retry
-  // on launch (book/src/sharing.md §Local publication record) — after the dev
+  // on launch (spec/src/sharing.md §Local publication record) — after the dev
   // mock layer is ready, so requests never race past it.
   void import("./features/publish/publication").then(({ runPublicationOutbox }) =>
     runPublicationOutbox(getDefaultRepo()).catch(() => {

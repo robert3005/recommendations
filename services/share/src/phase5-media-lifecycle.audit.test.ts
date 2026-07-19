@@ -1,4 +1,4 @@
-/** Phase 5 hosted-media ownership boundary from book/src/notes.md. */
+/** Phase 5 hosted-media ownership boundary from spec/src/notes.md. */
 import type { SharedGuide } from "@placemarks/schemas";
 import { describe, expect, it } from "vitest";
 import { createShareApp } from "./app";

@@ -1,5 +1,5 @@
 /**
- * Google Maps URL forensics (book/src/interop.md §What we import). Takeout CSVs
+ * Google Maps URL forensics (spec/src/interop.md §What we import). Takeout CSVs
  * carry no coordinates — the URL is either a place URL with an opaque feature-id
  * pair (a dedup key and deep link, never fetched) or, for user-dropped pins, a
  * search URL embedding literal `lat,lng`.

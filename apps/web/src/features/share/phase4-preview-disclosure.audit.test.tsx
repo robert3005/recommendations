@@ -1,4 +1,4 @@
-/** Exact pre-publication disclosure required by book/src/sharing.md. */
+/** Exact pre-publication disclosure required by spec/src/sharing.md. */
 import type { SharedGuide } from "@placemarks/schemas";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";

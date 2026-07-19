@@ -1,6 +1,6 @@
 /**
  * Follow-up repository-boundary checks from the authoritative 2026-07-19
- * rulings in book/src/data-model.md. Whole-object updates must not be able to
+ * rulings in spec/src/data-model.md. Whole-object updates must not be able to
  * rewrite a completed identity history or leave a note targeting no live row.
  */
 import { linkPlaceToOsm, type Note, type ResolvedPoi } from "@placemarks/domain";

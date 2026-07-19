@@ -3,7 +3,7 @@ import type { ResolutionState } from "@placemarks/domain";
 /**
  * The only state a place advertises is "not linked to OSM" (manual pins).
  * Freshness/recovery badges (stale, unavailable, missing, needs-review) are
- * deferred along with the freshness UI (book/src/map-view.md); a healthy place
+ * deferred along with the freshness UI (spec/src/map-view.md); a healthy place
  * shows no marker at all.
  */
 export function StateBadge({ state }: { state: ResolutionState }) {

@@ -1,5 +1,5 @@
 /**
- * List export writers (book/src/interop.md §Export): KML (Google My Maps
+ * List export writers (spec/src/interop.md §Export): KML (Google My Maps
  * ingests it), Takeout-shaped CSV (round-trips through our own importer),
  * GeoJSON, and GPX waypoints. Pure string builders — golden-snapshot tested.
  * Exports containing OSM-derived facts carry ODbL attribution where the format
@@ -136,7 +136,7 @@ function formulaEscape(value: string): string {
 export function exportListCsv(_list: List, views: ExportPlaceView[]): string {
   // The Takeout columns stay first so the file round-trips through Takeout
   // parsers (ours included); the extra Attribution column carries ODbL credit
-  // for rows whose facts are OSM-derived (book/src/interop.md).
+  // for rows whose facts are OSM-derived (spec/src/interop.md).
   return `${Papa.unparse(
     {
       fields: ["Title", "Note", "URL", "Address", "Attribution"],

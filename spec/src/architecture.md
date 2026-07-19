@@ -6,24 +6,24 @@
 ┌────────────────────────────────────────────────────────────────────┐
 │ Web client                                                         │
 │                                                                    │
-│  Map / search UI     List/guide editor    Public read-only viewer │
+│  Lists home · map    List & post editors    Public read-only viewer│
 │          │                  │                         │             │
 │  ┌───────┴──────────────────┴─────────────────────────┴──────────┐ │
-│  │ Core domain                                                 │ │
-│  │ Place identity · conservative OSM relinking · tags · notes │ │
-│  │ ordered guide blocks · publication projections             │ │
+│  │ Core domain                                                  │ │
+│  │ Place identity · conservative OSM relinking · tags · notes   │ │
+│  │ list membership · ordered post blocks · public projections   │ │
 │  └───────────────┬───────────────────┬──────────────────────────┘ │
 │                  │                   │                            │
 │       ┌──────────▼─────────┐  ┌──────▼────────────────────────┐  │
 │       │ LocalRepository    │  │ Effect interfaces             │  │
 │       │ IndexedDB primary  │  │ search · POI resolve · share │  │
-│       └──────────┬─────────┘  │ publish · optional sync       │  │
+│       └──────────┬─────────┘  │ publish · sync                │  │
 │                  │            └──────────────┬────────────────┘  │
 │       mutation/publication                  │                   │
 │              outboxes                       │                   │
 └──────────────────┼───────────────────────────┼───────────────────┘
                    │                           │
-          optional sync API      managed/self-hosted OSM services
+              sync API           managed/self-hosted OSM services
                                 share service · media service
 ```
 
@@ -31,9 +31,10 @@
 
 ### 1. UI
 
-React components own presentation and interaction: map, search, place detail, guide editing,
-resolution review, publication status, and the public read-only viewer. Mobile uses sheets; wider
-screens use panels. Every map workflow has an equivalent list representation.
+React components own presentation and interaction: the Lists home, map, search, place detail,
+list Edit mode, the post editor, resolution review, publication status, and the public read-only
+viewer. Mobile uses sheets; wider screens use panels. Every map workflow has an equivalent list
+representation.
 
 ### 2. Core domain
 
@@ -41,7 +42,8 @@ Framework-independent TypeScript owns:
 
 - immutable app `PlaceId` values and mutable OSM bindings;
 - first-seen/last-verified evidence and the conservative re-resolution state machine;
-- membership-backed places, tags, Markdown notes, lists, ordered blocks, and note attachments;
+- membership-backed places, tags, Markdown notes, lists, posts with ordered blocks, and note
+  attachments;
 - construction of explicit public projections;
 - publication state transitions.
 
@@ -54,9 +56,9 @@ handles and rendering stay in adapters, preserving reuse in a future native clie
 implementation. Transactions keep aggregate changes consistent, and durable outboxes record
 network work after the local commit.
 
-A future `SyncTransport` is not a network-flavored replacement repository. It pushes and pulls
-mutations in the background while the app continues to read and write locally. `SharePublisher`
-similarly drains only explicit publication jobs.
+`SyncTransport` (v1 scope since 2026-07-19) is not a network-flavored replacement repository. It
+pushes and pulls mutations in the background while the app continues to read and write locally.
+`SharePublisher` similarly drains only explicit publication jobs.
 
 See [Storage & Sync](./storage-sync.md).
 
@@ -69,7 +71,7 @@ interface SearchProvider { /* forward/reverse search with typed OSM candidates *
 interface PoiResolver { /* exact ref lookup + evidence candidate search */ }
 interface MapStyleProvider { /* style, tile schema, attribution and capabilities */ }
 interface SharePublisher { /* Bearer-authorized publish/revoke */ }
-interface SyncTransport { /* optional idempotent push/pull */ }
+interface SyncTransport { /* idempotent push/pull; v1 */ }
 ```
 
 Adapters capture more than an endpoint URL: schema mapping, attribution, request budget, retry and
@@ -97,7 +99,7 @@ provider selection and capacity are release prerequisites, not later polish. See
   effects with visible pending/failure states.
 - **Shared URLs are read-only.** A hosted slug grants public read access only. Its creator updates or
   revokes content using a separate device-held editor bearer token.
-- **Publication freshness is honest.** A link shows the latest successfully published guide
+- **Publication freshness is honest.** A link shows the latest successfully published
   revision and latest successfully resolved OSM observation, with timestamped fallback otherwise.
 - **Relationships have one owner.** List blocks, tag assignments, and note attachments are canonical
   edge entities rather than duplicated arrays.

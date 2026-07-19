@@ -1,6 +1,6 @@
 /**
- * Deep data-model regressions derived from book/src/data-model.md and
- * book/src/place-identity.md. These exercise repository paths that are not
+ * Deep data-model regressions derived from spec/src/data-model.md and
+ * spec/src/place-identity.md. These exercise repository paths that are not
  * covered by the backup-shape or exact-ref collision audits.
  */
 import { linkPlaceToOsm, type Note, type ResolvedPoi } from "@placemarks/domain";

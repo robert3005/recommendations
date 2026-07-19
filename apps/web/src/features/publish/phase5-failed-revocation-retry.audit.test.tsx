@@ -69,7 +69,7 @@ describe("Phase 5 failed-revocation retry", () => {
 
       // Hold the component's first outbox lookup open. Publication state is
       // already available, so the Retry control can render while its action is
-      // still unknown. The book requires that this window never defaults to a
+      // still unknown. The spec requires that this window never defaults to a
       // publish: Retry must be disabled until the pending DELETE is known, or
       // otherwise resolve the operation before acting.
       const realToArray = repo.db.publicationOutbox.toArray.bind(repo.db.publicationOutbox);

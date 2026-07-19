@@ -130,4 +130,31 @@ describe("Phase 0 basemap recovery evidence", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent(/map unavailable/i);
   });
+
+  it("does not treat a basemap source-idle data event as recovery", () => {
+    render(
+      <MapView
+        styleUrl="/map-style.json"
+        initialCenter={{ lat: 51.5, lng: -0.12 }}
+        initialZoom={12}
+        placePins={[]}
+        poiPins={[]}
+      />,
+    );
+    const map = maplibre.instances[0];
+    expect(map).toBeDefined();
+
+    act(() => {
+      map?.emit("load");
+      map?.emit("error", { error: new Error("basemap tile request failed") });
+      map?.emit("data", {
+        dataType: "source",
+        sourceId: "basemap-vector",
+        sourceDataType: "idle",
+        isSourceLoaded: true,
+      });
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent(/map unavailable/i);
+  });
 });

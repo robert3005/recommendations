@@ -1,5 +1,5 @@
 /**
- * Navigation handoff (book/src/interop.md §Navigation handoff): Placemarks
+ * Navigation handoff (spec/src/interop.md §Navigation handoff): Placemarks
  * curates; navigation happens in the tools people prefer. The retained imported
  * Google URL reopens the exact listing; otherwise a coordinate/name search.
  * Routing itself stays external — a non-goal.

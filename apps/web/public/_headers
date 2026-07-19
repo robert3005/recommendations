@@ -1,5 +1,5 @@
 # One restrictive document-level Content-Security-Policy for the app and every
-# public viewer page (book/src/sharing.md: hardened viewer). Scripts are only
+# public viewer page (spec/src/sharing.md: hardened viewer). Scripts are only
 # our own bundle; images/styles allow what MapLibre needs (blob workers, data
 # URIs, https tiles/sprites); connections stay on https; no plugins, no eval.
 /*

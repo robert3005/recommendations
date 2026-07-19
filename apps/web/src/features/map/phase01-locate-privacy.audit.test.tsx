@@ -1,5 +1,5 @@
 /**
- * Privacy contract from book/src/map-view.md: Locate is user-triggered and may
+ * Privacy contract from spec/src/map-view.md: Locate is user-triggered and may
  * recenter the camera, but the resulting precise position is never persisted
  * as the next-launch viewport.
  */

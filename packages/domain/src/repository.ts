@@ -1,6 +1,6 @@
 /**
  * The local repository port — the only surface the app uses for reads/writes.
- * Core rule (book/src/data-model.md, 2026-07-18): **membership is existence** —
+ * Core rule (spec/src/data-model.md, 2026-07-18): **membership is existence** —
  * a place persists only while it belongs to at least one list. There is no
  * standalone "save". Implementations must enforce, inside transactions:
  *  - a place appears at most once per list; removing its last membership
@@ -33,7 +33,7 @@ export interface GuideBlockView {
  * What is being added to a list — adding IS how a place comes to exist.
  * An `import` row keeps its identity as an import even when OSM-matched: the
  * optional `poi` links the created/reused place without changing its origin,
- * imported facts, or retained external ref (book/src/interop.md). Import dedup
+ * imported facts, or retained external ref (spec/src/interop.md). Import dedup
  * order: external-ref id, then the poi's OSM ref, then name+proximity.
  */
 export type AddToListSource =

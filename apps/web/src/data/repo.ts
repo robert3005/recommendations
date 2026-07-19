@@ -1,6 +1,6 @@
 /**
  * DexieRepository — the LocalRepository implementation. Core rule
- * (book/src/data-model.md, 2026-07-18): **membership is existence** — a place
+ * (spec/src/data-model.md, 2026-07-18): **membership is existence** — a place
  * persists only while it belongs to at least one list. Cross-entity invariants
  * are enforced here, inside transactions:
  *  - a place appears at most once per list; losing its last membership removes
@@ -108,7 +108,7 @@ export class DexieRepository implements PlacemarksRepository {
         if (!existing) throw new Error("place not found — updatePlace is not a creation path");
         // One live PlaceId per exact OSM element: an upgrade that would fork
         // an element already held by another place is refused for explicit
-        // review (book/src/place-identity.md).
+        // review (spec/src/place-identity.md).
         if (place.currentOsmRef) {
           const holder = await this.findPlaceByOsmRef(place.currentOsmRef);
           if (holder && holder.id !== place.id) {
@@ -225,7 +225,7 @@ export class DexieRepository implements PlacemarksRepository {
 
   /**
    * Link an unlinked imported/manual place to its OSM match — origin, imported
-   * facts, and external refs stay (book/src/interop.md: linkage is an upgrade,
+   * facts, and external refs stay (spec/src/interop.md: linkage is an upgrade,
    * never a new identity).
    */
   async linkImportedPlace(place: Place, poi: ResolvedPoi, now: string): Promise<Place> {
@@ -312,7 +312,7 @@ export class DexieRepository implements PlacemarksRepository {
   /**
    * A content change on a published list marks its hosted publication dirty
    * and coalesces one payload-less publish job — the outbox projects the
-   * current document when it runs (book/src/sharing.md §Local publication
+   * current document when it runs (spec/src/sharing.md §Local publication
    * record: local edits queue; the public page never changes until a
    * successful publish).
    */
@@ -357,7 +357,7 @@ export class DexieRepository implements PlacemarksRepository {
   /**
    * Queue revocation for every live hosted publication of a deleted target —
    * a deleted aggregate must never orphan its public page or credential
-   * (book/src/sharing.md §Local publication record).
+   * (spec/src/sharing.md §Local publication record).
    */
   private async revokePublicationsFor(
     target: { kind: "list" | "note"; id: string },
@@ -514,7 +514,7 @@ export class DexieRepository implements PlacemarksRepository {
 
   async updateNote(note: Note): Promise<void> {
     // The edit and every affected publication commit (or fail) as ONE
-    // IndexedDB transaction — aggregate atomicity (book/src/storage-sync.md).
+    // IndexedDB transaction — aggregate atomicity (spec/src/storage-sync.md).
     await this.db.transaction(
       "rw",
       [
@@ -562,14 +562,14 @@ export class DexieRepository implements PlacemarksRepository {
         }
         if (!note.shareable) {
           // A note that stops being shareable queues removal of its public page
-          // (book/src/notes.md): the old revision stays up until revocation
+          // (spec/src/notes.md): the old revision stays up until revocation
           // lands — and the revocation supersedes every pending page update.
           await this.revokePublicationsFor({ kind: "note", id: note.id }, note.updatedAt);
         }
         await this.db.notes.put(toNoteRow(note));
         if (note.shareable) {
           // A shareable-note edit dirties its standalone page AND every hosted
-          // guide that contains it (book/src/sharing.md: mutating an attached
+          // guide that contains it (spec/src/sharing.md: mutating an attached
           // note queues every affected publication).
           const notePublications = (await this.db.publications.toArray()).filter(
             (p) =>
@@ -710,7 +710,7 @@ export class DexieRepository implements PlacemarksRepository {
 
   async updateList(list: List): Promise<void> {
     // The edit and its publication dirtying commit (or fail) together —
-    // aggregate transactions (book/src/storage-sync.md).
+    // aggregate transactions (spec/src/storage-sync.md).
     await this.db.transaction(
       "rw",
       [this.db.lists, this.db.publications, this.db.publicationOutbox],
@@ -834,7 +834,7 @@ export class DexieRepository implements PlacemarksRepository {
 
   async addToList(listId: string, source: AddToListSource, now: string): Promise<PlaceView> {
     // The edit and its publication dirtying commit (or fail) together —
-    // aggregate transactions (book/src/storage-sync.md).
+    // aggregate transactions (spec/src/storage-sync.md).
     return this.db.transaction(
       "rw",
       [
@@ -858,7 +858,7 @@ export class DexieRepository implements PlacemarksRepository {
           place = createManualPlace(newId(), source.facts, now);
           await this.db.places.put(toPlaceRow(place));
         } else if (source.kind === "import") {
-          // Idempotent re-import (book/src/interop.md): external-ref id first,
+          // Idempotent re-import (spec/src/interop.md): external-ref id first,
           // then the OSM match's ref, then name+proximity — the same row
           // converges on the same place. An OSM match links the place but never
           // changes its import identity (origin, facts, external refs).
@@ -925,7 +925,7 @@ export class DexieRepository implements PlacemarksRepository {
             await this.db.places.put(toPlaceRow(place));
           }
           // An import that OSM-matched still retains its source URL (provenance
-          // and the deep link back — book/src/interop.md).
+          // and the deep link back — spec/src/interop.md).
           if (source.externalRef && !hasExternalRef(place, source.externalRef)) {
             place = withExternalRef(place, source.externalRef, now);
             await this.db.places.put(toPlaceRow(place));
@@ -1088,7 +1088,7 @@ export class DexieRepository implements PlacemarksRepository {
         const note = live(await this.db.notes.get(noteId));
         if (!note) throw new Error("note not found");
         // Attaching puts the note into the guide — only shareable notes may
-        // enter a shareable surface (book/src/notes.md §Share eligibility).
+        // enter a shareable surface (spec/src/notes.md §Share eligibility).
         if (!note.shareable) {
           throw new Error("only shareable notes can be attached to a guide block");
         }

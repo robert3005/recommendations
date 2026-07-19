@@ -1,5 +1,5 @@
 /**
- * Photon search adapter (book/src/data-sources.md). Every saveable result must
+ * Photon search adapter (spec/src/data-sources.md). Every saveable result must
  * normalize to a typed OSM node/way/relation candidate — nameless or ref-less
  * features are filtered out.
  */
@@ -65,7 +65,7 @@ export class PhotonSearchProvider implements SearchProvider {
       url.searchParams.set("lon", String(opts.bias.lng));
     }
     // One retry for a transient upstream failure — adapter policy, so callers
-    // do not recreate it (book/src/data-sources.md).
+    // do not recreate it (spec/src/data-sources.md).
     let response = await fetch(url, { signal: opts?.signal ?? null });
     if (response.status >= 500) {
       response = await fetch(url, { signal: opts?.signal ?? null });

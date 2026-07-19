@@ -1,4 +1,4 @@
-/** User-facing acceptance check for book/src/interop.md's My Maps export contract. */
+/** User-facing acceptance check for spec/src/interop.md's My Maps export contract. */
 import type { GuideBlockView, List, Place } from "@placemarks/domain";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";

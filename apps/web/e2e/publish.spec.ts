@@ -1,5 +1,5 @@
 /**
- * Phase 5 done-when (book/src/roadmap.md): a creator can publish, update, and
+ * Phase 5 done-when (spec/src/roadmap.md): a creator can publish, update, and
  * revoke a persistent read-only link; visitors read the latest successfully
  * published revision and can never modify it. The dev/e2e share service is the
  * real service app over in-memory storage inside the MSW worker (same page —

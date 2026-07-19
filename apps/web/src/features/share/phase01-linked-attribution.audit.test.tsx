@@ -1,5 +1,5 @@
 /**
- * ODbL presentation contract from book/src/data-sources.md: attribution is a
+ * ODbL presentation contract from spec/src/data-sources.md: attribution is a
  * link wherever public OSM-derived facts are presented, not inert text.
  */
 import type { SharedGuide, SharedNote, SharedPlaceAnchor } from "@placemarks/schemas";

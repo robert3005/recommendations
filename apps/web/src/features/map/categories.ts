@@ -1,5 +1,5 @@
 /**
- * The top-level filter chips (book/src/map-view.md §Layout): the detailed OSM
+ * The top-level filter chips (spec/src/map-view.md §Layout): the detailed OSM
  * taxonomy maps into a small adopted set — [Eat] [Drink] [Shop] [Stay]
  * [Culture] [Health]. Unknown categories stay visible under every filter-off
  * state and simply match no chip.

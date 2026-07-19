@@ -1,5 +1,5 @@
 /**
- * The import pipeline (book/src/interop.md): parse → place via the coordinate
+ * The import pipeline (spec/src/interop.md): parse → place via the coordinate
  * ladder → opportunistic OSM match → materialize through addToList — membership
  * is existence, so the import IS the adding-to-a-list. Idempotent: re-running
  * the same archive converges on the same places, upgrades them in place (an
@@ -339,7 +339,7 @@ async function geocode(
 /**
  * Resolve a search candidate to a full POI. An exact-resolve failure keeps the
  * row in review: placing it at bare geocoder coordinates would ship OSM-derived
- * data without evidence or attribution (book/src/interop.md licensing valves).
+ * data without evidence or attribution (spec/src/interop.md licensing valves).
  */
 async function materializeCandidate(
   repo: DexieRepository,
@@ -535,7 +535,7 @@ export async function runImport(
           }
         }
       } else if (item.coords) {
-        // Opportunistic OSM match (book/src/interop.md): a unique high-confidence
+        // Opportunistic OSM match (spec/src/interop.md): a unique high-confidence
         // nearby candidate links the place; nothing blocks on it.
         const nearby = await nearbyMatch(deps, item, item.coords);
         outcome = await materializeItem(repo, listId, item, item.coords, nearby, now);
@@ -625,7 +625,7 @@ export async function runImport(
 /**
  * ODbL continuity: a place materialized from a row that descends from an OSM
  * anchor keeps that provenance as (unresolved) link history, so exports keep
- * attributing OSM-derived facts (book/src/interop.md).
+ * attributing OSM-derived facts (spec/src/interop.md).
  */
 async function recordAnchorHistory(
   repo: DexieRepository,

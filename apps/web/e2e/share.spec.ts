@@ -1,5 +1,5 @@
 /**
- * Phase 4 done-when (book/src/roadmap.md): send a read-only guide without a
+ * Phase 4 done-when (spec/src/roadmap.md): send a read-only guide without a
  * backend; the recipient cannot modify it and can import it into their own
  * library — in a completely fresh browser context.
  */

@@ -22,7 +22,7 @@ let node599Gone = false;
 
 /**
  * The dev/e2e share service is the REAL service app over in-memory storage —
- * same protocol, same limits, zero network (book/src/sharing.md). In the
+ * same protocol, same limits, zero network (spec/src/sharing.md). In the
  * browser the state round-trips through localStorage so published documents
  * survive full page reloads within a session.
  */

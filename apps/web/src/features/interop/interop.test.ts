@@ -1,5 +1,5 @@
 /**
- * Import pipeline invariants (book/src/interop.md): URL forensics, parser edge
+ * Import pipeline invariants (spec/src/interop.md): URL forensics, parser edge
  * cases (quoting, the [0,0] bug, CSV↔GeoJSON cross-ref), the coordinate ladder
  * (auto-link / review / placed-unlinked), idempotent re-import, and the
  * every-row-accounted-for report.

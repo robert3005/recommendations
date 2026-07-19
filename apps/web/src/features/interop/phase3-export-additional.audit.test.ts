@@ -1,6 +1,6 @@
 /**
  * Additional Phase 3 export checks derived from the current
- * book/src/interop.md CSV portability contract.
+ * spec/src/interop.md CSV portability contract.
  */
 import type { List, Note, Place } from "@placemarks/domain";
 import Papa from "papaparse";

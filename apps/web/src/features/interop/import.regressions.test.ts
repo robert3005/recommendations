@@ -1,5 +1,5 @@
 /**
- * Phase 3 import regressions found while auditing book/src/interop.md.
+ * Phase 3 import regressions found while auditing spec/src/interop.md.
  *
  * These tests intentionally describe the required behavior rather than the
  * current implementation. Keep them focused: each case protects source data,

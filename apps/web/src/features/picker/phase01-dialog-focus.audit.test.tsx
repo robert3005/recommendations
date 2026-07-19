@@ -1,5 +1,5 @@
 /**
- * Sheet accessibility contract from book/src/map-view.md: modal workflows
+ * Sheet accessibility contract from spec/src/map-view.md: modal workflows
  * manage focus on entry and restore it to the invoking control on dismissal.
  */
 import { render, screen } from "@testing-library/react";

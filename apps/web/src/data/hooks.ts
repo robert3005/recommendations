@@ -73,7 +73,7 @@ export function useGuideBlocks(listId: string | undefined): GuideBlockView[] | u
   return useLiveQuery(() => (listId ? repo.getGuideBlocks(listId) : []), [repo, listId]);
 }
 
-/** Import rows waiting in the review queue (book/src/interop.md). */
+/** Import rows waiting in the review queue (spec/src/interop.md). */
 export function useReviewItems(): ImportItemRow[] | undefined {
   const repo = useDexieRepo();
   return useLiveQuery(

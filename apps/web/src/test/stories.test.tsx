@@ -55,7 +55,7 @@ for (const [name, module] of modules) {
         }
         const { container } = await act(async () => render(<Story />));
         await Story.play?.({ canvasElement: container });
-        // Continuous accessibility (book/src/roadmap.md Phase 6): serious and
+        // Continuous accessibility (spec/src/roadmap.md Phase 9 (hardening, formerly Phase 6)): serious and
         // critical axe violations fail the story, every run, not in an audit.
         const a11y = await axe.run(container, {
           rules: { "color-contrast": { enabled: false } }, // jsdom cannot compute styles reliably

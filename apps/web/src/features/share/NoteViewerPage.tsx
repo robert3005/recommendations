@@ -1,5 +1,5 @@
 /**
- * Standalone read-only note page `/n/:slug` (book/src/notes.md §Publishing a
+ * Standalone read-only note page `/n/:slug` (spec/src/notes.md §Publishing a
  * note page): the same bearer-token/revision model as guides; public, noindex.
  */
 import { sharedNoteSchema } from "@placemarks/schemas";

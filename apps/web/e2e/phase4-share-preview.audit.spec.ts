@@ -1,4 +1,4 @@
-/** Privacy-facing Phase 4 acceptance checks from book/src/sharing.md. */
+/** Privacy-facing Phase 4 acceptance checks from spec/src/sharing.md. */
 import { expect, test } from "@playwright/test";
 
 test("the snapshot preview names the exact prose and OSM evidence that will leave", async ({

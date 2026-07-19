@@ -1,6 +1,6 @@
 /**
  * Client metrics with privacy redaction from the first release
- * (book/src/roadmap.md §Cross-cutting): simple counters and error reports, no
+ * (spec/src/roadmap.md §Cross-cutting): simple counters and error reports, no
  * fragment-bearing URLs, no tokens, no precise locations. The sink is
  * pluggable; the default keeps counts in memory and logs errors to the console
  * in dev builds only.

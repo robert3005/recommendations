@@ -50,11 +50,11 @@ export function MapPage() {
   // Active top-level category chips; none active shows everything.
   const [activeFilters, setActiveFilters] = useState<ReadonlySet<TopCategory>>(new Set());
   // The starting camera: last viewport, else a timezone-derived approximation
-  // (book/src/map-view.md — no permission prompt, nothing leaves the device).
+  // (spec/src/map-view.md — no permission prompt, nothing leaves the device).
   const [startViewport] = useState(() => initialViewport());
   const discoverEnabled = viewport !== null && viewport.zoom >= DISCOVER_MIN_ZOOM;
 
-  // Bounded, debounced viewport POI discovery (book/src/data-sources.md budgets).
+  // Bounded, debounced viewport POI discovery (spec/src/data-sources.md budgets).
   const discoverQuery = useQuery({
     queryKey: ["discover", viewport ? roundBbox(viewport.bbox) : ""],
     queryFn: ({ signal }) => {
@@ -154,7 +154,7 @@ export function MapPage() {
           setViewport(view);
           // The next launch starts where this session left off — coarsened to
           // a ~1 km grid so a Locate-driven recenter never persists a precise
-          // position (book/src/map-view.md: nothing precise leaves the session).
+          // position (spec/src/map-view.md: nothing precise leaves the session).
           const coarse = (value: number) => Math.round(value * 100) / 100;
           persistViewport({
             lat: coarse(view.center.lat),
@@ -171,7 +171,7 @@ export function MapPage() {
           Long-press (or right-click) the map to place the imported item
         </output>
       ) : null}
-      {/* Category chips (book/src/map-view.md): keyboard-operable toggles. */}
+      {/* Category chips (spec/src/map-view.md): keyboard-operable toggles. */}
       <fieldset
         className="absolute top-16 left-1/2 z-10 flex w-[calc(100%-1.5rem)] min-w-0 max-w-md -translate-x-1/2 flex-wrap gap-1.5"
         aria-label="Filter nearby places by category"
@@ -201,7 +201,7 @@ export function MapPage() {
         })}
       </fieldset>
       {/* The synchronized non-map equivalent of canvas results
-          (book/src/map-view.md §Accessibility): every discovered POI is
+          (spec/src/map-view.md §Accessibility): every discovered POI is
           reachable by keyboard and screen reader. */}
       {poiPins.length > 0 ? (
         <section

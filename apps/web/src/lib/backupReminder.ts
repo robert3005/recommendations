@@ -1,5 +1,5 @@
 /**
- * Backup reminders (book/src/roadmap.md Phase 6: persistent-storage prompts,
+ * Backup reminders (spec/src/roadmap.md Phase 9 (hardening, formerly Phase 6): persistent-storage prompts,
  * backup reminders): data is device-local; a library without a recent backup
  * deserves a nudge, never a nag.
  */

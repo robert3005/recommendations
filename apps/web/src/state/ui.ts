@@ -1,4 +1,4 @@
-/** Ephemeral UI state only — domain truth lives in the repository (book/src/tech-stack.md). */
+/** Ephemeral UI state only — domain truth lives in the repository (spec/src/tech-stack.md). */
 import type { OsmElementRef } from "@placemarks/domain";
 import { create } from "zustand";
 

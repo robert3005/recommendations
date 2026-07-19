@@ -1,7 +1,7 @@
 /**
  * The Lists tab: read your lists — and create one (2026-07-18: lists can be
  * created directly in the app, before any place joins them). List contents stay
- * read-only here; places join from their cards (book/src/map-view.md).
+ * read-only here; places join from their cards (spec/src/map-view.md).
  */
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";

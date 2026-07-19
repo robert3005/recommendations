@@ -1,5 +1,5 @@
 /**
- * List marker palette (book/src/map-view.md): every list carries a user-selected
+ * List marker palette (spec/src/map-view.md): every list carries a user-selected
  * marker colour; its places' pins wear it on the map.
  */
 import type { List } from "@placemarks/domain";
@@ -19,7 +19,7 @@ export const MARKER_COLORS = [
 export const DEFAULT_PIN_COLOR = "#be123c";
 /** Manual unlinked pins keep their distinct colour. */
 export const UNLINKED_PIN_COLOR = "#b45309";
-/** A place in several lists renders neutral (deterministic, per the book). */
+/** A place in several lists renders neutral (deterministic, per the spec). */
 export const MULTI_LIST_PIN_COLOR = "#1c1917";
 
 /** Suggest the first palette colour not yet used by an existing list. */

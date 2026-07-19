@@ -1,5 +1,5 @@
 /**
- * External service adapter contracts — book/src/architecture.md §4.
+ * External service adapter contracts — spec/src/architecture.md §4.
  * Adapters own schema mapping, budgets, retry/failure behavior, and attribution.
  */
 import type { BBox } from "./geo";

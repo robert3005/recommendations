@@ -1,4 +1,4 @@
-/** Owned personal entities — see book/src/data-model.md. */
+/** Owned personal entities — see spec/src/data-model.md. */
 import type { PlaceId } from "./place";
 
 interface BaseEntity {
@@ -22,7 +22,7 @@ export interface TagAssignment extends BaseEntity {
 
 export type NoteTarget = { kind: "place"; placeId: PlaceId } | { kind: "list"; listId: string };
 
-/** A rich Markdown page anchored to a place or a list (book/src/notes.md). */
+/** A rich Markdown page anchored to a place or a list (spec/src/notes.md). */
 export interface Note extends BaseEntity {
   target: NoteTarget;
   title?: string;
@@ -83,7 +83,7 @@ export type PublicationStatus =
   | "revoked";
 
 /**
- * Private publication state (book/src/data-model.md §Publication state) —
+ * Private publication state (spec/src/data-model.md §Publication state) —
  * public content, local drafts, credentials, retries, and revocation are never
  * confused on `List`/`Note` themselves. The editor bearer token lives in a
  * separate credential record; only its id appears here.

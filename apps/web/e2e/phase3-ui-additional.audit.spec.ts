@@ -1,5 +1,5 @@
 /**
- * Additional user-facing Phase 3 export checks from book/src/interop.md.
+ * Additional user-facing Phase 3 export checks from spec/src/interop.md.
  * The ecosystem handoff is a real KMZ option plus a guided My Maps KML flow;
  * raw format buttons alone do not satisfy that contract.
  */

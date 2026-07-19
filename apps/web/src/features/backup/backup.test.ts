@@ -1,4 +1,4 @@
-/** Backup/restore roundtrip, merge semantics, and validation (book/src/storage-sync.md). */
+/** Backup/restore roundtrip, merge semantics, and validation (spec/src/storage-sync.md). */
 import type { ResolvedPoi } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";

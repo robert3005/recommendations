@@ -1,6 +1,6 @@
 /**
  * Add a place to a list — or create the list right here. The place card is the
- * write surface for list membership (book/src/map-view.md); lists themselves can
+ * write surface for list membership (spec/src/map-view.md); lists themselves can
  * also be created on the Lists tab. Used by both the unsaved place sheet (where
  * adding implies saving) and the saved-place sheet.
  */

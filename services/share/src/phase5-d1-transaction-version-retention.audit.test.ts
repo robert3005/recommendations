@@ -1,6 +1,6 @@
 /**
  * Phase 5 deployment persistence contracts. The hosted service is not merely
- * an HTTP protocol: the book chooses transactional D1, immutable revision
+ * an HTTP protocol: the spec chooses transactional D1, immutable revision
  * backups, and an explicit retention period for internal audit/version data.
  */
 import { readdirSync, readFileSync } from "node:fs";

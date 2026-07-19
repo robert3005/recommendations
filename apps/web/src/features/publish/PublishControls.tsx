@@ -1,5 +1,5 @@
 /**
- * Hosted-link controls for a list (book/src/sharing.md §Mode B): publish,
+ * Hosted-link controls for a list (spec/src/sharing.md §Mode B): publish,
  * update, unpublish. The owner always sees local-draft vs published state; the
  * public URL shows the latest successfully published revision only.
  */
@@ -85,7 +85,7 @@ export function PublishControls({ listId }: { listId: string }) {
             disabled={busy}
             onClick={() =>
               // Preflight first: nothing leaves the device until the exact
-              // projection is disclosed and confirmed (book/src/sharing.md).
+              // projection is disclosed and confirmed (spec/src/sharing.md).
               void projectGuide(repo, listId).then((projection) => {
                 if (projection) setPreflight(projection.guide);
               })

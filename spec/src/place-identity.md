@@ -3,7 +3,7 @@
 OpenStreetMap identifies map **elements**, not permanent real-world places. An element keeps its id
 while it exists, but a café represented by `node/123` may later be redrawn as `way/456`, merged into
 another feature, deleted and recreated, or repurposed. Placemarks therefore must not use an OSM id
-as the durable identity for a user's notes, tags, or guide entries.
+as the durable identity for a user's notes, tags, list memberships, or post embeds.
 
 ## Identity rule
 
@@ -202,16 +202,16 @@ candidate picker after they update; the deferred **Check for OSM updates** actio
 run exact resolution/matching explicitly. The app keeps its last verified evidence until new facts
 become available.
 
-Personal notes and guide prose are never sent to OSM. Any future direct editing integration would
+Personal notes and post prose are never sent to OSM. Any future direct editing integration would
 require explicit user confirmation, OSM authentication, appropriate tagging, and an attributable
 changeset comment; it is outside v1.
 
 ## Import and deduplication
 
-Backup restore and public-guide import have different identity semantics:
+Backup restore and shared list/post import have different identity semantics:
 
 - Restoring a validated backup preserves its `PlaceId`; that id belongs to the restored library.
-- A public guide deliberately contains no author's `PlaceId`. The receiving library reuses an
+- A shared list or post deliberately contains no author's `PlaceId`. The receiving library reuses an
   existing place or mints a local id only after the shared current reference or a unique
   high-confidence replacement resolves successfully.
 - If a shared place cannot resolve, it remains a pending import with copied preview evidence. It is
@@ -229,6 +229,6 @@ An imported **manual** anchor never evidence-matches against OSM-linked places a
 reuses an existing manual place only on a near-exact name+coordinate match, otherwise it imports
 as a new unlinked pin (the importer may link it later).
 
-Library-to-library transfer uses the versioned backup/import protocol, not the public guide schema.
+Library-to-library transfer uses the versioned backup/import protocol, not the public share schema.
 A merge validates ids and OSM evidence and resolves collisions explicitly; it never assumes an
 arbitrary UUID from an untrusted document is global authority.

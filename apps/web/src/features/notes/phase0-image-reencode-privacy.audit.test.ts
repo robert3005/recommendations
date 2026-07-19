@@ -1,5 +1,5 @@
 /**
- * The chosen image pipeline in book/src/tech-stack.md re-encodes imports so
+ * The chosen image pipeline in spec/src/tech-stack.md re-encodes imports so
  * EXIF/location metadata cannot survive. If a browser cannot safely re-encode,
  * rejecting the image is safer than retaining the original bytes.
  */

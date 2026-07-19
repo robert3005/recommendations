@@ -27,7 +27,8 @@ them (2026-07). Rule: boring by default, exotic only where the design demands it
 **Explicitly rejected:** Next.js (SSR buys nothing behind a map canvas; OG previews for share
 slugs are one worker route), Redux, GraphQL, Prisma, Supabase/Firebase (their auth model fights
 bearer-token publications), sync engines (Replicache/PowerSync/Electric — their data models fight
-`PlaceId` + outbox semantics; re-evaluate at Phase 7), CRDTs, Kubernetes/Terraform.
+`PlaceId` + outbox semantics; re-evaluate once before building the Phase 8 sync backend), CRDTs,
+Kubernetes/Terraform.
 
 ## Web client
 
@@ -45,14 +46,14 @@ bearer-token publications), sync engines (Replicache/PowerSync/Electric — thei
 | PWA | Vite PWA plugin | Offline app shell from the local-first milestone |
 
 IndexedDB stores places (with OSM evidence and external refs), tags/assignments, notes/media,
-lists/blocks/note attachments, import batches/items, publications, credentials, and
+lists/blocks, posts/blocks/note attachments, import batches/items, publications, credentials, and
 mutation/publication outboxes. Binary media is separate
 from portable domain metadata.
 
 ## Domain packages
 
 Plain TypeScript packages contain durable place identity, resolver scoring/state transitions,
-guide construction, public projection, and publication state. They have no direct dependency on
+list and post construction, public projection, and publication state. They have no direct dependency on
 React, IndexedDB, `Blob`, DOM parsing, MapLibre, or `fetch`.
 
 ## OSM resolver path
@@ -71,7 +72,7 @@ self-hosted path with:
 | Concern | Choice | Notes |
 |---|---|---|
 | Runtime | Small Node/TypeScript service or edge function | Same schemas as public projections |
-| Document storage | D1 (SQLite); Postgres is the portable alternative | Atomic slug claims, conditional revisions, versioned guide/note JSON, and tombstones require consistent transactions |
+| Document storage | D1 (SQLite); Postgres is the portable alternative | Atomic slug claims, conditional revisions, versioned list/post/note JSON, and tombstones require consistent transactions |
 | Public API | REST | Public `GET`; Bearer-authorized conditional mutations |
 | Concurrency | ETag / `If-Match` + idempotency keys | Prevent stale/out-of-order publication |
 | Write ownership | Random device-held editor bearer token; hash server-side | No account and no token in public link |
@@ -80,13 +81,13 @@ self-hosted path with:
 The public URL is always read-only. The creator's local `Publication.credentialId` points to the
 secret required to update or revoke it.
 
-## Optional sync backend
+## Sync backend (v1 since 2026-07-19)
 
 | Concern | Choice | Notes |
 |---|---|---|
 | API | TypeScript REST | Idempotent mutation push + cursor pull |
 | Database | Postgres | PostGIS optional for server-side geo use cases |
-| Auth | Email link / OAuth | Deferred until multi-device sync |
+| Auth | Email link / OAuth | Names the sync scope only; solo use needs no account |
 | Ordering | Mutation id + actor + HLC/server cursor | Client wall clock is not conflict order |
 | Merge | Per entity/edge with tombstones | Conflicting Markdown bodies preserve a copy |
 
@@ -102,7 +103,7 @@ Sync transport is separate from `LocalRepository`; application reads and writes 
 ## Explicitly deferred
 
 - Native app, after the web core loop is validated.
-- Accounts and multi-device sync; backup/restore and read-only public shares come first.
-- Collaborative guide editing and any CRDT work.
+- Collaborative post editing and any CRDT work. (Accounts and multi-device sync moved **into**
+  v1 on 2026-07-19; backup/restore and read-only public shares still land first.)
 - Routing beyond external deep-links.
 - Direct in-app OSM editing; v1 opens the OSM website/editor with explicit user control.

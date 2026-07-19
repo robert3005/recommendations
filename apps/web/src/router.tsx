@@ -60,7 +60,7 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
-// Public share viewers (book/src/sharing.md): snapshot links live in the
+// Public share viewers (spec/src/sharing.md): snapshot links live in the
 // fragment; hosted links live under a public slug.
 const snapshotRoute = createRoute({
   getParentRoute: () => rootRoute,

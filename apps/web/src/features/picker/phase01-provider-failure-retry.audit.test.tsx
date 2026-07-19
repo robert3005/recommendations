@@ -1,5 +1,5 @@
 /**
- * book/src/map-view.md requires a bounded retry/error state for nearby
+ * spec/src/map-view.md requires a bounded retry/error state for nearby
  * candidate failures. The recovery action must retry in-place rather than
  * requiring the user to dismiss and reconstruct the long-press workflow.
  */

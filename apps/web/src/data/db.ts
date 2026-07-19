@@ -1,5 +1,5 @@
 /**
- * Dexie schema — the durable primary store (book/src/storage-sync.md).
+ * Dexie schema — the durable primary store (spec/src/storage-sync.md).
  * Rows carry derived index fields (refKeys, targetKey, kind/refId) next to the
  * domain shape; the repository strips/derives them at the boundary.
  *
@@ -32,7 +32,7 @@ export interface MediaBlobRow {
 }
 
 /**
- * Import workflow state (book/src/interop.md §Import queue model): persisted so
+ * Import workflow state (spec/src/interop.md §Import queue model): persisted so
  * a half-reviewed import survives a reload; not part of the durable place graph.
  */
 export interface ImportBatchRow {
@@ -49,7 +49,7 @@ export interface ImportSourceRow {
   listId: string;
 }
 
-/** One durable publish/revoke job (book/src/sharing.md §Local publication record). */
+/** One durable publish/revoke job (spec/src/sharing.md §Local publication record). */
 export interface PublicationJobRow {
   id: string; // doubles as the Idempotency-Key
   publicationId: string;
@@ -165,7 +165,7 @@ export class PlacemarksDb extends Dexie {
     // v4: membership is existence — a live place with no live list membership would
     // be a hidden orphan (invisible but occupying its OSM ref). Formerly saved
     // places that belonged to no list are placed in an explicit migration-created
-    // list instead (book/src/storage-sync.md §Backup and restore).
+    // list instead (spec/src/storage-sync.md §Backup and restore).
     this.version(4).upgrade(async (tx) => {
       const places = (await tx.table("places").toArray()) as {
         id: string;
@@ -201,7 +201,7 @@ export class PlacemarksDb extends Dexie {
         });
       }
     });
-    // v5 (Phase 3, book/src/interop.md): the persisted import review queue.
+    // v5 (Phase 3, spec/src/interop.md): the persisted import review queue.
     this.version(5).stores({
       importBatches: "id, status, startedAt",
       importItems: "id, batchId, status",

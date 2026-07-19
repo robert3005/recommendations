@@ -17,7 +17,7 @@
 > - A checked-in `_headers` file gives the app and every public viewer one restrictive
 >   document-level Content-Security-Policy (self-only scripts, no eval, `object-src 'none'`).
 > - Map-surface attribution is a live link to openstreetmap.org/copyright wherever OSM-derived
->   facts are presented — on the map control, public guide pages, and note pages.
+>   facts are presented — on the map control, public list and post pages, and note pages.
 
 All **live** geographic facts come from OpenStreetMap or OSM-derived services. Placemarks does not
 create a second public POI database. It stores bounded OSM observations for identity/offline
@@ -201,4 +201,4 @@ OSM data is ODbL; tiles and styles may add other licenses. Requirements include:
 
 The [OSMF attribution guidelines](https://osmfoundation.org/wiki/Licence/Attribution_Guidelines)
 provide guidance but do not replace the license text or legal advice. Attribution is a first-class
-element on map, guide, note, and export surfaces.
+element on map, list, post, note, and export surfaces.

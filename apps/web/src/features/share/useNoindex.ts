@@ -1,4 +1,4 @@
-/** Public share pages default to noindex (book/src/sharing.md). */
+/** Public share pages default to noindex (spec/src/sharing.md). */
 import { useEffect } from "react";
 
 export function useNoindex(): void {

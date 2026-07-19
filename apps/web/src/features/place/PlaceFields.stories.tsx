@@ -26,7 +26,7 @@ export const LiveWithWebsite: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const link = canvas.getByTestId("website-link");
-    // The website is the prize (book/src/vision.md) — and it must be safe.
+    // The website is the prize (spec/src/vision.md) — and it must be safe.
     await expect(link).toHaveAttribute("href", "https://cafecentral.pt/");
     await expect(link).toHaveAttribute("rel", "noopener noreferrer nofollow ugc");
     await expect(link).toHaveAttribute("target", "_blank");

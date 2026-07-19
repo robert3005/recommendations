@@ -1,5 +1,5 @@
 /**
- * Phase 3 adherence checks derived from the current book/src/interop.md.
+ * Phase 3 adherence checks derived from the current spec/src/interop.md.
  *
  * These intentionally exercise the interchange contract rather than private
  * implementation details: Takeout joins by Google id, KML folders/styles become

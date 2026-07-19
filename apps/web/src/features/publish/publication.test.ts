@@ -1,5 +1,5 @@
 /**
- * Phase 5 client publication (book/src/sharing.md §Local publication record):
+ * Phase 5 client publication (spec/src/sharing.md §Local publication record):
  * token generated and persisted before any request; durable jobs retry after
  * failure without rolling the public document back; publish/update/revoke walk
  * the queued→publishing→published / revoking→revoked state machine against the

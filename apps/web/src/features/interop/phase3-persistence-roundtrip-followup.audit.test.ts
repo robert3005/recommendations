@@ -106,6 +106,19 @@ describe("Phase 3 persisted interchange fidelity follow-up", () => {
     });
   });
 
+  it("preserves genuine formula-looking apostrophes from an external Takeout CSV", () => {
+    const parsed = parseSavedCsv(
+      "Title,Note,URL,Address\n'=SUM(A1:A2),'+owned note,,'@address\n",
+      "External Takeout",
+    );
+
+    expect(parsed.items[0]).toMatchObject({
+      title: "'=SUM(A1:A2)",
+      note: "'+owned note",
+      address: "'@address",
+    });
+  });
+
   it("round-trips a history-only OSM anchor and its attribution through GeoJSON", async () => {
     const repo = new DexieRepository(`phase3-history-geojson-${crypto.randomUUID()}`);
     const ref = { type: "node" as const, id: "202" };
@@ -155,6 +168,46 @@ describe("Phase 3 persisted interchange fidelity follow-up", () => {
     try {
       const first = await runImport(repo, file, noMatches(), NOW);
       await runImport(repo, file, noMatches(), "2026-07-20T12:00:00.000Z");
+      const remaining = await repo.db.importItems
+        .where("batchId")
+        .equals(first.batchId)
+        .filter((item) => item.status === "review")
+        .count();
+      const oldBatch = await repo.db.importBatches.get(first.batchId);
+
+      expect({ remaining, status: oldBatch?.status }).toEqual({ remaining: 0, status: "done" });
+    } finally {
+      repo.db.close();
+    }
+  });
+
+  it("closes the old batch when a later re-import resolves its review row", async () => {
+    const repo = new DexieRepository(`phase3-resolved-review-batch-${crypto.randomUUID()}`);
+    const file = {
+      name: "Resolved.csv",
+      bytes: strToU8("Title,Note,URL,Address\nCafé,,https://www.openstreetmap.org/node/303,\n"),
+    };
+    const resolved = {
+      osmRef: { type: "node" as const, id: "303" },
+      name: "Café",
+      category: "cafe",
+      lat: 38.7139,
+      lng: -9.1394,
+      identityTags: { amenity: "cafe", name: "Café" },
+      resolvedAt: "2026-07-20T12:00:00.000Z",
+    };
+    const resolves = {
+      search: { search: vi.fn(async () => []) },
+      resolver: {
+        resolveExact: vi.fn(async () => ({ type: "ok" as const, poi: resolved })),
+        searchNearby: vi.fn(async () => []),
+        discover: vi.fn(async () => ({ pois: [], truncated: false })),
+      },
+    };
+
+    try {
+      const first = await runImport(repo, file, noMatches(), NOW);
+      await runImport(repo, file, resolves, "2026-07-20T12:00:00.000Z");
       const remaining = await repo.db.importItems
         .where("batchId")
         .equals(first.batchId)

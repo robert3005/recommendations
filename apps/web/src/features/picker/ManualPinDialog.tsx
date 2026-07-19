@@ -1,6 +1,6 @@
 /**
  * Name an unlinked manual pin and choose its list — places don't exist outside
- * lists (book/src/data-model.md: membership is existence), so the pin is born
+ * lists (spec/src/data-model.md: membership is existence), so the pin is born
  * into one: an existing list or a new one created here.
  */
 import type { List } from "@placemarks/domain";

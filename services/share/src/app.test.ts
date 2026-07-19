@@ -1,5 +1,5 @@
 /**
- * Share-service contract (book/src/sharing.md §Share service): atomic slug
+ * Share-service contract (spec/src/sharing.md §Share service): atomic slug
  * claims, bearer-hash auth with constant-time compare, If-Match conditional
  * mutations, idempotent retries, tombstoned slugs, limits, and cache headers.
  */

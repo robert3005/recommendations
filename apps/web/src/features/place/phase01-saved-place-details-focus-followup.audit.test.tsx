@@ -18,13 +18,13 @@ const place: Place = {
   updatedAt: NOW,
 };
 
-const mocks = vi.hoisted(() => ({ clearSelection: vi.fn() }));
+const mocks = vi.hoisted(() => ({ clearSelection: vi.fn(), viewReady: true }));
 
 vi.mock("../../data/hooks", () => ({
   useListIdsForPlace: () => ["list-1"],
   useLists: () => [],
   useNotesForPlace: () => [],
-  usePlaceView: () => ({ place, tags: [] }),
+  usePlaceView: () => (mocks.viewReady ? { place, tags: [] } : undefined),
   useTags: () => [],
 }));
 
@@ -52,12 +52,40 @@ function opener() {
 }
 
 describe("Phase 1 saved PlaceDetailsSheet focus management", () => {
-  beforeEach(() => mocks.clearSelection.mockClear());
+  beforeEach(() => {
+    mocks.clearSelection.mockClear();
+    mocks.viewReady = true;
+  });
 
   it("moves focus inside the saved-place dialog when it opens", () => {
     const rendered = render(opener());
     screen.getByRole("button", { name: "Open saved place" }).focus();
 
+    rendered.rerender(
+      <>
+        {opener()}
+        <PlaceDetailsSheet placeId={place.id} />
+      </>,
+    );
+    const dialog = screen.getByRole("dialog", { name: "Saved café" });
+
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  });
+
+  it("moves focus when the asynchronously loaded saved-place view appears", () => {
+    const rendered = render(opener());
+    screen.getByRole("button", { name: "Open saved place" }).focus();
+    mocks.viewReady = false;
+
+    rendered.rerender(
+      <>
+        {opener()}
+        <PlaceDetailsSheet placeId={place.id} />
+      </>,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    mocks.viewReady = true;
     rendered.rerender(
       <>
         {opener()}

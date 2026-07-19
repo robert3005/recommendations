@@ -1,6 +1,6 @@
 /**
  * Type-ahead search (Photon). Debounced, cancellable, keyboard-accessible combobox.
- * Every selectable result carries a typed OSM reference (book/src/data-sources.md).
+ * Every selectable result carries a typed OSM reference (spec/src/data-sources.md).
  */
 import type { SearchResult } from "@placemarks/domain";
 import { useQuery } from "@tanstack/react-query";
@@ -90,7 +90,7 @@ export function SearchBar({ onSelect, bias }: SearchBarProps) {
       />
       {open && debouncedQuery.length >= 2 ? (
         // A listbox may only contain options — status text renders as its own
-        // live region instead (continuous axe check, book/src/roadmap.md).
+        // live region instead (continuous axe check, spec/src/roadmap.md).
         searchQuery.isPending || searchQuery.isError || results.length === 0 ? (
           <output
             className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-xl border border-stone-200 bg-white px-4 py-2 text-sm shadow-lg"

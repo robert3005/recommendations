@@ -1,5 +1,5 @@
 /**
- * Authoritative provider budget from book/src/data-sources.md: viewport
+ * Authoritative provider budget from spec/src/data-sources.md: viewport
  * discovery remains bounded even when an upstream ignores the requested cap.
  */
 import { HttpResponse, http } from "msw";

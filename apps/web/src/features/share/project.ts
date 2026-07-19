@@ -1,5 +1,5 @@
 /**
- * Public projection (book/src/sharing.md §Shared guide document): build the
+ * Public projection (spec/src/sharing.md §Shared guide document): build the
  * versioned SharedGuide from a list. Private PlaceIds, database ids, tags
  * (until BlockTagSelection lands), non-shareable notes, and editor tokens
  * never enter the payload; note images become explicit text placeholders.
@@ -184,11 +184,11 @@ export async function projectGuide(
       type: "place",
       place: anchor,
       ...(shareableNotes.length > 0 ? { notes: shareableNotes.map(toSharedNote) } : {}),
-      // Tags stay private until explicit BlockTagSelection lands (book/src/sharing.md).
+      // Tags stay private until explicit BlockTagSelection lands (spec/src/sharing.md).
     });
   }
 
-  // The document mirrors the book's schema exactly — the local marker colour
+  // The document mirrors the spec's schema exactly — the local marker colour
   // is a viewer-side concern, not part of the shared contract.
   const base = {
     v: 1 as const,

@@ -1,5 +1,5 @@
 /**
- * Additional Phase 3 import checks derived from the current authoritative book.
+ * Additional Phase 3 import checks derived from the current authoritative spec.
  *
  * These focus on identity ordering and failure/accounting paths not covered by
  * the existing Phase 3 suites. In particular, an OSM ref must outrank fuzzy

@@ -1,6 +1,6 @@
 /**
  * The one OSM affordance on a place: a small link to the element's portal page.
- * In-app edit/report/refresh actions are deferred (book/src/map-view.md) — the
+ * In-app edit/report/refresh actions are deferred (spec/src/map-view.md) — the
  * portal itself offers editing and issue reporting.
  */
 import { type OsmElementRef, osmElementUrl } from "@placemarks/domain";

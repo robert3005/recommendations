@@ -1,4 +1,4 @@
-/** Phase 5 public-cache invalidation contract from book/src/sharing.md. */
+/** Phase 5 public-cache invalidation contract from spec/src/sharing.md. */
 import type { SharedGuide } from "@placemarks/schemas";
 import { describe, expect, it } from "vitest";
 import { createShareApp } from "./app";
