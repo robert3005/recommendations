@@ -5,7 +5,8 @@
  */
 import { composeStories, setProjectAnnotations } from "@storybook/react";
 import { act, render } from "@testing-library/react";
-import { describe, test } from "vitest";
+import axe from "axe-core";
+import { describe, expect, test } from "vitest";
 import { withProviders } from "../../.storybook/decorators";
 import * as NewListFormStories from "../features/lists/NewListForm.stories";
 import * as NoteEditorStories from "../features/notes/NoteEditor.stories";
@@ -54,6 +55,15 @@ for (const [name, module] of modules) {
         }
         const { container } = await act(async () => render(<Story />));
         await Story.play?.({ canvasElement: container });
+        // Continuous accessibility (book/src/roadmap.md Phase 6): serious and
+        // critical axe violations fail the story, every run, not in an audit.
+        const a11y = await axe.run(container, {
+          rules: { "color-contrast": { enabled: false } }, // jsdom cannot compute styles reliably
+        });
+        const blocking = a11y.violations.filter(
+          (violation) => violation.impact === "serious" || violation.impact === "critical",
+        );
+        expect(blocking.map((violation) => `${violation.id}: ${violation.help}`)).toEqual([]);
       });
     }
   });

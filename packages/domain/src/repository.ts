@@ -39,7 +39,14 @@ export interface GuideBlockView {
 export type AddToListSource =
   | { kind: "poi"; poi: ResolvedPoi; externalRef?: ExternalRef }
   | { kind: "manual"; facts: ManualFacts }
-  | { kind: "import"; facts: ManualFacts; externalRef?: ExternalRef; poi?: ResolvedPoi }
+  | {
+      kind: "import";
+      facts: ManualFacts;
+      externalRef?: ExternalRef;
+      poi?: ResolvedPoi;
+      /** True when the poi came from an exact source anchor — fuzzy name dedup never overrides it. */
+      authoritative?: boolean;
+    }
   | { kind: "existing"; placeId: PlaceId };
 
 export interface PlacemarksRepository {

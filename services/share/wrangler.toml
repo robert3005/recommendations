@@ -1,0 +1,10 @@
+# Share service deployment (book/src/tech-stack.md: Hono on Workers + D1).
+# Apply schema.sql with: wrangler d1 execute placemarks-share --file=schema.sql
+name = "placemarks-share"
+main = "src/worker.ts"
+compatibility_date = "2026-07-01"
+
+[[d1_databases]]
+binding = "SHARE_DB"
+database_name = "placemarks-share"
+database_id = "REPLACE_WITH_REAL_ID"

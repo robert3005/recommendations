@@ -14,6 +14,7 @@ import {
   type Place,
   type Tag,
 } from "@placemarks/domain";
+import { strToU8, zipSync } from "fflate";
 import Papa from "papaparse";
 import { DEFAULT_PIN_COLOR } from "../../lib/markers";
 
@@ -38,9 +39,10 @@ function rows(views: ExportPlaceView[]): ExportRow[] {
   for (const view of views) {
     const facts = displayFacts(view.place);
     if (!facts) continue;
+    // Markdown whitespace is significant (code blocks) — never trimmed.
     const note = view.notes
-      .map((n) => n.body.trim())
-      .filter(Boolean)
+      .map((n) => n.body)
+      .filter((body) => body.trim() !== "")
       .join("\n\n");
     out.push({
       facts,
@@ -111,9 +113,9 @@ function urlFor(row: ExportRow): string {
   return `https://www.google.com/maps/search/?api=1&query=${row.facts.lat},${row.facts.lng}`;
 }
 
-/** Spreadsheets execute cells starting with = + - @ — quote them defensively. */
+/** Spreadsheets execute cells starting with = + - @ (even after trimming) — quote defensively. */
 function formulaEscape(value: string): string {
-  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+  return /^[\s\r\t]*[=+\-@]/.test(value) ? `'${value}` : value;
 }
 
 export function exportListCsv(_list: List, views: ExportPlaceView[]): string {
@@ -162,6 +164,11 @@ export function exportListGeoJson(list: List, views: ExportPlaceView[]): string 
     })),
   };
   return `${JSON.stringify(collection, null, 2)}\n`;
+}
+
+/** KMZ: the KML zipped as doc.kml — what Google Earth/My Maps also accept. */
+export function exportListKmz(list: List, views: ExportPlaceView[]): Uint8Array {
+  return zipSync({ "doc.kml": strToU8(exportListKml(list, views)) });
 }
 
 export function exportListGpx(list: List, views: ExportPlaceView[]): string {

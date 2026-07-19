@@ -1,7 +1,9 @@
 /** Settings: backup export/import, places import (Phase 3), storage, licensing. */
 import { useRef, useState } from "react";
+import { useLibraryPlaces } from "../../data/hooks";
 import { getDefaultRepo, useRepo } from "../../data/RepoContext";
 import type { DexieRepository } from "../../data/repo";
+import { lastBackupAt, recordBackup, shouldRemindBackup } from "../../lib/backupReminder";
 import { nowIso } from "../../lib/time";
 import { ImportSection } from "../interop/ImportSection";
 import { exportBackup, importBackup } from "./backup";
@@ -10,6 +12,7 @@ export function SettingsPage() {
   const repo = useRepo();
   const fileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<"replace" | "merge">("merge");
+  const places = useLibraryPlaces();
   const [message, setMessage] = useState<string>();
 
   const dexieRepo = (repo as DexieRepository).db ? (repo as DexieRepository) : getDefaultRepo();
@@ -22,6 +25,7 @@ export function SettingsPage() {
     a.download = `placemarks-backup-${new Date().toISOString().slice(0, 10)}.zip`;
     a.click();
     URL.revokeObjectURL(url);
+    recordBackup(nowIso());
     setMessage("Backup exported.");
   };
 
@@ -57,6 +61,16 @@ export function SettingsPage() {
           A versioned ZIP with your places, tags, notes, lists, media, and the OSM evidence needed
           to preserve place identity. Data is device-local — back up regularly.
         </p>
+        {shouldRemindBackup(places?.length ?? 0, nowIso()) ? (
+          <p
+            className="mt-2 rounded bg-orange-50 p-2 text-xs text-orange-800"
+            data-testid="backup-reminder"
+          >
+            {lastBackupAt()
+              ? "Your last backup is over a month old — export a fresh one."
+              : "You have places but no backup yet — export one now."}
+          </p>
+        ) : null}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"

@@ -9,12 +9,14 @@
  */
 import {
   classifyCandidates,
+  displayFacts,
   type ExternalRef,
   type ManualFacts,
   normalizeName,
   type OsmEvidence,
   type Place,
   type PoiResolver,
+  plausiblySameElement,
   type ResolvedPoi,
   type SearchProvider,
   type SearchResult,
@@ -48,12 +50,26 @@ export interface ImportReport {
   skipped: number;
 }
 
+function refForUrl(url: string, now: string): ExternalRef | undefined {
+  if (isGoogleMapsUrl(url)) {
+    const fid = googleFeatureId(url);
+    return { provider: "google-maps", url, ...(fid ? { fid } : {}), importedAt: now };
+  }
+  // OSM portal URLs are typed anchors, not provenance refs; any other web URL
+  // is retained with honest "web" provenance (never mislabeled as Google).
+  if (osmRefFromUrl(url)) return undefined;
+  if (/^https?:\/\//i.test(url)) return { provider: "web", url, importedAt: now };
+  return undefined;
+}
+
 function externalRefFor(item: ParsedItem, now: string): ExternalRef | undefined {
-  // Only a genuine Google Maps URL becomes a google-maps ref; an OSM portal
-  // URL (or anything else) is not mislabeled as one.
-  if (!item.url || !isGoogleMapsUrl(item.url)) return undefined;
-  const fid = googleFeatureId(item.url);
-  return { provider: "google-maps", url: item.url, ...(fid ? { fid } : {}), importedAt: now };
+  return item.url ? refForUrl(item.url, now) : undefined;
+}
+
+function extraRefs(item: ParsedItem, now: string): ExternalRef[] {
+  return (item.urls ?? [])
+    .map((url) => refForUrl(url, now))
+    .filter((ref): ref is ExternalRef => ref !== undefined);
 }
 
 function factsFor(item: ParsedItem, coords: { lat: number; lng: number }): ManualFacts {
@@ -63,6 +79,8 @@ function factsFor(item: ParsedItem, coords: { lat: number; lng: number }): Manua
     lng: coords.lng,
     ...(item.address ? { address: item.address } : {}),
     ...(item.category ? { category: item.category } : {}),
+    ...(item.phone ? { phone: item.phone } : {}),
+    ...(item.openingHours ? { openingHours: item.openingHours } : {}),
   };
 }
 
@@ -105,10 +123,25 @@ async function materializeItem(
   coords: { lat: number; lng: number },
   poi: ResolvedPoi | undefined,
   now: string,
-): Promise<Materialized> {
+  options: {
+    exactAnchor?: boolean;
+    probeRef?: { type: "node" | "way" | "relation"; id: string };
+  } = {},
+): Promise<Materialized | { status: "review" }> {
   const externalRef = externalRefFor(item, now);
   const facts = factsFor(item, coords);
-  const existing = await repo.findImportTarget(facts, externalRef);
+  // Identity precedence: external-ref id, then the exact OSM ref, then
+  // name+proximity — which is conservative and refuses to guess when several
+  // local places could be meant. An exact anchor IS the identity: fuzzy
+  // name matching never overrides it onto a different element.
+  const probed = await repo.findImportTarget(
+    facts,
+    externalRef,
+    poi?.osmRef ?? options.probeRef,
+    options.exactAnchor === true,
+  );
+  if (probed === "ambiguous") return { status: "review" };
+  const existing = probed;
 
   let place: Place;
   let status: Materialized["status"];
@@ -121,9 +154,14 @@ async function materializeItem(
       status = "placed";
       place = (await repo.addToList(listId, { kind: "existing", placeId: existing.id }, now)).place;
     }
-    // A duplicate row is not a no-op: the source URL merges onto the retained
-    // place, and a newly gained OSM match upgrades the same PlaceId.
-    let merged = externalRef ? withExternalRef(place, externalRef, now) : place;
+    // A duplicate row is not a no-op: the source URL(s) and imported facts
+    // merge onto the retained place, and a newly gained OSM match upgrades
+    // the same PlaceId.
+    let merged = place;
+    for (const ref of [externalRef, ...extraRefs(item, now)]) {
+      if (ref) merged = withExternalRef(merged, ref, now);
+    }
+    if (!merged.manual) merged = { ...merged, manual: facts, updatedAt: now };
     if (poi && !merged.currentOsmRef) {
       merged = await repo.linkImportedPlace(merged, poi, now);
     } else if (merged !== place) {
@@ -135,13 +173,26 @@ async function materializeItem(
     place = (
       await repo.addToList(
         listId,
-        { kind: "import", facts, ...(externalRef ? { externalRef } : {}), ...(poi ? { poi } : {}) },
+        {
+          kind: "import",
+          facts,
+          ...(externalRef ? { externalRef } : {}),
+          ...(poi ? { poi } : {}),
+          ...(options.exactAnchor === true ? { authoritative: true } : {}),
+        },
         now,
       )
     ).place;
+    let withExtras = place;
+    for (const ref of extraRefs(item, now)) withExtras = withExternalRef(withExtras, ref, now);
+    if (withExtras !== place) {
+      await repo.updatePlace(withExtras);
+      place = withExtras;
+    }
   }
 
   if (item.note) await addImportNote(repo, place.id, item.note, now);
+  for (const tag of item.tags ?? []) await repo.assignTag(place.id, tag, now);
   return { status, linked: place.currentOsmRef !== undefined, placeId: place.id };
 }
 
@@ -180,6 +231,39 @@ async function nearbyMatch(
   } catch {
     return undefined;
   }
+}
+
+/**
+ * A fetched exact element that is no longer plausibly the imported place
+ * (moved far away with incompatible identity) must not be blindly accepted.
+ */
+function anchorPlausible(item: ParsedItem, poi: ResolvedPoi): boolean {
+  if (item.coords) {
+    const evidence: OsmEvidence = {
+      ref: poi.osmRef,
+      source: "OpenStreetMap",
+      license: "ODbL-1.0",
+      attribution: "© OpenStreetMap contributors",
+      name: item.title,
+      category: item.category ?? poi.category,
+      lat: item.coords.lat,
+      lng: item.coords.lng,
+      identityTags: {},
+      observedAt: "",
+    };
+    return plausiblySameElement(evidence, poi);
+  }
+  // Without coordinates, the name and address are the only identity signals a
+  // Takeout row carries — an element that matches neither has been repurposed.
+  const nameMatches = normalizeName(item.title) === normalizeName(poi.name);
+  const addressOk = addressCompatible(item.address, {
+    ref: poi.osmRef,
+    name: poi.name ?? "",
+    lat: poi.lat,
+    lng: poi.lng,
+    ...(poi.address ? { address: poi.address } : {}),
+  });
+  return nameMatches || (item.address !== undefined && addressOk && item.category === poi.category);
 }
 
 const normalizeAddressTokens = (address: string): Set<string> =>
@@ -227,7 +311,9 @@ async function geocode(
   }
   const wanted = normalizeName(item.title);
   const named = results.filter((r) => normalizeName(r.name) === wanted);
-  const qualified = named.filter((r) => addressCompatible(item.address, r));
+  // A name match alone never links (chains exist everywhere): the row must
+  // carry an address that does not contradict the candidate.
+  const qualified = item.address ? named.filter((r) => addressCompatible(item.address, r)) : [];
   const uniqueRefs = new Set(qualified.map((r) => `${r.ref.type}/${r.ref.id}`));
   if (qualified.length > 0 && uniqueRefs.size === 1 && qualified[0]) {
     return { kind: "auto", result: qualified[0] };
@@ -248,9 +334,14 @@ async function materializeCandidate(
   result: SearchResult,
   now: string,
 ): Promise<Materialized | { status: "review" }> {
-  const outcome = await deps.resolver.resolveExact(result.ref);
-  if (outcome.type !== "ok") return { status: "review" };
-  return materializeItem(repo, listId, item, result, outcome.poi, now);
+  try {
+    const outcome = await deps.resolver.resolveExact(result.ref);
+    if (outcome.type !== "ok") return { status: "review" };
+    return await materializeItem(repo, listId, item, result, outcome.poi, now);
+  } catch {
+    // Provider unavailability never consumes the row — it stays reviewable.
+    return { status: "review" };
+  }
 }
 
 /**
@@ -286,7 +377,7 @@ async function listIdForSource(
 }
 
 const reviewKey = (listId: string, raw: ImportItemRow["raw"]): string =>
-  [listId, raw.title, raw.url ?? "", raw.address ?? ""].join(" ");
+  [listId, raw.title, raw.url ?? "", raw.address ?? ""].join("|");
 
 export async function runImport(
   repo: DexieRepository,
@@ -346,24 +437,67 @@ export async function runImport(
           title: item.title,
           ...(item.note ? { note: item.note } : {}),
           ...(item.url ? { url: item.url } : {}),
+          ...(item.urls ? { urls: item.urls } : {}),
           ...(item.address ? { address: item.address } : {}),
+          ...(item.category ? { category: item.category } : {}),
+          ...(item.phone ? { phone: item.phone } : {}),
+          ...(item.openingHours ? { openingHours: item.openingHours } : {}),
+          ...(item.tags ? { tags: item.tags } : {}),
+          ...(item.osmRef ? { osmRef: item.osmRef } : {}),
         },
         ...(item.coords ? { coords: item.coords } : {}),
         status: "review",
       };
 
-      let outcome: Materialized | undefined;
+      let outcome: Materialized | { status: "review" } | undefined;
       const osmRef = osmRefFromUrl(item.url) ?? item.osmRef;
       if (osmRef) {
-        // A typed OSM anchor (portal URL or our own export) resolves exactly.
-        const resolved = await deps.resolver.resolveExact(osmRef);
-        if (resolved.type === "ok") {
-          outcome = await materializeItem(repo, listId, item, resolved.poi, resolved.poi, now);
-        } else if (item.coords) {
-          // The anchor failed but the file carries literal coordinates.
-          outcome = await materializeItem(repo, listId, item, item.coords, undefined, now);
+        // A typed OSM anchor (portal URL or our own export) resolves exactly —
+        // and the anchor is persisted on the row so a retry keeps it. A local
+        // place already carrying the ref (current or historical) is the same
+        // place even when the resolver is unreachable.
+        row.raw.url ??= `https://www.openstreetmap.org/${osmRef.type}/${osmRef.id}`;
+        const known = await repo.findPlaceByOsmRef(osmRef);
+        if (known) {
+          const knownFacts = displayFacts(known);
+          outcome = await materializeItem(
+            repo,
+            listId,
+            item,
+            item.coords ?? { lat: knownFacts?.lat ?? 0, lng: knownFacts?.lng ?? 0 },
+            undefined,
+            now,
+            { exactAnchor: true, probeRef: osmRef },
+          );
+        } else {
+          try {
+            const resolved = await deps.resolver.resolveExact(osmRef);
+            if (resolved.type === "ok" && anchorPlausible(item, resolved.poi)) {
+              outcome = await materializeItem(repo, listId, item, resolved.poi, resolved.poi, now, {
+                exactAnchor: true,
+              });
+            } else if (resolved.type === "gone") {
+              // The anchored element was redrawn: an existing local place that
+              // carries this ref in its HISTORY is the same place — converge.
+              const historical = await repo.findPlaceByOsmRef(osmRef);
+              if (historical) {
+                const facts = displayFacts(historical);
+                outcome = await materializeItem(
+                  repo,
+                  listId,
+                  item,
+                  item.coords ?? { lat: facts?.lat ?? 0, lng: facts?.lng ?? 0 },
+                  undefined,
+                  now,
+                  { exactAnchor: true, probeRef: osmRef },
+                );
+              }
+            }
+            // incompatible/unavailable → the row stays in review.
+          } catch {
+            // Provider rejection never consumes the row.
+          }
         }
-        // Neither anchor nor coordinates → the row stays in review.
       } else if (item.coords) {
         // Opportunistic OSM match (book/src/interop.md): a unique high-confidence
         // nearby candidate links the place; nothing blocks on it.
@@ -380,7 +514,7 @@ export async function runImport(
         }
       }
 
-      if (outcome) {
+      if (outcome && outcome.status !== "review") {
         row.status = outcome.status;
         row.linkedOsm = outcome.linked;
         row.placeId = outcome.placeId;
@@ -391,13 +525,41 @@ export async function runImport(
           report.duplicates += 1;
         }
         await repo.db.importItems.put(row);
-      } else {
-        // Review counts only rows this batch actually owns: an identical row
-        // already pending from an earlier import stays with that batch.
+        // A resolved row supersedes any identical still-pending review row.
         const key = reviewKey(listId, row.raw);
-        if (!pendingReview.has(key)) {
+        if (pendingReview.has(key)) {
+          pendingReview.delete(key);
+          const stale = await repo.db.importItems
+            .filter(
+              (i) =>
+                i.status === "review" &&
+                i.id !== row.id &&
+                reviewKey(i.targetListId, i.raw) === key,
+            )
+            .toArray();
+          for (const staleRow of stale) await repo.db.importItems.delete(staleRow.id);
+        }
+      } else {
+        // Every source row is accounted for. An identical row already pending
+        // moves to this batch (no queue duplication, no orphan accounting).
+        const key = reviewKey(listId, row.raw);
+        report.review += 1;
+        if (pendingReview.has(key)) {
+          const existing = await repo.db.importItems
+            .filter((i) => i.status === "review" && reviewKey(i.targetListId, i.raw) === key)
+            .first();
+          // Newer source metadata (note, coords, candidates) wins on re-import.
+          if (existing) {
+            await repo.db.importItems.put({
+              ...existing,
+              batchId: batch.id,
+              raw: row.raw,
+              ...(row.coords ? { coords: row.coords } : {}),
+              ...(row.candidates ? { candidates: row.candidates } : {}),
+            });
+          }
+        } else {
           pendingReview.add(key);
-          report.review += 1;
           await repo.db.importItems.put(row);
         }
       }
@@ -441,6 +603,7 @@ export async function resolveReviewItem(
       throw new Error("out-of-range coordinate — the item stays in review");
     }
     const placed = await materializeItem(repo, row.targetListId, item, choice, undefined, now);
+    if (placed.status === "review") return; // ambiguous locally — still reviewable
     await repo.db.importItems.put({
       ...row,
       status: placed.status,

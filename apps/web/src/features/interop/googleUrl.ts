@@ -12,9 +12,7 @@ export function isGoogleMapsUrl(url: string | undefined): boolean {
     const parsed = new URL(url);
     return (
       (parsed.protocol === "https:" || parsed.protocol === "http:") &&
-      /^((www\.)?google\.[a-z]{2,3}(\.[a-z]{2})?|maps\.google\.com|maps\.app\.goo\.gl)$/.test(
-        parsed.hostname,
-      )
+      /^((www\.|maps\.)?google\.[a-z]{2,3}(\.[a-z]{2})?|maps\.app\.goo\.gl)$/.test(parsed.hostname)
     );
   } catch {
     return false;

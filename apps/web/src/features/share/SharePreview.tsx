@@ -32,9 +32,54 @@ export function SharePreview({
   onClose,
   copied,
 }: SharePreviewProps) {
+  // Full disclosure: every copied value that will leave the device, verbatim.
+  const evidenceLines = (
+    label: string,
+    evidence: {
+      osmRef: { type: string; id: string };
+      osmVersion?: number;
+      name?: string;
+      category: string;
+      lat: number;
+      lng: number;
+      address?: string;
+      website?: string;
+      phone?: string;
+      stableIds?: Record<string, string>;
+      observedAt: string;
+      license: string;
+    },
+  ): string =>
+    [
+      `${label}: ${evidence.osmRef.type}/${evidence.osmRef.id}`,
+      evidence.osmVersion !== undefined ? `v${evidence.osmVersion.toString()}` : undefined,
+      evidence.name,
+      evidence.category,
+      `${evidence.lat.toString()}, ${evidence.lng.toString()}`,
+      evidence.address,
+      evidence.website,
+      evidence.phone,
+      ...(evidence.stableIds ? Object.values(evidence.stableIds) : []),
+      `observed ${evidence.observedAt}`,
+      evidence.license,
+    ]
+      .filter(Boolean)
+      .join(" · ");
   const placeRows = guide.blocks.flatMap((block) => {
     if (block.type !== "place") return [];
     const anchor = block.place;
+    const lines: string[] =
+      anchor.kind === "osm"
+        ? [
+            `current ref: ${anchor.currentOsmRef.type}/${anchor.currentOsmRef.id}`,
+            evidenceLines("first seen", anchor.firstSeen),
+            evidenceLines("last verified", anchor.lastVerified),
+          ]
+        : [
+            `manual pin · ${anchor.lat.toString()}, ${anchor.lng.toString()}${
+              anchor.category ? ` · ${anchor.category}` : ""
+            }`,
+          ];
     return [
       {
         id: block.id,
@@ -42,6 +87,7 @@ export function SharePreview({
         address: anchor.kind === "osm" ? anchor.lastVerified.address : undefined,
         manual: anchor.kind === "manual",
         notes: block.notes ?? [],
+        lines,
       },
     ];
   });
@@ -99,6 +145,11 @@ export function SharePreview({
                 <span className="font-medium">{row.name}</span>
                 {row.address ? <span className="text-stone-500"> — {row.address}</span> : null}
                 {row.manual ? <span className="text-orange-700"> (manual pin)</span> : null}
+                {row.lines.map((line) => (
+                  <span key={line} className="block text-[10px] text-stone-400">
+                    {line}
+                  </span>
+                ))}
                 {row.notes.map((note, index) => (
                   <blockquote
                     key={`${row.id}-n-${index.toString()}`}

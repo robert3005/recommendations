@@ -1,3 +1,4 @@
+import { createShareApp, MemoryStorage } from "@placemarks/share-service";
 import { HttpResponse, http } from "msw";
 import { OSM_API_URL, OVERPASS_URL, PHOTON_URL } from "../config";
 import {
@@ -19,7 +20,78 @@ import {
  */
 let node599Gone = false;
 
+/**
+ * The dev/e2e share service is the REAL service app over in-memory storage —
+ * same protocol, same limits, zero network (book/src/sharing.md). In the
+ * browser the state round-trips through localStorage so published documents
+ * survive full page reloads within a session.
+ */
+const SHARE_STATE_KEY = "placemarks:msw-share-state";
+
+class PersistentMemoryStorage extends MemoryStorage {
+  constructor() {
+    super();
+    try {
+      const raw = globalThis.localStorage?.getItem(SHARE_STATE_KEY);
+      if (raw) {
+        const state = JSON.parse(raw) as {
+          docs?: [string, never][];
+          idempotency?: [string, never][];
+        };
+        for (const [, doc] of state.docs ?? []) void super.create(doc);
+        for (const [, record] of state.idempotency ?? []) void super.putIdempotent(record);
+      }
+    } catch {
+      // Fresh state when storage is unavailable or corrupt.
+    }
+  }
+
+  private persist(): void {
+    try {
+      const self = this as unknown as {
+        docs: Map<string, unknown>;
+        idempotency: Map<string, unknown>;
+      };
+      globalThis.localStorage?.setItem(
+        SHARE_STATE_KEY,
+        JSON.stringify({
+          docs: [...self.docs.entries()],
+          idempotency: [...self.idempotency.entries()],
+        }),
+      );
+    } catch {
+      // Best effort only — the mock service still works in-memory.
+    }
+  }
+
+  override async create(doc: Parameters<MemoryStorage["create"]>[0]) {
+    const created = await super.create(doc);
+    this.persist();
+    return created;
+  }
+
+  override async update(...args: Parameters<MemoryStorage["update"]>) {
+    const result = await super.update(...args);
+    this.persist();
+    return result;
+  }
+
+  override async revoke(...args: Parameters<MemoryStorage["revoke"]>) {
+    const result = await super.revoke(...args);
+    this.persist();
+    return result;
+  }
+
+  override async putIdempotent(...args: Parameters<MemoryStorage["putIdempotent"]>) {
+    await super.putIdempotent(...args);
+    this.persist();
+  }
+}
+
+const shareApp = createShareApp({ storage: new PersistentMemoryStorage() });
+
 export const handlers = [
+  http.all(/\/s\/(lists|notes)(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
   http.get(`${PHOTON_URL}/api`, ({ request }) => {
     const q = new URL(request.url).searchParams.get("q") ?? "";
     if (q.toLowerCase().includes("migrado")) return HttpResponse.json(photonMigradoResponse);

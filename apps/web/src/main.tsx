@@ -33,6 +33,14 @@ const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("missing #root");
 
 void prepare().then(() => {
+  // Durable publication outbox: interrupted jobs from earlier sessions retry
+  // on launch (book/src/sharing.md §Local publication record) — after the dev
+  // mock layer is ready, so requests never race past it.
+  void import("./features/publish/publication").then(({ runPublicationOutbox }) =>
+    runPublicationOutbox(getDefaultRepo()).catch(() => {
+      // Offline is a designed state; the outbox retries next launch/enqueue.
+    }),
+  );
   createRoot(rootElement).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

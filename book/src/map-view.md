@@ -125,6 +125,10 @@ managed or self-hosted adapters described in [Open Data Sources](./data-sources.
 - Uncached tiles, live search, live POIs, OSM refresh, and OSM editing require a network.
 - A basemap style/tile failure leaves navigation, search, and list access usable and exposes an
   accessible **Map unavailable** state; a blank or silently broken canvas is not a designed state.
+  This covers failures after the style loaded too: a tile-provider outage surfaces the same state,
+  and a subsequent successful render clears it — the overlay recovers with the connection
+  (2026-07-19).
+- `prefers-reduced-motion` recenters instantly instead of animating the camera (2026-07-19).
 - Search, exact-resolution, nearby-candidate, and viewport-discovery failures each expose a bounded
   retry/error state appropriate to their surface.
 - A resolver failure retains stored evidence and becomes `unavailable` in the domain; it never

@@ -48,6 +48,8 @@ export interface ManualFacts {
   lng: number;
   category?: string;
   address?: string; // present on imported facts — Takeout carries addresses
+  phone?: string; // imported interchange fidelity (GeoJSON round-trips)
+  openingHours?: string;
 }
 
 /**
@@ -55,7 +57,7 @@ export interface ManualFacts {
  * and the deep link back. Opaque — the URL is never fetched.
  */
 export interface ExternalRef {
-  provider: "google-maps";
+  provider: "google-maps" | "web";
   url: string;
   /** Stable id parsed from the URL when present (feature-id pair or cid) — the dedup key. */
   fid?: string;
@@ -239,6 +241,8 @@ export function displayFacts(place: Place): DisplayFacts | undefined {
       lat: place.manual.lat,
       lng: place.manual.lng,
       ...(place.manual.address ? { address: place.manual.address } : {}),
+      ...(place.manual.phone ? { phone: place.manual.phone } : {}),
+      ...(place.manual.openingHours ? { openingHours: place.manual.openingHours } : {}),
       source: "manual",
     };
   }

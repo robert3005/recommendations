@@ -150,6 +150,12 @@ the link still renders timestamped evidence when its old OSM element no longer r
 **Done when:** a creator can update or revoke a persistent read-only guide while any visitor with
 only the public link can read—but never modify—its latest successfully published revision.
 
+> **Status (2026-07-19): implemented in code**, except the media service, which is deferred — the
+> share service rejects hosted-media claims until it exists ([notes](./notes.md#publishing-a-note-page)).
+> The service is the Hono app in `services/share` behind a `ShareStorage` port (in-memory for
+> tests/dev via MSW, D1 adapter + `schema.sql`/`wrangler.toml` for deployment). Deployment,
+> domain, and CDN wiring are operational tasks outside the codebase.
+
 ## Phase 6 — Hardening & operations (post-v1)
 
 Deliberately after the v1 line: operational rigor scaled to real usage, not a launch prerequisite.
@@ -169,6 +175,12 @@ Deliberately after the v1 line: operational rigor scaled to real usage, not a la
 
 **Done when:** the installed app and public reader are fast, accessible, observable, recoverable,
 and good citizens of the OSM ecosystem.
+
+> **Status (2026-07-19): client-side slices implemented ahead of schedule** — continuous axe
+> checks over every story (serious/critical violations fail the suite), client error reporting
+> with privacy redaction (URL fragments, bearer/labelled/long-base64url tokens, precise
+> coordinates), 30-day backup reminders, and backup archive resource caps. Dashboards, alarms,
+> CDN/service metrics, and usage measurement remain operational work for a deployed service.
 
 ## Phase 7+ — Optional futures
 

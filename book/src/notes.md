@@ -129,6 +129,25 @@ its hash. The creator's app references it through `Publication.credentialId`, qu
 publication outbox, and shows the last successfully published revision. Public pages default to
 `noindex` and disclose only the selected note, bounded place/list context, and approved media.
 
+> **Implementation decisions (2026-07-19, Phase 5).**
+>
+> - **Hosted media is deferred.** Until the media service exists, `media` stays empty and the
+>   share service rejects (`422`) any document claiming a `hostedMediaId` — ids must be issued
+>   server-side, bound to a publication and token. Note bodies keep image placeholders.
+> - **The document's slug is its URL.** `POST /s/notes` rejects a `SharedNote` whose `slug`
+>   disagrees with `desiredSlug`; when the client walks slug collisions it rewrites the embedded
+>   slug per candidate, so the stored document always names its own public address.
+> - **Failed updates never hide the page.** The last published revision stays public and the
+>   creator UI keeps the page link with explicit *Update* (retry) and *Unpublish* actions
+>   alongside the surfaced error.
+> - **Viewer honesty about the place context.** Copied evidence renders with its observation date;
+>   a confirmed-missing OSM element says so explicitly ("no longer found on OpenStreetMap —
+>   showing saved facts"); a manual anchor is labelled owner-added/unlinked and carries no OSM
+>   attribution claim.
+> - **Guides and pages update together.** Editing a shareable note (or making it private) queues
+>   every hosted guide containing it as well as the standalone page — one edit, every affected
+>   public projection marked, none auto-published.
+
 ## How notes build a guide
 
 - A list note appears as a `section` block between places.

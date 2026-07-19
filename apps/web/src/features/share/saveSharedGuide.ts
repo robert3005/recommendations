@@ -64,7 +64,8 @@ export async function saveSharedGuide(
           lng: anchor.lng,
           ...(anchor.category ? { category: anchor.category } : {}),
         };
-        const probe = await repo.findImportTarget(facts);
+        const probed = await repo.findImportTarget(facts);
+        const probe = probed === "ambiguous" ? undefined : probed;
         const source =
           probe && !probe.currentOsmRef
             ? ({ kind: "existing", placeId: probe.id } as const)

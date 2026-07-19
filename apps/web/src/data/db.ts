@@ -56,6 +56,8 @@ export interface PublicationJobRow {
   action: "publish" | "revoke";
   /** The local revision this job projects — completing an older job never rolls forward state back. */
   localRevision: string;
+  /** The exact serialized document this job publishes (captured at enqueue). */
+  payload?: string;
   createdAt: string;
   attempts: number;
   lastError?: string;
@@ -65,7 +67,18 @@ export interface ImportItemRow {
   id: string;
   batchId: string;
   targetListId: string;
-  raw: { title: string; note?: string; url?: string; address?: string };
+  raw: {
+    title: string;
+    note?: string;
+    url?: string;
+    urls?: string[];
+    address?: string;
+    category?: string;
+    phone?: string;
+    openingHours?: string;
+    tags?: string[];
+    osmRef?: { type: "node" | "way" | "relation"; id: string };
+  };
   coords?: { lat: number; lng: number };
   /** Geocode candidates awaiting review (typed OSM refs from the search adapter). */
   candidates?: {

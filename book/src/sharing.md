@@ -195,6 +195,30 @@ Losing the only device-held editor token makes the hosted page uneditable. Recov
 include tokens only inside an explicitly encrypted secrets bundle; ordinary guide exports do
 not include them.
 
+> **Implementation decisions (2026-07-19, Phase 5).**
+>
+> - **Edits mark, creators publish.** A local edit on a hosted target commits — in the same
+>   IndexedDB transaction as the edit itself — a `queued` publication state and one coalesced
+>   *payload-less* outbox job (a dirty marker). Drains never send dirty markers: only an explicit
+>   publish action projects the current document, attaches the payload, and sends. The launch-time
+>   outbox retry therefore completes interrupted explicit work but never auto-publishes local
+>   edits — the public page changes only when the creator acts.
+> - **Idempotency-key hygiene.** A retry of the same revision reuses the failed job and its
+>   `Idempotency-Key`. Once a job has been *attempted*, its key may have committed server-side, so
+>   a newer revision always retires that job and goes out under a fresh key — a key is never
+>   reattached to a different payload.
+> - **First-publish slug claim.** On a `409` the client first probes whether the slug is already
+>   its own from a commit whose acknowledgement was lost (public `GET` for the revision, then a
+>   conditional `PUT` with its own token); only when that reclaim is refused does it walk
+>   `-2…-9` suffixes. Note documents rewrite their embedded `slug` to each candidate.
+> - **Failure isolation and revocation precedence.** Outbox order holds per publication — one
+>   failing page never starves another (this includes a missing editor credential). A failed
+>   revocation surfaces as `failed` and retries under its original key; an explicit revocation
+>   deletes pending publish jobs first so a failed draft can never strand the unpublish.
+> - **In-flight edits stay queued.** When an older publish completes while a newer local revision
+>   already exists, the publication records the published revision but keeps `queued` status and
+>   its dirty marker.
+
 ## Public guide viewer
 
 The public route is read-only and needs no account:
@@ -257,6 +281,14 @@ DELETE /s/lists/:slug
   reading, plus abuse reporting/takedown and per-publication media budgets.
 - Mutations and reads are rate-limited and audited; revoked slugs retain a non-readable tombstone.
 - Replaying an already-completed `DELETE` with the same idempotency key returns success.
+- Idempotency keys are scoped to `(kind, operation, slug, token)` — a key can neither complete a
+  different operation nor replay one slug's result as another's, and never leaks across tokens.
+- Update atomicity: the audit entry and a non-replayable key reservation precede the document
+  write; the replayable success record lands only after it. An interrupted update re-executes —
+  it never phantom-replays success for a write that may not have applied.
+- `DELETE` counts against the same per-token mutation quota as create and update.
+- Every `/s/*` response (not just the preflight) carries the CORS grant for the separately hosted
+  web client.
 - The chosen deployment uses transactional D1/SQL for atomic slug claims and conditional revision
   updates; another consistent SQL/document store may sit behind the same contract. No PostGIS is
   required.

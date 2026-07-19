@@ -101,6 +101,7 @@ export function MapView({
   // canvas (book/src/map-view.md §Offline and failure states).
   const [unavailable, setUnavailable] = useState(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the initial camera applies once at map creation — re-running on center/zoom changes would recreate the map.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     const map = new maplibregl.Map({
@@ -140,15 +141,17 @@ export function MapView({
     map.on("move", updateViewData);
     updateViewData();
 
-    // A style/tile failure before the basemap ever loads means there is no map to
-    // show; errors after load degrade tile-by-tile and stay silent here.
-    let styleLoaded = false;
+    // Any basemap failure — before or after the style loaded — surfaces the
+    // designed unavailable state; a successful render (idle) clears it, so a
+    // transient tile failure recovers with the connection.
     map.on("error", () => {
-      if (!styleLoaded) setUnavailable(true);
+      setUnavailable(true);
+    });
+    map.on("idle", () => {
+      setUnavailable(false);
     });
 
     map.on("load", () => {
-      styleLoaded = true;
       setUnavailable(false);
       map.addSource("pois", { type: "geojson", data: poisToGeoJSON([]) });
       map.addLayer({
@@ -369,10 +372,12 @@ export function MapView({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !flyTo) return;
+    // Respect prefers-reduced-motion: recenter instantly instead of animating.
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     map.flyTo({
       center: [flyTo.lng, flyTo.lat],
       zoom: flyTo.zoom ?? 17,
-      duration: 700,
+      duration: reduceMotion ? 0 : 700,
       // Keep the target clear of the bottom sheet.
       offset: [0, -120],
     });

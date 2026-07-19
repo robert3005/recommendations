@@ -10,7 +10,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { useGuide, useGuideBlocks } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
-import { downloadText } from "../../lib/download";
+import { downloadBytes, downloadText } from "../../lib/download";
 import { DEFAULT_PIN_COLOR } from "../../lib/markers";
 import { nowIso } from "../../lib/time";
 import {
@@ -19,8 +19,10 @@ import {
   exportListGeoJson,
   exportListGpx,
   exportListKml,
+  exportListKmz,
 } from "../interop/export";
 import { StateBadge } from "../place/StateBadge";
+import { PublishControls } from "../publish/PublishControls";
 import { type ProjectionStats, projectGuide } from "../share/project";
 import { SharePreview } from "../share/SharePreview";
 import { encodeSnapshot, SnapshotTooLargeError } from "../share/snapshot";
@@ -80,6 +82,66 @@ export function ListPage() {
 
   const placeBlocks = (blocks ?? []).filter((v) => v.block.content.type === "place");
 
+  const collectViews = async (): Promise<ExportPlaceView[]> => {
+    const views: ExportPlaceView[] = [];
+    for (const view of placeBlocks) {
+      if (!view.place) continue;
+      let notes: Note[] = [];
+      try {
+        notes = await repo.listNotesForPlace(view.place.id);
+      } catch {
+        notes = [];
+      }
+      const placeView = await repo.getPlaceView(view.place.id);
+      views.push({ place: view.place, notes, tags: placeView?.tags ?? [] });
+    }
+    return views;
+  };
+
+  const safeName = () =>
+    list.name.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "") || "list";
+
+  /** My Maps accepts ≤2,000 features per layer — larger lists split into parts. */
+  const MY_MAPS_LAYER_LIMIT = 2000;
+  const chunkedViews = async (): Promise<ExportPlaceView[][]> => {
+    const views = await collectViews();
+    const chunks: ExportPlaceView[][] = [];
+    for (let i = 0; i < views.length; i += MY_MAPS_LAYER_LIMIT) {
+      chunks.push(views.slice(i, i + MY_MAPS_LAYER_LIMIT));
+    }
+    if (chunks.length === 0) chunks.push([]);
+    return chunks;
+  };
+  const partName = (chunks: unknown[], index: number) =>
+    chunks.length > 1 ? `${list.name} (part ${(index + 1).toString()})` : list.name;
+  const partFile = (chunks: unknown[], index: number, ext: string) =>
+    chunks.length > 1
+      ? `${safeName()}-part${(index + 1).toString()}.${ext}`
+      : `${safeName()}.${ext}`;
+
+  /** The guided My Maps handoff: KML download(s) sized to the layer limit. */
+  const sendToMyMaps = async () => {
+    const chunks = await chunkedViews();
+    chunks.forEach((chunk, index) => {
+      downloadText(
+        partFile(chunks, index, "kml"),
+        "application/vnd.google-earth.kml+xml",
+        exportListKml({ ...list, name: partName(chunks, index) }, chunk),
+      );
+    });
+  };
+
+  const exportKmz = async () => {
+    const chunks = await chunkedViews();
+    chunks.forEach((chunk, index) => {
+      downloadBytes(
+        partFile(chunks, index, "kmz"),
+        "application/vnd.google-earth.kmz",
+        exportListKmz({ ...list, name: partName(chunks, index) }, chunk),
+      );
+    });
+  };
+
   const exportAs = async (writer: (typeof EXPORTS)[number]) => {
     const views: ExportPlaceView[] = [];
     for (const view of placeBlocks) {
@@ -93,8 +155,7 @@ export function ListPage() {
       const placeView = await repo.getPlaceView(view.place.id);
       views.push({ place: view.place, notes, tags: placeView?.tags ?? [] });
     }
-    const safe = list.name.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "") || "list";
-    downloadText(`${safe}.${writer.key}`, writer.mime, writer.write(list, views));
+    downloadText(`${safeName()}.${writer.key}`, writer.mime, writer.write(list, views));
   };
 
   const move = (view: GuideBlockView, direction: -1 | 1) => {
@@ -169,6 +230,14 @@ export function ListPage() {
         >
           Share…
         </button>
+        <button
+          type="button"
+          className="rounded border border-stone-200 px-2 py-0.5 font-medium text-stone-600 hover:bg-stone-100"
+          data-testid="send-to-my-maps"
+          onClick={() => void sendToMyMaps()}
+        >
+          Send to Google My Maps
+        </button>
         Export:
         {EXPORTS.map((writer) => (
           <button
@@ -181,7 +250,20 @@ export function ListPage() {
             {writer.label}
           </button>
         ))}
+        <button
+          type="button"
+          className="rounded border border-stone-200 px-2 py-0.5 font-medium text-stone-600 hover:bg-stone-100"
+          data-testid="export-kmz"
+          onClick={() => void exportKmz()}
+        >
+          KMZ
+        </button>
       </div>
+      <p className="mt-1 text-[11px] text-stone-400">
+        Google My Maps accepts up to 2,000 features per layer and 5 MB per file — larger lists split
+        into numbered parts automatically. Then: My Maps → Import → choose this file.
+      </p>
+      <PublishControls listId={list.id} />
 
       {sharing ? (
         <SharePreview

@@ -128,6 +128,13 @@ Before a transaction begins, import caps archive bytes, entry count, and inflate
 every declared checksum; rejects undeclared media; and validates schema, coordinates, ids,
 references, and graph invariants. In particular, every live place must have a live list membership,
 every place block must target a live place in its list, and media metadata must have matching bytes.
+The entry-count cap also reads the ZIP central directory's own count — duplicate member names
+collapse in a keyed extraction and must not undercount. Full-edge validation covers tag
+assignments (live tag *and* live place, one live pair per place and tag) and every live note's
+target. Merge validation applies last-write-wins tombstones *before* judging the final graph, so
+an incoming deletion cannot smuggle an orphan through, checks attachments join a note and block
+about the same place in the final state, and treats an incoming manual place reusing an existing
+OSM place's id as an identity collision (linkage only ever gains OSM identity, never loses it).
 The user chooses merge or replace. Merge uses the place-deduplication order from
 [Durable Place Identity](./place-identity.md#import-and-deduplication): exact current or historical
 OSM references are coalesced before per-id merge, with incoming edges rewritten to the retained

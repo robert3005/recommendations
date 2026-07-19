@@ -13,8 +13,7 @@ export interface NavLinksProps {
 }
 
 /** Only a genuine https Google Maps host may be opened from a stored URL. */
-const GOOGLE_HOSTS =
-  /^((www\.)?google\.[a-z]{2,3}(\.[a-z]{2})?|maps\.google\.com|maps\.app\.goo\.gl)$/;
+const GOOGLE_HOSTS = /^((www\.|maps\.)?google\.[a-z]{2,3}(\.[a-z]{2})?|maps\.app\.goo\.gl)$/;
 
 function safeExternalUrl(url: string | undefined): string | undefined {
   if (!url) return undefined;

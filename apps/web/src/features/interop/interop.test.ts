@@ -143,7 +143,7 @@ describe("import pipeline", () => {
     try {
       await runImport(repo, takeout(), deps(), NOW);
       const again = await runImport(repo, takeout(), deps(), "2026-07-19T09:00:00.000Z");
-      expect(again).toMatchObject({ placed: 0, duplicates: 2, review: 0 });
+      expect(again).toMatchObject({ placed: 0, duplicates: 2, review: 1 });
       expect(await repo.listPlaces()).toHaveLength(2);
       expect((await repo.listLists()).map((l) => l.name)).toEqual(["Lisbon trip"]);
       // The imported note is not duplicated either.

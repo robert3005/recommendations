@@ -28,3 +28,9 @@ export const OSM_ATTRIBUTION = "© OpenStreetMap contributors" as const;
 export const DISCOVER_MIN_ZOOM = 15;
 export const DISCOVER_LIMIT = 60;
 export const DISCOVER_DEBOUNCE_MS = 400;
+
+/**
+ * Share-service base URL (book/src/sharing.md). Empty = same origin, which the
+ * dev/e2e MSW worker intercepts; production points at the deployed Worker.
+ */
+export const SHARE_API_URL: string = import.meta.env.VITE_SHARE_API_URL ?? "";

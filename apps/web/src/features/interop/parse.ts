@@ -14,8 +14,13 @@ export interface ParsedItem {
   title: string;
   note?: string;
   url?: string;
+  /** Additional carried URLs beyond the primary one (GeoJSON externalUrls). */
+  urls?: string[];
   address?: string;
   category?: string;
+  phone?: string;
+  openingHours?: string;
+  tags?: string[];
   coords?: { lat: number; lng: number };
   /** A typed OSM anchor carried by the source (our own exports) — resolved, never geocoded. */
   osmRef?: { type: "node" | "way" | "relation"; id: string };
@@ -80,12 +85,26 @@ export function parseSavedCsv(text: string, listName: string): ParsedList {
       });
       continue;
     }
-    const coords = googleUrlCoords(url);
+    let repairedUrl = url;
+    let repairedAddress = address;
+    // Unquoted Google URLs carry a comma (lat,lng) that splits the columns —
+    // stitch them back together instead of losing the coordinates.
+    if (
+      repairedUrl &&
+      /\/maps\/search\/-?\d{1,3}(\.\d+)?$/.test(repairedUrl) &&
+      repairedAddress &&
+      /^-?\d{1,3}(\.\d+)?$/.test(repairedAddress)
+    ) {
+      repairedUrl = `${repairedUrl},${repairedAddress}`;
+      const extra = (row as { __parsed_extra?: unknown[] }).__parsed_extra?.[0];
+      repairedAddress = typeof extra === "string" && extra.trim() !== "" ? extra.trim() : undefined;
+    }
+    const coords = googleUrlCoords(repairedUrl);
     items.push({
       title,
       ...(note ? { note } : {}),
-      ...(url ? { url } : {}),
-      ...(address ? { address } : {}),
+      ...(repairedUrl ? { url: repairedUrl } : {}),
+      ...(repairedAddress ? { address: repairedAddress } : {}),
       ...(coords ? { coords } : {}),
     });
   }
@@ -117,8 +136,16 @@ function featureToItem(
   const location = (props.Location ?? {}) as Record<string, unknown>;
   const title = str(props.Title) ?? str(props.name) ?? str(location["Business Name"]);
   if (!title) return undefined;
-  const externalUrls = Array.isArray(props.externalUrls) ? props.externalUrls : [];
-  const url = str(props["Google Maps URL"]) ?? str(props.url) ?? str(externalUrls[0]);
+  const externalUrls = (Array.isArray(props.externalUrls) ? props.externalUrls : []).filter(
+    (value): value is string => typeof value === "string" && value !== "",
+  );
+  const url = str(props["Google Maps URL"]) ?? str(props.url) ?? externalUrls[0];
+  const urls = externalUrls.filter((value) => value !== url);
+  const phone = str(props.phone);
+  const openingHours = str(props.openingHours);
+  const tags = Array.isArray(props.tags)
+    ? props.tags.filter((value): value is string => typeof value === "string" && value !== "")
+    : undefined;
   const address = str(props.address) ?? str(location.Address);
   const note = str(props.description) ?? str(props.note) ?? str(props.desc);
   const category = str(props.category);
@@ -135,8 +162,12 @@ function featureToItem(
     title,
     ...(note ? { note } : {}),
     ...(url ? { url } : {}),
+    ...(urls.length > 0 ? { urls } : {}),
     ...(address ? { address } : {}),
     ...(category ? { category } : {}),
+    ...(phone ? { phone } : {}),
+    ...(openingHours ? { openingHours } : {}),
+    ...(tags && tags.length > 0 ? { tags } : {}),
     ...(hasCoords ? { coords: { lat, lng } } : {}),
     ...(osmRef ? { osmRef } : {}),
   };
@@ -169,7 +200,11 @@ export function parseGeoJson(
 // ---------- KML / KMZ / GPX (coordinates included) ----------
 
 function xmlDoc(text: string): Document {
-  return new DOMParser().parseFromString(text, "text/xml");
+  const doc = new DOMParser().parseFromString(text, "text/xml");
+  if (doc.querySelector("parsererror")) {
+    throw new Error("malformed XML — the file could not be parsed");
+  }
+  return doc;
 }
 
 /** KML aabbggrr → #rrggbb. */
@@ -179,22 +214,37 @@ function colorFromKml(value: string | undefined): string | undefined {
   return `#${match[3]}${match[2]}${match[1]}`.toLowerCase();
 }
 
+/** Resolve a styleUrl to an IconStyle colour, following one StyleMap hop. */
+function styleColor(id: string, doc: Document): string | undefined {
+  const direct = doc.querySelector(`Style[id="${id}"] IconStyle color`);
+  if (direct) return colorFromKml(direct.textContent ?? undefined);
+  const mapped = doc.querySelector(`StyleMap[id="${id}"] Pair styleUrl`)?.textContent?.trim();
+  if (mapped?.startsWith("#")) {
+    const target = doc.querySelector(`Style[id="${mapped.slice(1)}"] IconStyle color`);
+    return colorFromKml(target?.textContent ?? undefined);
+  }
+  return undefined;
+}
+
 /** The marker colour a KML container's placemarks reference via styleUrl. */
 function containerColor(container: Element, doc: Document): string | undefined {
   const styleUrl = container.querySelector("Placemark styleUrl")?.textContent?.trim();
   if (!styleUrl?.startsWith("#")) return undefined;
-  const style = doc.querySelector(`Style[id="${styleUrl.slice(1)}"] IconStyle color`);
-  return colorFromKml(style?.textContent ?? undefined);
+  return styleColor(styleUrl.slice(1), doc);
 }
 
 function kmlFragmentToList(container: Element, doc: Document, name: string): ParsedList {
-  // togeojson wants a whole document: rewrap the container with the shared styles.
+  // togeojson wants a whole document: rewrap the container's DIRECT placemarks
+  // with the shared styles (nested folders become their own lists).
   const serializer = new XMLSerializer();
-  const styles = [...doc.querySelectorAll("kml > Document > Style")]
+  const styles = [...doc.querySelectorAll("kml > Document > Style, kml > Document > StyleMap")]
+    .map((el) => serializer.serializeToString(el))
+    .join("");
+  const own = [...container.querySelectorAll(":scope > Placemark")]
     .map((el) => serializer.serializeToString(el))
     .join("");
   const wrapped = xmlDoc(
-    `<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${styles}${serializer.serializeToString(container)}</Document></kml>`,
+    `<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${styles}${own}</Document></kml>`,
   );
   const collection = kmlToGeoJson(wrapped) as { features?: GeoJsonFeature[] };
   const color = containerColor(container, doc);
@@ -208,23 +258,52 @@ function kmlFragmentToList(container: Element, doc: Document, name: string): Par
 export function parseKml(text: string, fallbackName: string): ParsedList[] {
   const doc = xmlDoc(text);
   const docName = doc.querySelector("Document > name")?.textContent?.trim();
+  // Every folder with DIRECT placemarks becomes a list of exactly those —
+  // nested folders are their own lists, and nothing is duplicated.
   const folders = [...doc.querySelectorAll("Folder")].filter(
-    (folder) => folder.querySelector("Placemark") !== null,
+    (folder) => folder.querySelector(":scope > Placemark") !== null,
   );
-  if (folders.length > 0) {
-    return folders.map((folder, index) =>
+  if (folders.length === 0) {
+    const collection = kmlToGeoJson(doc) as { features?: GeoJsonFeature[] };
+    const list = collectFeatures(collection.features ?? [], docName || fallbackName);
+    const rootStyle = doc.documentElement ? containerColor(doc.documentElement, doc) : undefined;
+    return [{ ...list, ...(rootStyle ? { color: rootStyle } : {}) }];
+  }
+  const lists: ParsedList[] = [];
+  const usedNames = new Map<string, number>();
+  const uniqueName = (raw: string): string => {
+    const seen = usedNames.get(raw) ?? 0;
+    usedNames.set(raw, seen + 1);
+    return seen === 0 ? raw : `${raw} (${(seen + 1).toString()})`;
+  };
+  // Loose document-level placemarks are their own list — never silently lost.
+  const loose = [...doc.querySelectorAll("kml > Document > Placemark")];
+  if (loose.length > 0) {
+    const serializer = new XMLSerializer();
+    const styles = [...doc.querySelectorAll("kml > Document > Style, kml > Document > StyleMap")]
+      .map((el) => serializer.serializeToString(el))
+      .join("");
+    const wrapped = xmlDoc(
+      `<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${styles}${loose
+        .map((el) => serializer.serializeToString(el))
+        .join("")}</Document></kml>`,
+    );
+    const collection = kmlToGeoJson(wrapped) as { features?: GeoJsonFeature[] };
+    lists.push(collectFeatures(collection.features ?? [], uniqueName(docName || fallbackName)));
+  }
+  for (const [index, folder] of folders.entries()) {
+    lists.push(
       kmlFragmentToList(
         folder,
         doc,
-        folder.querySelector(":scope > name")?.textContent?.trim() ||
-          `${docName || fallbackName} ${index + 1}`,
+        uniqueName(
+          folder.querySelector(":scope > name")?.textContent?.trim() ||
+            `${docName || fallbackName} ${(index + 1).toString()}`,
+        ),
       ),
     );
   }
-  const collection = kmlToGeoJson(doc) as { features?: GeoJsonFeature[] };
-  const list = collectFeatures(collection.features ?? [], docName || fallbackName);
-  const rootStyle = doc.documentElement ? containerColor(doc.documentElement, doc) : undefined;
-  return [{ ...list, ...(rootStyle ? { color: rootStyle } : {}) }];
+  return lists;
 }
 
 export function parseGpx(text: string, fallbackName: string): ParsedList {
@@ -243,6 +322,14 @@ export function parseGpx(text: string, fallbackName: string): ParsedList {
  */
 export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
   const entries = unzipSync(bytes);
+  const recognized = Object.keys(entries).some(
+    (path) => /(^|\/)Saved\/[^/]+\.csv$/i.test(path) || /saved places\.json$/i.test(path),
+  );
+  if (!recognized) {
+    throw new Error(
+      "no recognized Takeout entries — expected Saved lists (CSV) or Saved Places.json",
+    );
+  }
   const lists: ParsedList[] = [];
   const coordsByFid = new Map<string, { lat: number; lng: number }>();
   let savedPlaces: ParsedList | undefined;

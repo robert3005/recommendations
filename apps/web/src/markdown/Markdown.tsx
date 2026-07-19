@@ -54,6 +54,17 @@ const components: Components = {
       {...(props.alt ? { alt: props.alt } : {})}
     />
   ),
+  // GFM task-list checkboxes render as bare inputs — label them for AT.
+  input: (props) =>
+    props.type === "checkbox" ? (
+      <input
+        type="checkbox"
+        checked={props.checked === true}
+        disabled
+        readOnly
+        aria-label={props.checked === true ? "completed task" : "open task"}
+      />
+    ) : null,
   a: ({ href, children }) => (
     <a
       href={href}

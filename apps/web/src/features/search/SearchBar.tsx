@@ -89,21 +89,30 @@ export function SearchBar({ onSelect, bias }: SearchBarProps) {
         className="w-full rounded-full border border-stone-300 bg-white px-4 py-2 text-sm shadow-md focus:border-stone-500 focus:outline-none"
       />
       {open && debouncedQuery.length >= 2 ? (
-        <ul
-          id={listboxId}
-          // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: ul[role=listbox] with option children is the standard ARIA combobox pattern
-          role="listbox"
-          aria-label="Search results"
-          className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg"
-        >
-          {searchQuery.isPending ? (
-            <li className="px-4 py-2 text-sm text-stone-500">Searching…</li>
-          ) : searchQuery.isError ? (
-            <li className="px-4 py-2 text-sm text-red-700">Search is unavailable right now.</li>
-          ) : results.length === 0 ? (
-            <li className="px-4 py-2 text-sm text-stone-500">No places found.</li>
-          ) : (
-            results.map((result, index) => (
+        // A listbox may only contain options — status text renders as its own
+        // live region instead (continuous axe check, book/src/roadmap.md).
+        searchQuery.isPending || searchQuery.isError || results.length === 0 ? (
+          <output
+            className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-xl border border-stone-200 bg-white px-4 py-2 text-sm shadow-lg"
+            data-testid="search-status"
+          >
+            {searchQuery.isPending ? (
+              <span className="text-stone-500">Searching…</span>
+            ) : searchQuery.isError ? (
+              <span className="text-red-700">Search is unavailable right now.</span>
+            ) : (
+              <span className="text-stone-500">No places found.</span>
+            )}
+          </output>
+        ) : (
+          <ul
+            id={listboxId}
+            // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: ul[role=listbox] with option children is the standard ARIA combobox pattern
+            role="listbox"
+            aria-label="Search results"
+            className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg"
+          >
+            {results.map((result, index) => (
               <li key={`${result.ref.type}/${result.ref.id}`} role="presentation">
                 <button
                   type="button"
@@ -126,9 +135,9 @@ export function SearchBar({ onSelect, bias }: SearchBarProps) {
                   ) : null}
                 </button>
               </li>
-            ))
-          )}
-        </ul>
+            ))}
+          </ul>
+        )
       ) : null}
     </div>
   );

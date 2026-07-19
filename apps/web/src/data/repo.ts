@@ -94,21 +94,36 @@ export class DexieRepository implements PlacemarksRepository {
     await this.db.places.put(toPlaceRow(place));
   }
 
-  /** Import dedup rung 1: the same external ref (fid, else exact URL) is the same place. */
+  /**
+   * Import dedup rung 1: the same Google listing id is the same place. Generic
+   * "web" refs are provenance only — a chain's shared menu URL is not identity.
+   */
   private async findByExternalRef(ref: ExternalRef): Promise<Place | undefined> {
+    if (ref.provider !== "google-maps") return undefined;
     const rows = await this.db.places.toArray();
     return rows.find((row) => !row.deleted && hasExternalRef(row, ref));
   }
 
-  /** The place an import row would converge on, if any (importer probe). */
+  /**
+   * The place an import row would converge on: external-ref id, then the exact
+   * OSM ref, then name+proximity — "ambiguous" when several nearby places share
+   * the name and nothing stronger disambiguates (the importer sends those to
+   * review instead of guessing).
+   */
   async findImportTarget(
     facts: ManualFacts,
     externalRef?: ExternalRef,
-  ): Promise<Place | undefined> {
-    return (
+    osmRef?: OsmElementRef,
+    refIsAuthoritative = false,
+  ): Promise<Place | "ambiguous" | undefined> {
+    const byRef =
       (externalRef ? await this.findByExternalRef(externalRef) : undefined) ??
-      (await this.findByNameNearby(facts))
-    );
+      (osmRef ? await this.findPlaceByOsmRef(osmRef) : undefined);
+    if (byRef) return byRef;
+    // An authoritative exact ref that matched nothing means a NEW place —
+    // name+proximity must not fold it onto a different OSM element.
+    if (refIsAuthoritative && osmRef) return undefined;
+    return this.findByNameNearby(facts);
   }
 
   /**
@@ -123,14 +138,15 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   /**
-   * Import dedup rung 2: same normalized name within 100 m. Coordinates alone
-   * never dedup (mirrors the identity-matching rule in the domain).
+   * Import dedup rung 3: same normalized name within 100 m. Coordinates alone
+   * never dedup, and several equally-plausible targets are never chosen among
+   * arbitrarily (mirrors the identity-matching rules in the domain).
    */
-  private async findByNameNearby(facts: ManualFacts): Promise<Place | undefined> {
+  private async findByNameNearby(facts: ManualFacts): Promise<Place | "ambiguous" | undefined> {
     const name = normalizeName(facts.name);
     if (!name) return undefined;
     const rows = await this.db.places.toArray();
-    return rows.find((row) => {
+    const matches = rows.filter((row) => {
       if (row.deleted) return false;
       const display = displayFacts(row);
       if (!display) return false;
@@ -139,15 +155,33 @@ export class DexieRepository implements PlacemarksRepository {
         distanceMeters(display.lat, display.lng, facts.lat, facts.lng) <= 100
       );
     });
+    if (matches.length > 1) return "ambiguous";
+    return matches[0];
   }
 
   private async tagsOf(placeId: PlaceId): Promise<Tag[]> {
     const assignments = (
       await this.db.tagAssignments.where("placeId").equals(placeId).toArray()
     ).filter((a) => !a.deleted);
-    return (await Promise.all(assignments.map((a) => this.db.tags.get(a.tagId)))).filter(
-      (t): t is Tag => t !== undefined && !t.deleted,
+    const resolved = await Promise.all(
+      assignments.map(async (a) => ({
+        assignment: a,
+        tag: await this.db.tags.get(a.tagId),
+      })),
     );
+    // Deterministic order: assignment time, then name — never index order.
+    return resolved
+      .filter((r): r is { assignment: TagAssignment; tag: Tag } => !!r.tag && !r.tag.deleted)
+      .sort((a, b) =>
+        a.assignment.createdAt < b.assignment.createdAt
+          ? -1
+          : a.assignment.createdAt > b.assignment.createdAt
+            ? 1
+            : a.tag.nameNorm < b.tag.nameNorm
+              ? -1
+              : 1,
+      )
+      .map((r) => r.tag);
   }
 
   private async livePlaceBlocks(placeId: PlaceId): Promise<ListBlockRow[]> {
@@ -173,6 +207,50 @@ export class DexieRepository implements PlacemarksRepository {
     const place = live(await this.db.places.get(placeId));
     if (!place) return undefined;
     return { place, tags: await this.tagsOf(placeId) };
+  }
+
+  /**
+   * A content change on a published list marks its hosted publication dirty
+   * and coalesces one payload-less publish job — the outbox projects the
+   * current document when it runs (book/src/sharing.md §Local publication
+   * record: local edits queue; the public page never changes until a
+   * successful publish).
+   */
+  private async dirtyListPublications(listId: string, now: string): Promise<void> {
+    const publications = (await this.db.publications.toArray()).filter(
+      (p) =>
+        !p.deleted &&
+        p.mode === "hosted" &&
+        p.target.kind === "list" &&
+        p.target.id === listId &&
+        p.status !== "revoked" &&
+        p.status !== "revoking",
+    );
+    for (const publication of publications) {
+      const localRevision = `dirty:${now}:${newId()}`;
+      await this.db.publications.put({
+        ...publication,
+        status: publication.status === "published" ? "queued" : publication.status,
+        localRevision,
+        updatedAt: now,
+      });
+      const pending = (await this.db.publicationOutbox.toArray()).find(
+        (job) => job.publicationId === publication.id && job.action === "publish",
+      );
+      if (pending) {
+        const { payload: _stale, ...rest } = pending;
+        await this.db.publicationOutbox.put({ ...rest, localRevision });
+      } else {
+        await this.db.publicationOutbox.put({
+          id: newId(),
+          publicationId: publication.id,
+          action: "publish",
+          localRevision,
+          createdAt: now,
+          attempts: 0,
+        });
+      }
+    }
   }
 
   /** Tombstone the place with its tags, notes, and every membership block. */
@@ -280,7 +358,85 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async updateNote(note: Note): Promise<void> {
+    const wasShareable = (await this.db.notes.get(note.id))?.shareable === true;
+    if (!note.shareable) {
+      // A note that stops being shareable queues removal of its public page
+      // (book/src/notes.md): the old revision stays up until revocation lands.
+      const publications = (await this.db.publications.toArray()).filter(
+        (p) =>
+          !p.deleted &&
+          p.mode === "hosted" &&
+          p.target.kind === "note" &&
+          p.target.id === note.id &&
+          (p.status === "published" || p.status === "queued" || p.status === "failed"),
+      );
+      for (const publication of publications) {
+        await this.db.publications.put({
+          ...publication,
+          status: "revoking",
+          updatedAt: note.updatedAt,
+        });
+        await this.db.publicationOutbox.put({
+          id: newId(),
+          publicationId: publication.id,
+          action: "revoke",
+          localRevision: publication.localRevision,
+          createdAt: note.updatedAt,
+          attempts: 0,
+        });
+      }
+    }
     await this.db.notes.put(toNoteRow(note));
+    if (note.shareable) {
+      // A shareable-note edit dirties its standalone page AND every hosted
+      // guide that contains it (book/src/sharing.md: mutating an attached
+      // note queues every affected publication).
+      const notePublications = (await this.db.publications.toArray()).filter(
+        (p) =>
+          !p.deleted &&
+          p.mode === "hosted" &&
+          p.target.kind === "note" &&
+          p.target.id === note.id &&
+          p.status !== "revoked" &&
+          p.status !== "revoking",
+      );
+      for (const publication of notePublications) {
+        const localRevision = `dirty:${note.updatedAt}:${newId()}`;
+        await this.db.publications.put({
+          ...publication,
+          status: publication.status === "published" ? "queued" : publication.status,
+          localRevision,
+          updatedAt: note.updatedAt,
+        });
+        const pending = (await this.db.publicationOutbox.toArray()).find(
+          (job) => job.publicationId === publication.id && job.action === "publish",
+        );
+        if (pending) {
+          const { payload: _stale, ...rest } = pending;
+          await this.db.publicationOutbox.put({ ...rest, localRevision });
+        } else {
+          await this.db.publicationOutbox.put({
+            id: newId(),
+            publicationId: publication.id,
+            action: "publish",
+            localRevision,
+            createdAt: note.updatedAt,
+            attempts: 0,
+          });
+        }
+      }
+    }
+    // Any transition visible in a hosted guide dirties that guide — including
+    // a shareable note going private (it disappears from the projection).
+    if (note.shareable || wasShareable) {
+      const listIds =
+        note.target.kind === "list"
+          ? [note.target.listId]
+          : await this.listIdsForPlace(note.target.placeId);
+      for (const listId of listIds) {
+        await this.dirtyListPublications(listId, note.updatedAt);
+      }
+    }
   }
 
   private async tombstoneNote(note: Note, now: string): Promise<void> {
@@ -346,7 +502,16 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async updateList(list: List): Promise<void> {
-    await this.db.lists.put(list);
+    // The edit and its publication dirtying commit (or fail) together —
+    // aggregate transactions (book/src/storage-sync.md).
+    await this.db.transaction(
+      "rw",
+      [this.db.lists, this.db.publications, this.db.publicationOutbox],
+      async () => {
+        await this.db.lists.put(list);
+        await this.dirtyListPublications(list.id, list.updatedAt);
+      },
+    );
   }
 
   private async tombstoneBlock(block: ListBlockRow, now: string): Promise<void> {
@@ -456,9 +621,18 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async addToList(listId: string, source: AddToListSource, now: string): Promise<PlaceView> {
+    // The edit and its publication dirtying commit (or fail) together —
+    // aggregate transactions (book/src/storage-sync.md).
     return this.db.transaction(
       "rw",
-      [this.db.lists, this.db.listBlocks, this.db.places, this.db.tagAssignments],
+      [
+        this.db.lists,
+        this.db.listBlocks,
+        this.db.places,
+        this.db.tagAssignments,
+        this.db.publications,
+        this.db.publicationOutbox,
+      ],
       async () => {
         if (!live(await this.db.lists.get(listId))) throw new Error("list not found");
 
@@ -476,10 +650,17 @@ export class DexieRepository implements PlacemarksRepository {
           // then the OSM match's ref, then name+proximity — the same row
           // converges on the same place. An OSM match links the place but never
           // changes its import identity (origin, facts, external refs).
-          const found =
+          const byRef =
             (source.externalRef ? await this.findByExternalRef(source.externalRef) : undefined) ??
-            (source.poi ? await this.findPlaceByOsmRef(source.poi.osmRef) : undefined) ??
-            (await this.findByNameNearby(source.facts));
+            (source.poi ? await this.findPlaceByOsmRef(source.poi.osmRef) : undefined);
+          const probed =
+            byRef ??
+            (source.authoritative === true && source.poi
+              ? undefined
+              : await this.findByNameNearby(source.facts));
+          // Ambiguity at this level means "create a fresh place" — the importer
+          // catches ambiguity earlier and routes the row to review instead.
+          const found = probed === "ambiguous" ? undefined : probed;
           if (found) {
             let merged = source.externalRef
               ? withExternalRef(found, source.externalRef, now)
@@ -541,6 +722,7 @@ export class DexieRepository implements PlacemarksRepository {
           updatedAt: now,
         };
         await this.db.listBlocks.put(toBlockRow(block));
+        await this.dirtyListPublications(listId, now);
         return { place, tags: await this.tagsOf(place.id) };
       },
     );
@@ -585,9 +767,11 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async moveBlock(blockId: string, beforeBlockId: string | null, now: string): Promise<void> {
+    let touchedListId: string | undefined;
     await this.db.transaction("rw", [this.db.listBlocks], async () => {
       const block = live(await this.db.listBlocks.get(blockId));
       if (!block) throw new Error("block not found");
+      touchedListId = block.listId;
       const siblings = (await this.liveBlocks(block.listId)).filter((b) => b.id !== blockId);
       let rank: string;
       if (beforeBlockId === null) {
@@ -602,9 +786,16 @@ export class DexieRepository implements PlacemarksRepository {
       }
       await this.db.listBlocks.put({ ...block, rank, updatedAt: now });
     });
+    if (touchedListId) await this.dirtyListPublications(touchedListId, now);
   }
 
   async removeBlock(blockId: string, now: string): Promise<void> {
+    const touched = live(await this.db.listBlocks.get(blockId))?.listId;
+    await this.removeBlockInner(blockId, now);
+    if (touched) await this.dirtyListPublications(touched, now);
+  }
+
+  private async removeBlockInner(blockId: string, now: string): Promise<void> {
     await this.db.transaction(
       "rw",
       [
