@@ -94,21 +94,15 @@ describe("Phase 5 failed-revocation retry", () => {
         createElement(RepoProvider, { repo }, createElement(PublishControls, { listId: "list-1" })),
       );
       await lookupStarted;
-      // Hiding Retry until its operation is known is just as safe as disabling
-      // it. If the UI exposes an enabled control during the lookup, activate
-      // that exact race window and prove it still cannot publish.
-      const earlyRetry = screen.queryByRole("button", { name: /^retry$/i });
-      const activatedEarly = Boolean(earlyRetry && !earlyRetry.hasAttribute("disabled"));
-      if (activatedEarly && earlyRetry) await userEvent.click(earlyRetry);
+      // The authoritative UI contract is explicit: Retry remains visible but
+      // disabled until the outbox has resolved whether it means DELETE or PUT.
+      const earlyRetry = screen.getByRole("button", { name: /^retry$/i });
+      expect(earlyRetry).toBeDisabled();
       releaseLookup();
 
-      // A safely hidden/disabled control becomes actionable only after its
-      // DELETE meaning is known.
-      if (!activatedEarly) {
-        const retry = await screen.findByRole("button", { name: /^retry$/i });
-        await waitFor(() => expect(retry).toBeEnabled());
-        await userEvent.click(retry);
-      }
+      // It becomes actionable only after its DELETE meaning is known.
+      await waitFor(() => expect(earlyRetry).toBeEnabled());
+      await userEvent.click(earlyRetry);
 
       await waitFor(async () => {
         await expect(repo.db.publications.get(publication.id)).resolves.toMatchObject({

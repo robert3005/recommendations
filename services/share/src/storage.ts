@@ -112,34 +112,47 @@ export class MemoryStorage implements ShareStorage {
     return true;
   }
 
-  /** Snapshot/restore helpers give the in-memory adapter real commit atomicity. */
-  private commitSnapshot(docKey: string, reservationKey: string) {
-    const doc = this.docs.get(docKey);
+  /**
+   * Commit atomicity via per-write compensation: a failed or losing commit
+   * undoes exactly the writes IT made — never a blind snapshot rewind that
+   * could erase a concurrent winner's committed state.
+   */
+  private reservationRestorer(reservationKey: string): () => void {
     const record = this.idempotency.get(reservationKey);
-    const auditLength = this.auditLog.length;
     return () => {
-      if (doc) this.docs.set(docKey, doc);
-      else this.docs.delete(docKey);
       if (record) this.idempotency.set(reservationKey, record);
       else this.idempotency.delete(reservationKey);
-      this.auditLog.length = auditLength;
     };
   }
 
+  private removeAudits(entries: AuditEntry[]): void {
+    for (const entry of entries) {
+      const index = this.auditLog.indexOf(entry);
+      if (index >= 0) this.auditLog.splice(index, 1);
+    }
+  }
+
   async createCommit(input: CreateCommit): Promise<"created" | "collision"> {
-    const restore = this.commitSnapshot(
-      this.key(input.document.kind, input.document.slug),
-      input.reservationKey,
-    );
+    const docKey = this.key(input.document.kind, input.document.slug);
+    const restoreReservation = this.reservationRestorer(input.reservationKey);
+    const addedAudits: AuditEntry[] = [];
+    let wroteDocument = false;
+    const rollback = () => {
+      if (wroteDocument && this.docs.get(docKey) === input.document) this.docs.delete(docKey);
+      restoreReservation();
+      this.removeAudits(addedAudits);
+    };
     try {
       await this.audit(input.audit);
+      addedAudits.push(input.audit);
       await this.putIdempotent({ key: input.reservationKey, response: "", status: 0 });
       const created = await this.create(input.document);
       if (!created) {
         // The claim was lost — this attempt contributes nothing durable.
-        restore();
+        rollback();
         return "collision";
       }
+      wroteDocument = true;
       await this.putIdempotent({
         key: input.reservationKey,
         response: input.response,
@@ -147,16 +160,32 @@ export class MemoryStorage implements ShareStorage {
       });
       return "created";
     } catch (err) {
-      restore();
+      rollback();
       throw err;
     }
   }
 
   async updateCommit(input: UpdateCommit): Promise<StoredDocument | "conflict" | "missing"> {
-    const restore = this.commitSnapshot(this.key(input.kind, input.slug), input.reservationKey);
+    const docKey = this.key(input.kind, input.slug);
+    const restoreReservation = this.reservationRestorer(input.reservationKey);
+    const addedAudits: AuditEntry[] = [];
+    let preUpdate: StoredDocument | undefined;
+    let updated: StoredDocument | undefined;
+    const rollback = () => {
+      // Undo the document write only when the current state is OUR write —
+      // a concurrent winner's revision must never be restored over.
+      if (updated && this.docs.get(docKey) === updated) {
+        if (preUpdate) this.docs.set(docKey, preUpdate);
+        else this.docs.delete(docKey);
+      }
+      restoreReservation();
+      this.removeAudits(addedAudits);
+    };
     try {
       await this.audit(input.audit);
+      addedAudits.push(input.audit);
       await this.putIdempotent({ key: input.reservationKey, response: "", status: 0 });
+      preUpdate = this.docs.get(docKey);
       const result = await this.update(
         input.kind,
         input.slug,
@@ -165,9 +194,10 @@ export class MemoryStorage implements ShareStorage {
         input.updatedAt,
       );
       if (result === "missing" || result === "conflict") {
-        restore();
+        rollback();
         return result;
       }
+      updated = result;
       await this.putIdempotent({
         key: input.reservationKey,
         response: input.response,
@@ -175,7 +205,7 @@ export class MemoryStorage implements ShareStorage {
       });
       return result;
     } catch (err) {
-      restore();
+      rollback();
       throw err;
     }
   }

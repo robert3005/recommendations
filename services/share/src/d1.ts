@@ -150,18 +150,10 @@ export class D1Storage implements ShareStorage {
   }
 
   async createCommit(input: CreateCommit): Promise<"created" | "collision"> {
+    // Transactional commits REQUIRE the batch API — sequential writes cannot
+    // give the all-or-nothing guarantee, so fail closed before any write.
     if (!this.db.batch) {
-      // No transactional API — fall back to the ordered sequential writes.
-      await this.audit(input.audit);
-      await this.putIdempotent({ key: input.reservationKey, response: "", status: 0 });
-      const created = await this.create(input.document);
-      if (!created) return "collision";
-      await this.putIdempotent({
-        key: input.reservationKey,
-        response: input.response,
-        status: 201,
-      });
-      return "created";
+      throw new Error("D1 batch API unavailable — transactional commits require it");
     }
     const doc = input.document;
     try {
@@ -198,45 +190,49 @@ export class D1Storage implements ShareStorage {
   }
 
   async updateCommit(input: UpdateCommit): Promise<StoredDocument | "conflict" | "missing"> {
+    // Transactional commits REQUIRE the batch API — sequential writes cannot
+    // give the all-or-nothing guarantee, so fail closed before any write.
+    if (!this.db.batch) {
+      throw new Error("D1 batch API unavailable — transactional commits require it");
+    }
     const existing = await this.get(input.kind, input.slug);
     if (!existing || existing.revoked) return "missing";
     if (existing.revision !== input.expectedRevision) return "conflict";
-    if (!this.db.batch) {
-      await this.audit(input.audit);
-      await this.putIdempotent({ key: input.reservationKey, response: "", status: 0 });
-      const result = await this.update(
-        input.kind,
-        input.slug,
-        input.expectedRevision,
-        input.body,
-        input.updatedAt,
-      );
-      if (result === "missing" || result === "conflict") return result;
-      await this.putIdempotent({
-        key: input.reservationKey,
-        response: input.response,
-        status: 200,
-      });
-      return result;
-    }
-    // ONE atomic D1 unit: audit, key reservation, conditional write, ack.
-    const results = await this.db.batch([
-      this.auditStatement(input.audit),
-      this.idempotentStatement({ key: input.reservationKey, response: "", status: 0 }),
+    // Phase 1 — the conditional write alone, as its own atomic unit. A lost
+    // race (zero rows changed) must not commit audit, reservation, or a
+    // replayable success: a changes-0 UPDATE is still a "successful" SQL
+    // statement, so it cannot share a batch with the bookkeeping it gates.
+    const conditionalWrite = () =>
       this.db
         .prepare(
           "UPDATE documents SET revision = revision + 1, body = ?, updatedAt = ? WHERE kind = ? AND slug = ? AND revision = ? AND revoked = 0",
         )
-        .bind(input.body, input.updatedAt, input.kind, input.slug, input.expectedRevision),
+        .bind(input.body, input.updatedAt, input.kind, input.slug, input.expectedRevision);
+    const probe = await this.db.batch([conditionalWrite()]);
+    if ((probe[0]?.meta?.changes ?? 0) === 0) return "conflict";
+    // Phase 2 — audit, reservation, and the replayable ack as one unit. The
+    // trailing conditional statement re-binds the already-consumed pre-image
+    // revision: a guaranteed no-op that records which revision transition
+    // this bookkeeping belongs to.
+    await this.db.batch([
+      this.auditStatement(input.audit),
+      this.idempotentStatement({ key: input.reservationKey, response: "", status: 0 }),
+      conditionalWrite(),
       this.idempotentStatement({
         key: input.reservationKey,
         response: input.response,
         status: 200,
       }),
     ]);
-    if ((results[2]?.meta?.changes ?? 0) === 0) return "conflict";
-    const updated = await this.get(input.kind, input.slug);
-    return updated ?? "missing";
+    // The acknowledgement is THIS update's committed transition — a later
+    // writer may already have advanced the document, and its state must
+    // never masquerade as ours.
+    return {
+      ...existing,
+      revision: input.expectedRevision + 1,
+      body: input.body,
+      updatedAt: input.updatedAt,
+    };
   }
 
   async hit(bucket: string, windowMs: number, now: number): Promise<number> {

@@ -5,7 +5,7 @@
  * the place).
  */
 import { displayFacts, linkPlaceToOsm, type Note } from "@placemarks/domain";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useListIdsForPlace, useLists, useNotesForPlace, usePlaceView } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import { newId } from "../../lib/id";
@@ -31,6 +31,13 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
   const [editingNote, setEditingNote] = useState<Note>();
   const [linking, setLinking] = useState(false);
   const [message, setMessage] = useState<string>();
+  // Modal focus: enter the sheet on open, return to the invoker on close.
+  const sheetRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    sheetRef.current?.focus();
+    return () => previous?.focus();
+  }, []);
 
   if (!view) return null;
   const facts = displayFacts(view.place);
@@ -38,6 +45,8 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
 
   return (
     <section
+      ref={sheetRef}
+      tabIndex={-1}
       role="dialog"
       aria-label={facts?.name ?? "Place"}
       className="absolute inset-x-0 bottom-0 z-20 max-h-[70%] overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-4 shadow-xl md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-2xl"

@@ -455,6 +455,7 @@ export async function runImport(
           ...(item.urls ? { urls: item.urls } : {}),
           ...(item.address ? { address: item.address } : {}),
           ...(item.category ? { category: item.category } : {}),
+          ...(item.website ? { website: item.website } : {}),
           ...(item.phone ? { phone: item.phone } : {}),
           ...(item.openingHours ? { openingHours: item.openingHours } : {}),
           ...(item.tags ? { tags: item.tags } : {}),
@@ -506,6 +507,26 @@ export async function runImport(
                   now,
                   { exactAnchor: true, probeRef: osmRef },
                 );
+              } else if (item.coords) {
+                // A gone anchor with source coordinates still materializes —
+                // the element is recorded as unresolved link history so ODbL
+                // provenance survives the round-trip.
+                const attempt = await materializeItem(
+                  repo,
+                  listId,
+                  item,
+                  item.coords,
+                  undefined,
+                  now,
+                  {
+                    exactAnchor: true,
+                    probeRef: osmRef,
+                  },
+                );
+                if (attempt.status !== "review") {
+                  await recordAnchorHistory(repo, attempt.placeId, osmRef, now);
+                  outcome = attempt;
+                }
               }
             }
             // incompatible/unavailable → the row stays in review.
@@ -572,6 +593,20 @@ export async function runImport(
               ...(row.coords ? { coords: row.coords } : {}),
               ...(row.candidates ? { candidates: row.candidates } : {}),
             });
+            // The superseded batch closes once it holds no pending reviews.
+            if (existing.batchId !== batch.id) {
+              const remaining = await repo.db.importItems
+                .where("batchId")
+                .equals(existing.batchId)
+                .filter((i) => i.status === "review")
+                .count();
+              if (remaining === 0) {
+                const oldBatch = await repo.db.importBatches.get(existing.batchId);
+                if (oldBatch && oldBatch.status !== "done") {
+                  await repo.db.importBatches.put({ ...oldBatch, status: "done" });
+                }
+              }
+            }
           }
         } else {
           pendingReview.add(key);
@@ -585,6 +620,26 @@ export async function runImport(
     await repo.db.importBatches.put({ ...batch, status: "done" });
   }
   return report;
+}
+
+/**
+ * ODbL continuity: a place materialized from a row that descends from an OSM
+ * anchor keeps that provenance as (unresolved) link history, so exports keep
+ * attributing OSM-derived facts (book/src/interop.md).
+ */
+async function recordAnchorHistory(
+  repo: DexieRepository,
+  placeId: string,
+  ref: { type: "node" | "way" | "relation"; id: string },
+  now: string,
+): Promise<void> {
+  const place = await repo.getPlace(placeId);
+  if (!place || place.currentOsmRef || place.osmRefHistory.length > 0) return;
+  await repo.updatePlace({
+    ...place,
+    osmRefHistory: [{ ref, linkedAt: now, unlinkedAt: now, reason: "replaced" }],
+    updatedAt: now,
+  });
 }
 
 export type ReviewChoice =
@@ -624,14 +679,7 @@ export async function resolveReviewItem(
     // exports keep attributing the facts correctly.
     const anchorRef = item.osmRef ?? (item.url ? osmRefFromUrl(item.url) : undefined);
     if (anchorRef && placed.placeId) {
-      const place = await repo.getPlace(placed.placeId);
-      if (place && !place.currentOsmRef && place.osmRefHistory.length === 0) {
-        await repo.updatePlace({
-          ...place,
-          osmRefHistory: [{ ref: anchorRef, linkedAt: now, unlinkedAt: now, reason: "replaced" }],
-          updatedAt: now,
-        });
-      }
+      await recordAnchorHistory(repo, placed.placeId, anchorRef, now);
     }
     await repo.db.importItems.put({
       ...row,

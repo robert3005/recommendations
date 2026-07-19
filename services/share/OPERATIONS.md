@@ -16,13 +16,14 @@ purged at any time past their window.
 
 ## Purge SQL (scheduled)
 
+The purge is executable, not prose: `wrangler.toml` schedules a daily cron and
+the Worker's `scheduled` handler (`src/worker.ts`, `purgeExpiredInternalData`)
+runs exactly these statements:
+
 ```sql
 DELETE FROM audit WHERE at < datetime('now', '-90 days');
 DELETE FROM document_revisions WHERE recordedAt < datetime('now', '-90 days');
-DELETE FROM idempotency WHERE rowid IN (
-  SELECT i.rowid FROM idempotency i
-  -- keys embed no timestamp; prune with the audit horizon during the same job
-);
+DELETE FROM idempotency WHERE createdAt < datetime('now', '-90 days');
 ```
 
 Public CDN entries for updated or revoked documents are purged by

@@ -172,9 +172,8 @@ export function MapPage() {
         </output>
       ) : null}
       {/* Category chips (book/src/map-view.md): keyboard-operable toggles. */}
-      <div
-        className="absolute top-16 left-1/2 z-10 flex w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 flex-wrap gap-1.5"
-        role="group"
+      <fieldset
+        className="absolute top-16 left-1/2 z-10 flex w-[calc(100%-1.5rem)] min-w-0 max-w-md -translate-x-1/2 flex-wrap gap-1.5"
         aria-label="Filter nearby places by category"
       >
         {TOP_CATEGORIES.map(({ key, label }) => {
@@ -200,7 +199,7 @@ export function MapPage() {
             </button>
           );
         })}
-      </div>
+      </fieldset>
       {/* The synchronized non-map equivalent of canvas results
           (book/src/map-view.md §Accessibility): every discovered POI is
           reachable by keyboard and screen reader. */}

@@ -25,8 +25,8 @@ export default defineConfig(({ command, mode }) => {
   // Storybook's static build is a component workshop, never a deployment.
   if (command === "build" && mode === "production" && !process.env.PLACEMARKS_STORYBOOK) {
     const env = loadEnv(mode, process.cwd(), "VITE_");
-    const valueOf = (key: string) => env[key] ?? process.env[key];
-    const missing = REQUIRED_PROVIDER_VARS.filter((key) => !valueOf(key));
+    const providerValue = (key: string) => env[key] ?? process.env[key];
+    const missing = REQUIRED_PROVIDER_VARS.filter((key) => !providerValue(key));
     if (missing.length > 0) {
       throw new Error(
         `production build fails closed: missing provider configuration ${missing.join(", ")} — ` +
@@ -35,10 +35,19 @@ export default defineConfig(({ command, mode }) => {
       );
     }
     // Copying the development/demo URLs into env vars is not a production
-    // provider path — the public community services must not carry deployments.
+    // provider path. Matching operates on the parsed, canonical hostname:
+    // encoded dots cannot hide a demo host, and demo-looking text in a path
+    // or a longer unrelated hostname is not a match.
+    const hostnameOf = (value: string | undefined): string | undefined => {
+      if (!value) return undefined;
+      try {
+        return new URL(value).hostname.toLowerCase();
+      } catch {
+        return undefined;
+      }
+    };
     const demo = REQUIRED_PROVIDER_VARS.filter((key) =>
-      // Host names are case-insensitive — normalize before matching.
-      DEVELOPMENT_ONLY_HOSTS.some((host) => (valueOf(key) ?? "").toLowerCase().includes(host)),
+      DEVELOPMENT_ONLY_HOSTS.some((host) => hostnameOf(providerValue(key)) === host),
     );
     if (demo.length > 0) {
       throw new Error(

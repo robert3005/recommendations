@@ -50,7 +50,9 @@ CREATE TABLE IF NOT EXISTS audit (
 CREATE TABLE IF NOT EXISTS idempotency (
   key TEXT PRIMARY KEY,
   response TEXT NOT NULL,
-  status INTEGER NOT NULL
+  status INTEGER NOT NULL,
+  -- Age column for the scheduled 90-day purge (OPERATIONS.md).
+  createdAt TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS rate (

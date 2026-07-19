@@ -74,6 +74,7 @@ export interface ImportItemRow {
     urls?: string[];
     address?: string;
     category?: string;
+    website?: string;
     phone?: string;
     openingHours?: string;
     tags?: string[];

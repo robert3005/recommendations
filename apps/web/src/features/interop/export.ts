@@ -171,9 +171,7 @@ export function exportListGeoJson(list: List, views: ExportPlaceView[]): string 
         ...(row.facts.openingHours ? { openingHours: row.facts.openingHours } : {}),
         ...(row.tags.length > 0 ? { tags: row.tags } : {}),
         ...(row.note ? { note: row.note } : {}),
-        ...(row.place.currentOsmRef
-          ? { osmRef: `${row.place.currentOsmRef.type}/${row.place.currentOsmRef.id}` }
-          : {}),
+        ...(sourceRefOf(row.place) ? { osmRef: sourceRefOf(row.place) } : {}),
         ...(row.place.externalRefs?.length
           ? { externalUrls: row.place.externalRefs.map((r) => r.url) }
           : {}),

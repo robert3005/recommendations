@@ -40,12 +40,16 @@ export async function publishNote(
   if (publication?.status === "revoked") publication = undefined;
   const slug = publication?.slug ?? slugFor(note.title ?? contextTitle);
   // A place note carries its durable OSM anchor (ref + copied recovery
-  // evidence) so the page keeps resolving (book/src/notes.md).
+  // evidence); a list note carries its parent list's actual name — the
+  // published context is authoritative data, never a caller-supplied label.
   let context: SharedNote["context"] = { kind: "list", listTitle: contextTitle };
   if (note.target.kind === "place") {
     const place = await repo.getPlace(note.target.placeId);
     const anchor = place ? anchorForPlace(place) : undefined;
     if (anchor) context = { kind: "place", place: anchor };
+  } else {
+    const list = await repo.getList(note.target.listId);
+    if (list) context = { kind: "list", listTitle: list.name };
   }
   const document: SharedNote = {
     v: 1,

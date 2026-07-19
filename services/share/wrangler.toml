@@ -4,6 +4,10 @@ name = "placemarks-share"
 main = "src/worker.ts"
 compatibility_date = "2026-07-01"
 
+# Daily scheduled run of the 90-day internal-data purge (OPERATIONS.md).
+[triggers]
+crons = ["0 4 * * *"]
+
 [[d1_databases]]
 binding = "SHARE_DB"
 database_name = "placemarks-share"

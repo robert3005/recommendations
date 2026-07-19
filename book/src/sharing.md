@@ -321,6 +321,14 @@ DELETE /s/lists/:slug
 - Each create and update commits as ONE transactional storage unit (a D1 batch): audit entry,
   idempotency-key reservation, the document write, and — last, as the commit acknowledgement —
   the replayable success record. An interrupted commit leaves nothing durable and re-executes.
+- The batch API is a hard requirement, not an optimization: when the storage binding offers no
+  transactional batch, a commit fails closed **before any write** — there is no sequential
+  fallback, because ordered individual statements cannot make the bookkeeping and the document
+  write stand or fall together.
+- An update's acknowledgement (response body and replay record) is its own committed transition —
+  `expectedRevision + 1` with the body it wrote. It is never re-read from storage after the
+  commit, where a later writer's already-landed revision could masquerade as this update's
+  result.
 - The schema keeps an append-only `document_revisions` store (trigger-populated) as internal
   version backups. Internal audit entries and version backups are retained for **90 days**, then
   purged (services/share/OPERATIONS.md); they are never publicly addressable.

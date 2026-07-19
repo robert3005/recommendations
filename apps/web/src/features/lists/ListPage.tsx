@@ -165,6 +165,12 @@ export function ListPage() {
   };
 
   const exportAs = async (writer: (typeof EXPORTS)[number]) => {
+    // Every advertised KML export is My Maps-compatible: the direct button
+    // applies the same layer/file-size splitting as the guided handoff.
+    if (writer.key === "kml") {
+      await sendToMyMaps();
+      return;
+    }
     const views = await collectViews();
     downloadText(`${safeName()}.${writer.key}`, writer.mime, writer.write(list, views));
   };

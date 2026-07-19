@@ -151,7 +151,11 @@ export function MapView({
     map.on("error", () => {
       setUnavailable(true);
     });
-    map.on("data", () => {
+    map.on("data", (event) => {
+      // Only BASEMAP traffic is recovery evidence — our own local GeoJSON
+      // sources load fine while the basemap is down.
+      const sourceId = (event as { sourceId?: string }).sourceId;
+      if (sourceId === "pois" || sourceId === "saved" || sourceId === "selection") return;
       setUnavailable(false);
     });
 

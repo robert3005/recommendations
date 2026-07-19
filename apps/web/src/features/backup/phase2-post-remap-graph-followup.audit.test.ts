@@ -37,12 +37,12 @@ async function seedMembership(repo: DexieRepository): Promise<{
 }
 
 describe("Phase 2 post-coalescing backup graph", () => {
-  it("never keeps an attachment whose remapped duplicate membership block was skipped", async () => {
+  it("transfers an attachment from a skipped duplicate membership to the retained block", async () => {
     const source = repoFor("phase2-remap-attachment-source");
     const target = repoFor("phase2-remap-attachment-target");
     try {
       const sourceMembership = await seedMembership(source);
-      await seedMembership(target);
+      const retainedMembership = await seedMembership(target);
       const note: Note = {
         id: "source-note",
         target: { kind: "place", placeId: sourceMembership.placeId },
@@ -55,24 +55,30 @@ describe("Phase 2 post-coalescing backup graph", () => {
       await source.createNote(note);
       await source.attachNoteToBlock(sourceMembership.blockId, note.id, NOW);
 
-      let rejected = false;
-      try {
-        await importBackup(target, await exportBackup(source, NOW), "merge", LATER);
-      } catch {
-        // Refusing a merge whose remapped graph cannot be made consistent is
-        // acceptable; successful merge must repair or remap every dependent.
-        rejected = true;
-      }
+      await expect(
+        importBackup(target, await exportBackup(source, NOW), "merge", LATER),
+      ).resolves.toMatchObject({ mode: "merge" });
 
-      if (!rejected) {
-        const liveAttachments = (await target.db.blockNoteAttachments.toArray()).filter(
-          (edge) => !edge.deleted,
-        );
-        for (const edge of liveAttachments) {
-          const block = await target.db.listBlocks.get(edge.blockId);
-          expect(block && !block.deleted).toBe(true);
-        }
-      }
+      const liveMemberships = (await target.db.listBlocks.toArray()).filter(
+        (block) => !block.deleted && block.kind === "place" && block.listId === "shared-list",
+      );
+      expect(liveMemberships).toHaveLength(1);
+      expect(liveMemberships[0]).toMatchObject({
+        id: retainedMembership.blockId,
+        refId: retainedMembership.placeId,
+      });
+      await expect(target.db.listBlocks.get(sourceMembership.blockId)).resolves.toBeUndefined();
+      await expect(target.db.notes.get(note.id)).resolves.toMatchObject({
+        target: { kind: "place", placeId: retainedMembership.placeId },
+      });
+      const transferred = (await target.db.blockNoteAttachments.toArray()).filter(
+        (edge) => !edge.deleted && edge.noteId === note.id,
+      );
+      expect(transferred).toHaveLength(1);
+      expect(transferred[0]).toMatchObject({
+        blockId: retainedMembership.blockId,
+        noteId: note.id,
+      });
     } finally {
       source.db.close();
       target.db.close();

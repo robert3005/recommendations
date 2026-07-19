@@ -28,6 +28,74 @@ function poi(id: string, at: string): ResolvedPoi {
 }
 
 describe("Phase 2 repository-boundary identity follow-up", () => {
+  it("does not persist a current OSM binding change that omits the completed prior interval", async () => {
+    const repo = repoFor("phase2-history-required-on-relink");
+    try {
+      await repo.createList({ id: "list-1", name: "Trip", createdAt: NOW, updatedAt: NOW });
+      const original = (await repo.addToList("list-1", { kind: "poi", poi: poi("101", NOW) }, NOW))
+        .place;
+      const relinked = linkPlaceToOsm(original, poi("202", LATER), LATER, "resolver-match");
+
+      await repo
+        .updatePlace({
+          ...relinked,
+          // A prefix-only check treats the old empty history as preserved and
+          // silently loses the interval for node/101.
+          osmRefHistory: [],
+        })
+        .catch(() => undefined);
+
+      const stored = await repo.getPlace(original.id);
+      const nextRef = relinked.currentOsmRef;
+      if (!stored || !nextRef) throw new Error("relink fixture did not retain both bindings");
+      if (stored.currentOsmRef?.type === nextRef.type && stored.currentOsmRef.id === nextRef.id) {
+        // A repository may normalize the transition instead of refusing it,
+        // but the completed old binding must then exist exactly once.
+        expect(stored.osmRefHistory).toEqual(relinked.osmRefHistory);
+      } else {
+        expect(stored).toMatchObject({
+          currentOsmRef: original.currentOsmRef,
+          osmRefHistory: [],
+        });
+      }
+    } finally {
+      repo.db.close();
+    }
+  });
+
+  it("does not persist a fabricated interval when the current binding did not change", async () => {
+    const repo = repoFor("phase2-history-fabricated-append");
+    try {
+      await repo.createList({ id: "list-1", name: "Trip", createdAt: NOW, updatedAt: NOW });
+      const original = (await repo.addToList("list-1", { kind: "poi", poi: poi("101", NOW) }, NOW))
+        .place;
+
+      await repo
+        .updatePlace({
+          ...original,
+          osmRefHistory: [
+            {
+              // Syntactically valid but unrelated to either side of a real
+              // binding transition: shape validation alone is insufficient.
+              ref: { type: "way", id: "999" },
+              linkedAt: NOW,
+              unlinkedAt: LATER,
+              reason: "resolver-match",
+            },
+          ],
+          updatedAt: LATER,
+        })
+        .catch(() => undefined);
+
+      await expect(repo.getPlace(original.id)).resolves.toMatchObject({
+        currentOsmRef: original.currentOsmRef,
+        osmRefHistory: [],
+      });
+    } finally {
+      repo.db.close();
+    }
+  });
+
   it("preserves every completed history entry when a longer update rewrites its prefix", async () => {
     const repo = repoFor("phase2-history-prefix");
     try {
@@ -107,6 +175,59 @@ describe("Phase 2 repository-boundary identity follow-up", () => {
 });
 
 describe("Phase 2 repository-boundary note follow-up", () => {
+  it("does not let updateNote create a note whose target does not exist", async () => {
+    const repo = repoFor("phase2-note-update-is-not-create");
+    const orphan: Note = {
+      id: "missing-note",
+      target: { kind: "place", placeId: "missing-place" },
+      body: "This must never materialize",
+      mediaIds: [],
+      shareable: false,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    try {
+      await repo.updateNote(orphan).catch(() => undefined);
+      await expect(repo.db.notes.get(orphan.id)).resolves.toBeUndefined();
+    } finally {
+      repo.db.close();
+    }
+  });
+
+  it("does not resurrect a tombstoned note after its target was removed", async () => {
+    const repo = repoFor("phase2-note-stale-resurrection");
+    try {
+      await repo.createList({ id: "list-1", name: "Trip", createdAt: NOW, updatedAt: NOW });
+      const place = (
+        await repo.addToList(
+          "list-1",
+          { kind: "manual", facts: { name: "Pin", lat: 38.7, lng: -9.1 } },
+          NOW,
+        )
+      ).place;
+      const note: Note = {
+        id: "note-1",
+        target: { kind: "place", placeId: place.id },
+        body: "Original body",
+        mediaIds: [],
+        shareable: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      };
+      await repo.createNote(note);
+      await repo.removePlace(place.id, LATER);
+
+      await repo
+        .updateNote({ ...note, body: "Stale resurrecting edit", updatedAt: LATEST })
+        .catch(() => undefined);
+
+      await expect(repo.db.notes.get(note.id)).resolves.toMatchObject({ deleted: true });
+      await expect(repo.getPlace(place.id)).resolves.toBeUndefined();
+    } finally {
+      repo.db.close();
+    }
+  });
+
   it("does not retarget an existing note to a missing aggregate", async () => {
     const repo = repoFor("phase2-note-missing-retarget");
     try {

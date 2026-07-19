@@ -71,12 +71,17 @@ export function parseSavedCsv(text: string, listName: string): ParsedList {
   });
   const items: ParsedItem[] = [];
   const unusable: UnusableRow[] = [];
+  // Our exporter defensively quotes formula-leading cells with an apostrophe
+  // (=SUM… → '=SUM…). Round-tripping strips exactly that guard — owned data
+  // must come back byte-identical.
+  const unquoteFormula = (value: string): string =>
+    /^'[\s\r\t]*[=+\-@]/.test(value) ? value.slice(1) : value;
   for (const row of parsed.data) {
-    const title = row.title?.trim();
+    const title = row.title ? unquoteFormula(row.title).trim() : undefined;
     const url = row.url?.trim() || undefined;
     // The note is the user's own writing — preserved exactly, never trimmed.
-    const note = row.note ? row.note : undefined;
-    const address = row.address?.trim() || undefined;
+    const note = row.note ? unquoteFormula(row.note) : undefined;
+    const address = row.address ? unquoteFormula(row.address).trim() || undefined : undefined;
     if (!title) {
       unusable.push({
         title: row.title ?? "",

@@ -35,11 +35,12 @@ export function PublishControls({ listId }: { listId: string }) {
   // Retry cannot enable — let alone default to a publish — before the outbox
   // has actually answered.
   const [pendingRevoke, setPendingRevoke] = useState<boolean | undefined>(undefined);
-  const publicationId = publication?.id;
-  const publicationStatus = publication?.status;
   useEffect(() => {
     let cancelled = false;
     setPendingRevoke(undefined);
+    // Re-check on every publication emission — a status flip (e.g. a revoke
+    // that just failed) changes whether a DELETE is still pending.
+    const publicationId = publication?.id;
     if (!publicationId) return;
     repo.db.publicationOutbox
       .toArray()
@@ -56,7 +57,7 @@ export function PublishControls({ listId }: { listId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [repo, publicationId, publicationStatus]);
+  }, [repo, publication]);
 
   const act = (action: () => Promise<unknown>) => {
     setBusy(true);

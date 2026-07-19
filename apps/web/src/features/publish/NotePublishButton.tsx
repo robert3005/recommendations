@@ -4,7 +4,7 @@
  */
 import type { Note } from "@placemarks/domain";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useDexieRepo } from "../../data/RepoContext";
 import { nowIso } from "../../lib/time";
 import { publicationForNote, publishNote, revokePublication } from "./publication";
@@ -14,6 +14,33 @@ export function NotePublishButton({ note }: { note: Note }) {
   const [busy, setBusy] = useState(false);
   const [preflight, setPreflight] = useState(false);
   const publication = useLiveQuery(() => publicationForNote(repo, note.id), [repo, note.id]);
+  // A failed revocation must never expose an action that publishes again —
+  // Update stays unavailable until the outbox says no DELETE is pending
+  // (plain read: unknown stays undefined).
+  const [pendingRevoke, setPendingRevoke] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    setPendingRevoke(undefined);
+    // Re-check on every publication emission — a status flip (e.g. a revoke
+    // that just failed) changes whether a DELETE is still pending.
+    const publicationId = publication?.id;
+    if (!publicationId) return;
+    repo.db.publicationOutbox
+      .toArray()
+      .then((jobs) => {
+        if (!cancelled) {
+          setPendingRevoke(
+            jobs.some((job) => job.publicationId === publicationId && job.action === "revoke"),
+          );
+        }
+      })
+      .catch(() => {
+        // database closing during teardown — stay unknown
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, publication]);
   // The disclosure names where the note lives (its list or place context).
   const contextTitle = useLiveQuery(async () => {
     try {
@@ -56,7 +83,7 @@ export function NotePublishButton({ note }: { note: Note }) {
       {hasPage ? (
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || pendingRevoke !== false}
           data-testid="update-note-page"
           onClick={() => {
             setBusy(true);

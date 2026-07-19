@@ -93,20 +93,6 @@ export async function exportBackup(repo: DexieRepository, exportedAt: string): P
     checksums[name] = await sha256Hex(files[name]);
   }
 
-  // A successful export must be restorable: refuse up front when the archive
-  // would exceed the import resource caps.
-  let inflatedTotal = 0;
-  for (const fileBytes of Object.values(files)) inflatedTotal += fileBytes.byteLength;
-  if (inflatedTotal > INFLATED_BYTE_LIMIT) {
-    throw new Error(
-      `this library is ${Math.ceil(inflatedTotal / (1024 * 1024))} MiB uncompressed — over the ` +
-        `${INFLATED_BYTE_LIMIT / (1024 * 1024)} MiB restore size limit; export refused`,
-    );
-  }
-  if (Object.keys(files).length + 1 > ARCHIVE_ENTRY_LIMIT) {
-    throw new Error("this library exceeds the archive entry limit — export refused");
-  }
-
   const manifest = {
     app: "placemarks" as const,
     schemaVersion: BACKUP_SCHEMA_VERSION,
@@ -116,6 +102,20 @@ export async function exportBackup(repo: DexieRepository, exportedAt: string): P
     source: { attribution: "© OpenStreetMap contributors", license: "ODbL-1.0" } as const,
   };
   files["manifest.json"] = strToU8(JSON.stringify(manifest, null, 2));
+
+  // A successful export must be restorable: refuse up front when the COMPLETE
+  // archive — manifest included — would exceed the import resource caps.
+  let inflatedTotal = 0;
+  for (const fileBytes of Object.values(files)) inflatedTotal += fileBytes.byteLength;
+  if (inflatedTotal > INFLATED_BYTE_LIMIT) {
+    throw new Error(
+      `this library is ${Math.ceil(inflatedTotal / (1024 * 1024))} MiB uncompressed — over the ` +
+        `${INFLATED_BYTE_LIMIT / (1024 * 1024)} MiB restore size limit; export refused`,
+    );
+  }
+  if (Object.keys(files).length > ARCHIVE_ENTRY_LIMIT) {
+    throw new Error("this library exceeds the archive entry limit — export refused");
+  }
 
   const zipped = zipSync(files, { level: 6 });
   return new Blob([zipped.slice().buffer as ArrayBuffer], { type: "application/zip" });
@@ -638,17 +638,23 @@ const u32 = (bytes: Uint8Array, at: number): number =>
  */
 function declaredZipDirectory(
   bytes: Uint8Array,
-): { entryCount: number; inflatedTotal: number } | "missing" | "invalid" {
+): { entryCount: number; inflatedTotal: number } | "invalid" {
   const eocd = findEocd(bytes);
-  if (eocd < 0) return "missing";
+  // No end-of-central-directory record means no declared bounds to trust.
+  if (eocd < 0) return "invalid";
   const entryCount = u16(bytes, eocd + 10);
-  let offset = u32(bytes, eocd + 16);
+  const declaredSize = u32(bytes, eocd + 12);
+  const cdOffset = u32(bytes, eocd + 16);
+  let offset = cdOffset;
   let inflatedTotal = 0;
   for (let i = 0; i < entryCount; i += 1) {
     if (offset + 46 > bytes.length || u32(bytes, offset) !== 0x02014b50) return "invalid";
     inflatedTotal += u32(bytes, offset + 24);
     offset += 46 + u16(bytes, offset + 28) + u16(bytes, offset + 30) + u16(bytes, offset + 32);
   }
+  // Every EOCD declaration must agree with the walk: the record count must
+  // consume exactly the declared central-directory span ending at the EOCD.
+  if (offset !== eocd || offset - cdOffset !== declaredSize) return "invalid";
   return { entryCount, inflatedTotal };
 }
 
@@ -666,15 +672,13 @@ export async function importBackup(
   // directory that cannot be walked as declared is refused outright.
   const declared = declaredZipDirectory(bytes);
   if (declared === "invalid") {
-    throw new Error("backup central directory is invalid — refusing to import");
+    throw new Error("not a valid backup archive — the ZIP central directory is missing or invalid");
   }
-  if (declared !== "missing") {
-    if (declared.entryCount > ARCHIVE_ENTRY_LIMIT) {
-      throw new Error("backup entry count exceeds the limit — refusing to import");
-    }
-    if (declared.inflatedTotal > INFLATED_BYTE_LIMIT) {
-      throw new Error("backup declares an uncompressed size beyond the limit — refusing to import");
-    }
+  if (declared.entryCount > ARCHIVE_ENTRY_LIMIT) {
+    throw new Error("backup entry count exceeds the limit — refusing to import");
+  }
+  if (declared.inflatedTotal > INFLATED_BYTE_LIMIT) {
+    throw new Error("backup declares an uncompressed size beyond the limit — refusing to import");
   }
   let entries: Record<string, Uint8Array>;
   try {

@@ -1,6 +1,6 @@
 /** First-publishing a note is also creation of a hosted public link. */
 import type { Note } from "@placemarks/domain";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
@@ -45,10 +45,18 @@ describe("Phase 5 standalone-note publication preflight", () => {
       expect(screen.getByText(note.title ?? "")).toBeInTheDocument();
       expect(screen.getByText("Field notes")).toBeInTheDocument();
       expect(fetcher).not.toHaveBeenCalled();
-      const confirmation = screen
-        .getAllByRole("button", { name: /publish|confirm|create/i })
-        .find((button) => button !== launch && !button.hasAttribute("disabled"));
-      expect(confirmation).toBeDefined();
+      const confirmation = screen.getByTestId("confirm-publish-note");
+      expect(confirmation).toBeEnabled();
+      await userEvent.click(confirmation);
+
+      await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+      const request = fetcher.mock.calls[0]?.[1];
+      const submitted = JSON.parse(String(request?.body)) as {
+        document: { context: unknown };
+      };
+      // The confirmed disclosure named the parent list. The actual public
+      // document must carry that same context, not substitute the note title.
+      expect(submitted.document.context).toEqual({ kind: "list", listTitle: "Field notes" });
     } finally {
       repo.db.close();
     }

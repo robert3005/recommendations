@@ -137,12 +137,51 @@ export class DexieRepository implements PlacemarksRepository {
           existing.osmRefHistory.every((entry, index) =>
             sameEntry(entry, place.osmRefHistory[index]),
           );
+        // A binding transition and its history move together: changing the
+        // current ref REQUIRES appending the completed prior interval, and
+        // history may only grow with a real transition (an unlinked place may
+        // still record provenance history). Anything else preserves existing.
+        const refChanged = !(
+          (existing.currentOsmRef === undefined && place.currentOsmRef === undefined) ||
+          (existing.currentOsmRef !== undefined &&
+            place.currentOsmRef !== undefined &&
+            sameRef(existing.currentOsmRef, place.currentOsmRef))
+        );
+        const grown = preservesPrefix && place.osmRefHistory.length > existing.osmRefHistory.length;
+        const tailClosesPrior =
+          grown &&
+          existing.currentOsmRef !== undefined &&
+          place.osmRefHistory
+            .slice(existing.osmRefHistory.length)
+            .some(
+              (entry) =>
+                existing.currentOsmRef !== undefined && sameRef(entry.ref, existing.currentOsmRef),
+            );
+        const growthValid =
+          grown &&
+          ((refChanged && tailClosesPrior) ||
+            (existing.currentOsmRef === undefined && place.currentOsmRef === undefined));
+        const nextHistory = growthValid
+          ? place.osmRefHistory
+          : preservesPrefix && !grown
+            ? place.osmRefHistory
+            : existing.osmRefHistory;
+        const acceptRef =
+          !refChanged || existing.currentOsmRef === undefined || (grown && tailClosesPrior);
         await this.db.places.put(
           toPlaceRow({
             ...place,
             origin: existing.origin,
             ...(existing.firstSeen ? { firstSeen: existing.firstSeen } : {}),
-            osmRefHistory: preservesPrefix ? place.osmRefHistory : existing.osmRefHistory,
+            osmRefHistory: nextHistory,
+            ...(acceptRef
+              ? {}
+              : {
+                  currentOsmRef: existing.currentOsmRef,
+                  currentOsmLinkedAt: existing.currentOsmLinkedAt,
+                  lastVerified: existing.lastVerified,
+                  resolutionState: existing.resolutionState,
+                }),
           }),
         );
         for (const listId of await this.listIdsForPlace(place.id)) {
@@ -489,7 +528,12 @@ export class DexieRepository implements PlacemarksRepository {
       ],
       async () => {
         const oldRow = await this.db.notes.get(note.id);
-        const wasShareable = oldRow?.shareable === true;
+        // Not a creation path, and never a resurrection: updates apply only
+        // to live existing notes.
+        if (!oldRow || oldRow.deleted) {
+          throw new Error("note not found — updateNote is not a creation path");
+        }
+        const wasShareable = oldRow.shareable === true;
         // A retarget must land on a live aggregate — like creation, an update
         // never leaves a note targeting a missing row.
         if (oldRow && noteTargetKey(oldRow.target) !== noteTargetKey(note.target)) {
@@ -564,12 +608,16 @@ export class DexieRepository implements PlacemarksRepository {
           }
         }
         // Any transition visible in a hosted guide dirties that guide — including
-        // a shareable note going private (it disappears from the projection).
+        // a shareable note going private (it disappears from the projection),
+        // and the OLD containing guides when a retarget happens in the same
+        // edit (the note vanishes from them too).
         if (note.shareable || wasShareable) {
-          const listIds =
-            note.target.kind === "list"
-              ? [note.target.listId]
-              : await this.listIdsForPlace(note.target.placeId);
+          const targets = [note.target, oldRow.target];
+          const listIds = new Set<string>();
+          for (const target of targets) {
+            if (target.kind === "list") listIds.add(target.listId);
+            else for (const id of await this.listIdsForPlace(target.placeId)) listIds.add(id);
+          }
           for (const listId of listIds) {
             await this.dirtyListPublications(listId, note.updatedAt);
           }
