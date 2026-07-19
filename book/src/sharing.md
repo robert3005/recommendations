@@ -286,6 +286,11 @@ DELETE /s/lists/:slug
 - Update atomicity: the audit entry and a non-replayable key reservation precede the document
   write; the replayable success record lands only after it. An interrupted update re-executes —
   it never phantom-replays success for a write that may not have applied.
+- Create atomicity mirrors it: the key reservation and audit precede the atomic slug claim, and
+  the success record lands last — an interrupted `POST` leaves no public document and the same
+  token + key completes the original create on retry.
+- Public `GET`/`304` responses carry a stable per-publication `Surrogate-Key` so an update or
+  revoke can purge every cached representation deterministically.
 - `DELETE` counts against the same per-token mutation quota as create and update.
 - Every `/s/*` response (not just the preflight) carries the CORS grant for the separately hosted
   web client.
