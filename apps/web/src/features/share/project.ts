@@ -71,15 +71,31 @@ export function anchorForPlace(place: Place): SharedPlaceAnchor | undefined {
 
 /**
  * Snapshot links cannot hold a durable media lease — images become
- * placeholders, in every Markdown spelling, and no asset id may survive.
+ * placeholders, in every Markdown spelling, and no asset id or private remote
+ * destination may survive in the payload.
  */
 export function withImagePlaceholders(body: string): string {
   return body
-    .replace(/!\[[^\]]*\]\(asset:[^)]*\)/g, "*[image omitted from shared page]*")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "*[image omitted from shared page]*")
     .replace(/!\[[^\]]*\]\[[^\]]*\]/g, "*[image omitted from shared page]*")
     .replace(/^\[[^\]]+\]:\s*asset:.*$/gm, "")
     .replace(/asset:[\w./-]+/g, "[image omitted]");
 }
+
+/** The human-readable identity of every image a body would omit. */
+export function omittedImageAlts(body: string): string[] {
+  const alts: string[] = [];
+  for (const match of body.matchAll(/!\[([^\]]*)\]\([^)]*\)/g)) {
+    alts.push(match[1] || "unnamed image");
+  }
+  for (const match of body.matchAll(/!\[([^\]]*)\]\[[^\]]*\]/g)) {
+    alts.push(match[1] || "unnamed image");
+  }
+  return alts;
+}
+
+const containsImages = (body: string): boolean =>
+  /!\[[^\]]*\](\([^)]*\)|\[[^\]]*\])/.test(body) || /asset:/.test(body);
 
 function toSharedNote(note: Note): SharedNoteBody {
   return {
@@ -101,6 +117,8 @@ export interface ProjectionStats {
   /** Place blocks that could not be projected (no anchor) — surfaced, never silent. */
   omittedPlaces: number;
   imagesOmitted: boolean;
+  /** Each omitted image, by its alt text — disclosure is per image, not a boolean. */
+  omittedImages?: string[];
 }
 
 export async function projectGuide(
@@ -117,17 +135,27 @@ export async function projectGuide(
     sharedNotes: 0,
     omittedPlaces: 0,
     imagesOmitted: false,
+    omittedImages: [],
+  };
+  const noteImages = (body: string) => {
+    if (!containsImages(body)) return;
+    stats.imagesOmitted = true;
+    stats.omittedImages?.push(...omittedImageAlts(body));
   };
   const sharedBlocks: SharedBlock[] = [];
+  // A block's public identity derives from (but never leaks) its private id —
+  // stable across reorders, opaque to readers.
+  const publicBlockId = async (privateId: string): Promise<string> =>
+    `b${(await contentHash(`block:${privateId}`)).slice(0, 16)}`;
 
   for (const view of blocks) {
     if (view.block.content.type === "section") {
       // A section's own list note travels only when marked shareable.
       if (!view.sectionNote?.shareable) continue;
       stats.sections += 1;
-      if (/asset:/.test(view.sectionNote.body)) stats.imagesOmitted = true;
+      noteImages(view.sectionNote.body);
       sharedBlocks.push({
-        id: `b${sharedBlocks.length + 1}`,
+        id: await publicBlockId(view.block.id),
         type: "section",
         note: toSharedNote(view.sectionNote),
       });
@@ -140,11 +168,11 @@ export async function projectGuide(
       continue;
     }
     const shareableNotes = (await repo.listNotesForPlace(place.id)).filter((n) => n.shareable);
-    if (shareableNotes.some((n) => /asset:/.test(n.body))) stats.imagesOmitted = true;
+    for (const shared of shareableNotes) noteImages(shared.body);
     stats.places += 1;
     stats.sharedNotes += shareableNotes.length;
     sharedBlocks.push({
-      id: `b${sharedBlocks.length + 1}`,
+      id: await publicBlockId(view.block.id),
       type: "place",
       place: anchor,
       ...(shareableNotes.length > 0 ? { notes: shareableNotes.map(toSharedNote) } : {}),

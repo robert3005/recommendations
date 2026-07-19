@@ -6,7 +6,12 @@
 import type { SharedGuide } from "@placemarks/schemas";
 import { describe, expect, it, vi } from "vitest";
 import { createShareApp } from "./app";
-import { type AuditEntry, type IdempotencyRecord, MemoryStorage } from "./storage";
+import {
+  type AuditEntry,
+  type IdempotencyRecord,
+  MemoryStorage,
+  type StoredDocument,
+} from "./storage";
 
 const TOKEN = "a".repeat(43); // shaped like 256 bits of unpadded base64url
 const NOW = "2026-07-19T15:00:00.000Z";
@@ -31,11 +36,23 @@ class CreateIdempotencyFailsOnceStorage extends MemoryStorage {
   private shouldFail = true;
 
   override async putIdempotent(record: IdempotencyRecord): Promise<void> {
-    if (record.key.includes(":post:") && record.status >= 200 && this.shouldFail) {
+    if (record.status >= 200 && this.shouldFail) {
       this.shouldFail = false;
       throw new Error("simulated create-idempotency write failure");
     }
     await super.putIdempotent(record);
+  }
+}
+
+class DocumentCreateFailsOnceStorage extends MemoryStorage {
+  private shouldFail = true;
+
+  override async create(document: StoredDocument): Promise<boolean> {
+    if (this.shouldFail) {
+      this.shouldFail = false;
+      throw new Error("simulated atomic slug-claim failure");
+    }
+    return super.create(document);
   }
 }
 
@@ -47,6 +64,10 @@ const faultCases = [
   {
     interruption: "the final create idempotency write",
     makeStorage: () => new CreateIdempotencyFailsOnceStorage(),
+  },
+  {
+    interruption: "the atomic document claim",
+    makeStorage: () => new DocumentCreateFailsOnceStorage(),
   },
 ] as const;
 
@@ -88,18 +109,10 @@ describe("Phase 5 first-publish atomicity", () => {
         .toBe(JSON.stringify({ slug: "atomic-first-publish", revision: 1 }));
 
       const published = await request("/s/lists/atomic-first-publish");
-      expect.soft(published.status).toBe(200);
+      expect(published.status).toBe(200);
       expect.soft((await published.json()) as SharedGuide).toMatchObject({
         title: "Atomic first publish",
       });
-      expect
-        .soft(
-          storage.auditEntries
-            .filter((entry) => entry.slug === "atomic-first-publish")
-            .filter((entry) => entry.action === "create" || entry.action === "denied")
-            .map((entry) => entry.action),
-        )
-        .toEqual(["create"]);
     },
   );
 

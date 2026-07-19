@@ -19,10 +19,11 @@ export async function publicationForNote(
   repo: DexieRepository,
   noteId: string,
 ): Promise<Publication | undefined> {
-  const rows = await repo.db.publications.toArray();
-  return rows.find(
+  const rows = (await repo.db.publications.toArray()).filter(
     (p) => !p.deleted && p.target.kind === "note" && p.target.id === noteId && p.mode === "hosted",
   );
+  // A live publication outranks a revoked tombstone of the same target.
+  return rows.find((p) => p.status !== "revoked") ?? rows[0];
 }
 
 /** Publish (or update) a standalone note page (book/src/notes.md). */
@@ -35,6 +36,8 @@ export async function publishNote(
 ): Promise<Publication | undefined> {
   if (!note.shareable) return undefined;
   let publication = await publicationForNote(repo, note.id);
+  // A revoked page republishes as a fresh claim, never a tombstone update.
+  if (publication?.status === "revoked") publication = undefined;
   const slug = publication?.slug ?? slugFor(note.title ?? contextTitle);
   // A place note carries its durable OSM anchor (ref + copied recovery
   // evidence) so the page keeps resolving (book/src/notes.md).
@@ -96,7 +99,14 @@ export function newEditorToken(): string {
 
 function slugFor(name: string): string {
   const base = normalizeSlug(name);
-  const slug = base.length >= 3 ? base : `list-${base}`.slice(0, 60);
+  // A name with no ASCII slug characters still publishes — under a generated
+  // slug rather than a broken empty one.
+  const slug =
+    base.length >= 3
+      ? base
+      : base.length > 0
+        ? `list-${base}`.slice(0, 60)
+        : `guide-${newId().slice(0, 8)}`;
   return RESERVED_SLUGS.has(slug) ? `${slug}-guide` : slug;
 }
 
@@ -104,10 +114,11 @@ export async function publicationForList(
   repo: DexieRepository,
   listId: string,
 ): Promise<Publication | undefined> {
-  const rows = await repo.db.publications.toArray();
-  return rows.find(
+  const rows = (await repo.db.publications.toArray()).filter(
     (p) => !p.deleted && p.target.kind === "list" && p.target.id === listId && p.mode === "hosted",
   );
+  // A live publication outranks a revoked tombstone of the same target.
+  return rows.find((p) => p.status !== "revoked") ?? rows[0];
 }
 
 async function projectListDocument(
@@ -131,6 +142,9 @@ export async function publishList(
   if (!list || !document) return undefined;
 
   let publication = await publicationForList(repo, listId);
+  // A revoked slug is tombstoned forever — publishing again means a fresh
+  // publication with a fresh claim, never an update to the tombstone.
+  if (publication?.status === "revoked") publication = undefined;
   if (!publication) {
     // The token exists durably before the first network request ever fires.
     const credentialId = newId();
@@ -207,35 +221,57 @@ export async function revokePublication(
   now: string,
   fetcher: typeof fetch = fetch,
 ): Promise<void> {
-  const publication = await repo.db.publications.get(publicationId);
-  if (!publication) return;
-  // An explicit revocation supersedes any unsent update — a failed draft
-  // publish must never strand the unpublish.
-  const jobs = await repo.db.publicationOutbox.toArray();
-  for (const job of jobs) {
-    if (job.publicationId === publicationId && job.action === "publish") {
-      await repo.db.publicationOutbox.delete(job.id);
+  const exists = await repo.db.publications.get(publicationId);
+  if (!exists) return;
+  // The revocation state and its durable DELETE job are ONE local transition:
+  // a failed write leaves the prior state (and any publish marker) untouched,
+  // and the network never runs without a durable revoke job.
+  await repo.db.transaction("rw", [repo.db.publications, repo.db.publicationOutbox], async () => {
+    const publication = await repo.db.publications.get(publicationId);
+    if (!publication) return;
+    // An explicit revocation supersedes any unsent update — a failed draft
+    // publish must never strand the unpublish.
+    const jobs = await repo.db.publicationOutbox.toArray();
+    for (const job of jobs) {
+      if (job.publicationId === publicationId && job.action === "publish") {
+        await repo.db.publicationOutbox.delete(job.id);
+      }
     }
-  }
-  await repo.db.publications.put({ ...publication, status: "revoking", updatedAt: now });
-  // A failed earlier revocation retries under its original idempotency key.
-  const pendingRevoke = jobs.find(
-    (job) => job.publicationId === publicationId && job.action === "revoke",
-  );
-  if (!pendingRevoke) {
-    await repo.db.publicationOutbox.put({
-      id: newId(),
-      publicationId,
-      action: "revoke",
-      localRevision: publication.localRevision,
-      createdAt: now,
-      attempts: 0,
-    });
-  }
+    await repo.db.publications.put({ ...publication, status: "revoking", updatedAt: now });
+    // A failed earlier revocation retries under its original idempotency key.
+    const pendingRevoke = jobs.find(
+      (job) => job.publicationId === publicationId && job.action === "revoke",
+    );
+    if (!pendingRevoke) {
+      await repo.db.publicationOutbox.put({
+        id: newId(),
+        publicationId,
+        action: "revoke",
+        localRevision: publication.localRevision,
+        createdAt: now,
+        attempts: 0,
+      });
+    }
+  });
   await runPublicationOutbox(repo, fetcher);
 }
 
 const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
+
+/**
+ * The private Bearer credential never crosses an explicitly insecure
+ * transport: an absolute non-localhost http: share URL blocks all mutations
+ * (book/src/sharing.md: TLS is mandatory).
+ */
+function insecureShareTransport(): boolean {
+  if (!SHARE_API_URL) return false; // same-origin relative path
+  try {
+    const url = new URL(SHARE_API_URL, "https://placeholder.invalid");
+    return url.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Drain the durable outbox. Jobs process in order per publication; a completed
@@ -248,6 +284,20 @@ export async function runPublicationOutbox(
   const jobs = (await repo.db.publicationOutbox.toArray()).sort((a, b) =>
     a.createdAt < b.createdAt ? -1 : 1,
   );
+  if (jobs.length > 0 && insecureShareTransport()) {
+    const nowIso = new Date().toISOString();
+    for (const publicationId of new Set(jobs.map((job) => job.publicationId))) {
+      const publication = await repo.db.publications.get(publicationId);
+      if (!publication) continue;
+      await repo.db.publications.put({
+        ...publication,
+        status: "failed",
+        lastError: "the share service URL is not HTTPS — refusing to send the editor token",
+        updatedAt: nowIso,
+      });
+    }
+    return;
+  }
   // A failing page never starves another: order holds per publication only.
   const stalled = new Set<string>();
   for (const job of jobs) {
@@ -388,7 +438,17 @@ export async function runPublicationOutbox(
         publishedAt: nowIso,
         updatedAt: nowIso,
       });
-      if (!superseded) await repo.db.publicationOutbox.delete(job.id);
+      if (!superseded) {
+        await repo.db.publicationOutbox.delete(job.id);
+      } else {
+        // The job's key has now been sent for THIS payload — the surviving
+        // dirty marker must go out under a fresh key, never a reused one.
+        const current = await repo.db.publicationOutbox.get(job.id);
+        if (current) {
+          await repo.db.publicationOutbox.delete(current.id);
+          await repo.db.publicationOutbox.put({ ...current, id: newId() });
+        }
+      }
       count("publish.success");
     } catch (err) {
       reportError("publish", err);

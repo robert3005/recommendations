@@ -23,6 +23,9 @@ export const OVERPASS_URL: string =
   import.meta.env.VITE_OVERPASS_URL ?? "https://overpass-api.de/api/interpreter";
 
 export const OSM_ATTRIBUTION = "© OpenStreetMap contributors" as const;
+/** Map-surface attribution links to the OSM copyright page (ODbL requirement). */
+export const OSM_ATTRIBUTION_HTML =
+  '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>' as const;
 
 /** Viewport POI discovery budgets (book/src/data-sources.md §Viewport discovery). */
 export const DISCOVER_MIN_ZOOM = 15;

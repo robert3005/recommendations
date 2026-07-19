@@ -6,7 +6,7 @@
  * element; manual anchors are never resolved.
  */
 import type { OsmEvidence, PoiResolver, ResolvedPoi } from "@placemarks/domain";
-import { classifyCandidates, plausiblySameElement } from "@placemarks/domain";
+import { classifyCandidates, plausiblySameElement, refKey } from "@placemarks/domain";
 import type { SharedPlaceAnchor, SharedPlaceEvidence } from "@placemarks/schemas";
 
 export type SharedResolution =
@@ -55,23 +55,41 @@ export async function resolveSharedAnchor(
     }
     if (outcome.type === "error") return { state: "evidence", reason: "error" };
     // Confirmed gone or incompatible: conservative evidence-based temporary
-    // recovery — latest observation first, then the immutable first-seen
-    // evidence (the latest one may have lost the stable identifiers).
-    const candidates = await resolver.searchNearby({
-      lat: evidence.lat,
-      lng: evidence.lng,
-      radiusM: RECOVERY_RADIUS_M,
-    });
+    // recovery. Both evidence epochs act as ONE decision — search near each
+    // distinct copied coordinate, and recover only when the epochs converge on
+    // one unique winner. Disagreeing winners are ambiguity, not a guess.
+    const epochs = [evidence, evidenceFromShared(anchor.firstSeen)];
+    const searched = new Set<string>();
+    const candidates: ResolvedPoi[] = [];
+    const seenCandidates = new Set<string>();
+    for (const source of epochs) {
+      const at = `${source.lat.toString()},${source.lng.toString()}`;
+      if (searched.has(at)) continue;
+      searched.add(at);
+      for (const candidate of await resolver.searchNearby({
+        lat: source.lat,
+        lng: source.lng,
+        radiusM: RECOVERY_RADIUS_M,
+      })) {
+        const key = refKey(candidate.osmRef);
+        if (seenCandidates.has(key)) continue;
+        seenCandidates.add(key);
+        candidates.push(candidate);
+      }
+    }
+    const winners = new Map<string, ResolvedPoi>();
     let sawPlausible = false;
-    for (const source of [evidence, evidenceFromShared(anchor.firstSeen)]) {
+    for (const source of epochs) {
       const classified = classifyCandidates(source, candidates);
       if (classified.kind === "auto") {
-        return { state: "recovered", poi: classified.best.candidate };
+        winners.set(refKey(classified.best.candidate.osmRef), classified.best.candidate);
       }
       if (classified.kind === "review") sawPlausible = true;
     }
+    const unique = winners.size === 1 ? [...winners.values()][0] : undefined;
+    if (unique) return { state: "recovered", poi: unique };
     // Plausible-but-ambiguous replacements are not a disappearance verdict.
-    return sawPlausible ? { state: "ambiguous" } : { state: "missing" };
+    return winners.size > 1 || sawPlausible ? { state: "ambiguous" } : { state: "missing" };
   } catch {
     return { state: "evidence", reason: "error" };
   }

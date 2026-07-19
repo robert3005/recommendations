@@ -51,9 +51,9 @@ export class D1Storage implements ShareStorage {
       return true;
     } catch (err) {
       // Only a UNIQUE(slug, kind) violation is a failed atomic claim; any
-      // other database failure propagates instead of masquerading as a
-      // collision (which would 409 and audit "denied").
-      if (err instanceof Error && /UNIQUE|constraint/i.test(err.message)) return false;
+      // other database failure (outage, CHECK constraint, …) propagates
+      // instead of masquerading as a collision (which would 409 + "denied").
+      if (err instanceof Error && /UNIQUE constraint failed/i.test(err.message)) return false;
       throw err;
     }
   }

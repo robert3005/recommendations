@@ -1,4 +1,5 @@
 /** Settings: backup export/import, places import (Phase 3), storage, licensing. */
+import { useLiveQuery } from "dexie-react-hooks";
 import { useRef, useState } from "react";
 import { useLibraryPlaces } from "../../data/hooks";
 import { getDefaultRepo, useRepo } from "../../data/RepoContext";
@@ -16,6 +17,19 @@ export function SettingsPage() {
   const [message, setMessage] = useState<string>();
 
   const dexieRepo = (repo as DexieRepository).db ? (repo as DexieRepository) : getDefaultRepo();
+
+  // A non-empty library is anything worth losing — lists and notes count even
+  // before the first place block exists (book/src/roadmap.md Phase 6).
+  const otherContentCount = useLiveQuery(async () => {
+    const db = dexieRepo.db as Partial<DexieRepository["db"]> | undefined;
+    if (!db?.lists || !db.notes) return 0;
+    try {
+      const [lists, notes] = await Promise.all([db.lists.toArray(), db.notes.toArray()]);
+      return lists.filter((l) => !l.deleted).length + notes.filter((n) => !n.deleted).length;
+    } catch {
+      return 0; // database closing during teardown
+    }
+  }, [dexieRepo]);
 
   const doExport = async () => {
     const blob = await exportBackup(dexieRepo, nowIso());
@@ -61,14 +75,14 @@ export function SettingsPage() {
           A versioned ZIP with your places, tags, notes, lists, media, and the OSM evidence needed
           to preserve place identity. Data is device-local — back up regularly.
         </p>
-        {shouldRemindBackup(places?.length ?? 0, nowIso()) ? (
+        {shouldRemindBackup((places?.length ?? 0) + (otherContentCount ?? 0), nowIso()) ? (
           <p
             className="mt-2 rounded bg-orange-50 p-2 text-xs text-orange-800"
             data-testid="backup-reminder"
           >
             {lastBackupAt()
               ? "Your last backup is over a month old — export a fresh one."
-              : "You have places but no backup yet — export one now."}
+              : "You have local data but no backup yet — export one now."}
           </p>
         ) : null}
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -149,6 +163,36 @@ export function SettingsPage() {
           Map and place data © OpenStreetMap contributors, ODbL. Corrections to public place facts
           belong upstream on openstreetmap.org.
         </p>
+      </section>
+
+      <section className="mt-6 text-xs text-stone-500">
+        <h2 className="text-sm font-semibold text-stone-700">
+          Privacy &amp; what leaves the device
+        </h2>
+        <ul className="mt-1 list-disc space-y-1 pl-4">
+          <li>
+            <strong>Basemap tiles:</strong> the tile server receives the map area you view as tile
+            coordinates, plus ordinary network metadata (IP address, user agent).
+          </li>
+          <li>
+            <strong>Search (geocoding):</strong> only your typed search text and a coarse location
+            bias for ranking are sent to the geocoder.
+          </li>
+          <li>
+            <strong>Place lookups (POI resolver):</strong> the current map bounding box, or the
+            exact OSM element id (reference) of a place being verified, is sent to resolve places.
+          </li>
+          <li>
+            <strong>Never sent:</strong> your note bodies, list names, and tags stay on this device
+            — they are never sent to any provider.
+          </li>
+          <li>
+            <strong>Routing &amp; retention:</strong> development builds call public OSM community
+            services directly; a production deployment routes requests through proxied endpoints so
+            providers see the proxy rather than you. Providers keep ordinary server logs under their
+            own retention policies; this app keeps no request logs of its own.
+          </li>
+        </ul>
       </section>
     </div>
   );

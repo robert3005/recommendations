@@ -1,5 +1,20 @@
 # Import & Export — Interop
 
+> **Implementation decisions (2026-07-19, hardening wave).**
+>
+> - KML: a StyleMap resolves through its *normal* pair regardless of declaration order, and loose
+>   document-level placemarks keep their own style beside styled folders. GeoJSON re-imports use
+>   the FeatureCollection's own `name` (not the download filename) and round-trip `website`.
+> - A Google Maps listing URL is the identity and deep-link ref wherever it appears in a row's
+>   URL list — generic web provenance never outranks it (dedup, navigation, CSV URL column).
+> - Geocode auto-linking additionally requires a non-contradicting category (a cafe row never
+>   auto-links to a school); contradictions go to review, where ambiguous candidates render on a
+>   labelled mini map beside the picker.
+> - ODbL continuity: manually placing a review row that descends from an OSM anchor records the
+>   anchor as (unresolved) link history, so re-exports keep attributing OSM-derived facts.
+> - Exports fail closed when owned notes cannot be read, and My Maps handoffs split on whichever
+>   binds first: 2,000 features per layer or 5 MB per file.
+
 **Decision (2026-07-18).** Living with the Phase 0–2 build sharpened the thesis: Placemarks is
 **a way to editorialise lists of places**. The places people care about are already collected —
 overwhelmingly in Google Maps. OSM data and search quality trail Google's in many regions, and

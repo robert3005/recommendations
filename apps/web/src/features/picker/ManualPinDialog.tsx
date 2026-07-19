@@ -4,7 +4,7 @@
  * into one: an existing list or a new one created here.
  */
 import type { List } from "@placemarks/domain";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { nextUnusedColor } from "../../lib/markers";
 import { MarkerSwatches } from "../lists/MarkerSwatches";
 
@@ -24,6 +24,14 @@ export interface ManualPinDialogProps {
 }
 
 export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPinDialogProps) {
+  // Modal focus: enter the dialog on open, return to the invoker on close.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+    return () => previous?.focus();
+  }, []);
+
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [listChoice, setListChoice] = useState<string>((lists ?? []).length > 0 ? "" : "__new__");
@@ -49,6 +57,8 @@ export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPin
       onClick={onCancel}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Add unlinked pin to a list"

@@ -218,6 +218,23 @@ not include them.
 > - **In-flight edits stay queued.** When an older publish completes while a newer local revision
 >   already exists, the publication records the published revision but keeps `queued` status and
 >   its dirty marker.
+> - **Preflight before first publish.** Creating a hosted link stops for an exact disclosure of
+>   the projection (title, places with coordinates, shareable note prose); nothing leaves the
+>   device until the creator confirms. The unpublish controls carry the standing honesty note
+>   that downloaded copies and third-party caches cannot be remotely erased.
+> - **Deletion queues revocation.** Deleting a published list or note (directly or through a
+>   place-deletion cascade) marks its publication `revoking` with a durable DELETE job — never an
+>   orphaned public page; removing content from guides queues their re-projection the same way.
+> - **Revoked means a fresh claim.** Publishing again after revocation creates a new publication
+>   and claims a new slug; the tombstone is never updated. A failed revocation retries its
+>   pending DELETE job — the Retry control never turns an unpublish into a publish.
+> - **Transport.** An absolute non-localhost `http:` share URL blocks all mutations at the
+>   client: the Bearer credential never crosses an explicitly insecure transport.
+> - **Viewer recovery uses both epochs as one decision.** Recovery searches near each distinct
+>   copied coordinate and relinks only when first-seen and last-verified evidence converge on one
+>   unique winner; disagreeing winners render as ambiguity. Snapshot generation also enforces the
+>   decoder's inflated-size limit, the preview names every omitted image and stable-id key, and
+>   the disclosed link size is the final URL's.
 
 ## Public guide viewer
 

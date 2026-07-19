@@ -99,6 +99,23 @@ export function SharedGuideView({
   const [saved, setSaved] = useState<SaveSharedResult>();
   const [saving, setSaving] = useState(false);
   const startedRef = useRef(false);
+  // The map and the article are one synchronized view: a pin selects its
+  // article entry; activating an entry selects and recentres its pin.
+  const entryRefs = useRef(new Map<string, HTMLLIElement>());
+  const [selectedBlockId, setSelectedBlockId] = useState<string>();
+  const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(
+    null,
+  );
+  const selectFromMap = (blockId: string) => {
+    setSelectedBlockId(blockId);
+    entryRefs.current.get(blockId)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+  const selectFromArticle = (row: DisplayRow) => {
+    setSelectedBlockId(row.blockId);
+    if (row.lat !== undefined && row.lng !== undefined) {
+      setFlyTarget({ lat: row.lat, lng: row.lng, zoom: 16 });
+    }
+  };
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -141,6 +158,14 @@ export function SharedGuideView({
           initialZoom={pins.length > 0 ? 12 : 2}
           placePins={pins}
           poiPins={[]}
+          selectionPin={(() => {
+            const selected = rows.find((row) => row.blockId === selectedBlockId);
+            return selected?.lat !== undefined && selected.lng !== undefined
+              ? { lat: selected.lat, lng: selected.lng }
+              : null;
+          })()}
+          flyTo={flyTarget}
+          onSelectPlace={selectFromMap}
         />
       </div>
       <article className="min-h-0 flex-1 overflow-y-auto p-4">
@@ -215,10 +240,23 @@ export function SharedGuideView({
             return (
               <li
                 key={row.blockId}
-                className="rounded-lg border border-stone-200 bg-stone-50 p-3"
+                ref={(element) => {
+                  if (element) entryRefs.current.set(row.blockId, element);
+                  else entryRefs.current.delete(row.blockId);
+                }}
+                data-selected={selectedBlockId === row.blockId ? "true" : "false"}
+                className={`rounded-lg border bg-stone-50 p-3 ${
+                  selectedBlockId === row.blockId ? "border-stone-500" : "border-stone-200"
+                }`}
                 data-testid="shared-place"
               >
-                <span className="font-medium text-stone-900">{shown.name}</span>
+                <button
+                  type="button"
+                  onClick={() => selectFromArticle(row)}
+                  className="text-left font-medium text-stone-900 hover:underline"
+                >
+                  {shown.name}
+                </button>
                 {shown.category ? (
                   <span className="ml-2 text-xs capitalize text-stone-500">{shown.category}</span>
                 ) : null}
@@ -271,8 +309,17 @@ export function SharedGuideView({
           })}
         </ol>
         <footer className="mt-6 text-[11px] text-stone-400">
-          Place facts © OpenStreetMap contributors (ODbL). Saved facts are labeled with their
-          observation time when live refresh is unavailable.
+          Place facts{" "}
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+          >
+            © OpenStreetMap contributors
+          </a>{" "}
+          (ODbL). Saved facts are labeled with their observation time when live refresh is
+          unavailable.
         </footer>
       </article>
     </div>

@@ -51,6 +51,7 @@ export function ListPage() {
     tooLargeReason?: string;
   }>();
   const [copied, setCopied] = useState(false);
+  const [exportError, setExportError] = useState<string>();
 
   if (!list) return <div className="p-4 text-stone-500">List not found.</div>;
 
@@ -82,16 +83,13 @@ export function ListPage() {
 
   const placeBlocks = (blocks ?? []).filter((v) => v.block.content.type === "place");
 
+  // Fail closed: a portable export with silently missing notes is worse than
+  // no export — read errors abort the download and surface instead.
   const collectViews = async (): Promise<ExportPlaceView[]> => {
     const views: ExportPlaceView[] = [];
     for (const view of placeBlocks) {
       if (!view.place) continue;
-      let notes: Note[] = [];
-      try {
-        notes = await repo.listNotesForPlace(view.place.id);
-      } catch {
-        notes = [];
-      }
+      const notes: Note[] = await repo.listNotesForPlace(view.place.id);
       const placeView = await repo.getPlaceView(view.place.id);
       views.push({ place: view.place, notes, tags: placeView?.tags ?? [] });
     }
@@ -101,15 +99,32 @@ export function ListPage() {
   const safeName = () =>
     list.name.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "") || "list";
 
-  /** My Maps accepts ≤2,000 features per layer — larger lists split into parts. */
+  /**
+   * My Maps accepts ≤2,000 features per layer AND ≤5 MB per file — larger
+   * lists split into parts along whichever limit binds first.
+   */
   const MY_MAPS_LAYER_LIMIT = 2000;
+  const MY_MAPS_FILE_LIMIT = 5 * 1024 * 1024;
   const chunkedViews = async (): Promise<ExportPlaceView[][]> => {
     const views = await collectViews();
-    const chunks: ExportPlaceView[][] = [];
+    const byCount: ExportPlaceView[][] = [];
     for (let i = 0; i < views.length; i += MY_MAPS_LAYER_LIMIT) {
-      chunks.push(views.slice(i, i + MY_MAPS_LAYER_LIMIT));
+      byCount.push(views.slice(i, i + MY_MAPS_LAYER_LIMIT));
     }
-    if (chunks.length === 0) chunks.push([]);
+    if (byCount.length === 0) byCount.push([]);
+    const chunks: ExportPlaceView[][] = [];
+    const fits = (chunk: ExportPlaceView[]): boolean =>
+      new TextEncoder().encode(exportListKml(list, chunk)).byteLength <= MY_MAPS_FILE_LIMIT;
+    const bySize = (chunk: ExportPlaceView[]): void => {
+      if (chunk.length <= 1 || fits(chunk)) {
+        chunks.push(chunk);
+        return;
+      }
+      const mid = Math.ceil(chunk.length / 2);
+      bySize(chunk.slice(0, mid));
+      bySize(chunk.slice(mid));
+    };
+    for (const chunk of byCount) bySize(chunk);
     return chunks;
   };
   const partName = (chunks: unknown[], index: number) =>
@@ -143,18 +158,7 @@ export function ListPage() {
   };
 
   const exportAs = async (writer: (typeof EXPORTS)[number]) => {
-    const views: ExportPlaceView[] = [];
-    for (const view of placeBlocks) {
-      if (!view.place) continue;
-      let notes: Note[] = [];
-      try {
-        notes = await repo.listNotesForPlace(view.place.id);
-      } catch {
-        notes = [];
-      }
-      const placeView = await repo.getPlaceView(view.place.id);
-      views.push({ place: view.place, notes, tags: placeView?.tags ?? [] });
-    }
+    const views = await collectViews();
     downloadText(`${safeName()}.${writer.key}`, writer.mime, writer.write(list, views));
   };
 
@@ -234,7 +238,11 @@ export function ListPage() {
           type="button"
           className="rounded border border-stone-200 px-2 py-0.5 font-medium text-stone-600 hover:bg-stone-100"
           data-testid="send-to-my-maps"
-          onClick={() => void sendToMyMaps()}
+          onClick={() =>
+            void sendToMyMaps().catch((err: unknown) =>
+              setExportError(err instanceof Error ? err.message : String(err)),
+            )
+          }
         >
           Send to Google My Maps
         </button>
@@ -245,7 +253,11 @@ export function ListPage() {
             type="button"
             className="rounded border border-stone-200 px-2 py-0.5 font-medium text-stone-600 hover:bg-stone-100"
             data-testid={`export-${writer.key}`}
-            onClick={() => void exportAs(writer)}
+            onClick={() =>
+              void exportAs(writer).catch((err: unknown) =>
+                setExportError(err instanceof Error ? err.message : String(err)),
+              )
+            }
           >
             {writer.label}
           </button>
@@ -254,11 +266,20 @@ export function ListPage() {
           type="button"
           className="rounded border border-stone-200 px-2 py-0.5 font-medium text-stone-600 hover:bg-stone-100"
           data-testid="export-kmz"
-          onClick={() => void exportKmz()}
+          onClick={() =>
+            void exportKmz().catch((err: unknown) =>
+              setExportError(err instanceof Error ? err.message : String(err)),
+            )
+          }
         >
           KMZ
         </button>
       </div>
+      {exportError ? (
+        <output className="mt-1 block rounded bg-orange-50 p-2 text-[11px] text-orange-800">
+          Export failed — nothing was downloaded (notes could not be read: {exportError}).
+        </output>
+      ) : null}
       <p className="mt-1 text-[11px] text-stone-400">
         Google My Maps accepts up to 2,000 features per layer and 5 MB per file — larger lists split
         into numbered parts automatically. Then: My Maps → Import → choose this file.

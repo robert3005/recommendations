@@ -78,9 +78,14 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
             lat={facts.lat}
             lng={facts.lng}
             {...(facts.name ? { name: facts.name } : {})}
-            {...(view.place.externalRefs?.[0]?.url
-              ? { externalUrl: view.place.externalRefs[0].url }
-              : {})}
+            {...(() => {
+              // A retained Google Maps ref is the deep link back — it wins
+              // over whichever provenance ref happened to arrive first.
+              const preferred =
+                view.place.externalRefs?.find((ref) => ref.provider === "google-maps") ??
+                view.place.externalRefs?.[0];
+              return preferred?.url ? { externalUrl: preferred.url } : {};
+            })()}
           />
         ) : null}
         {view.place.currentOsmRef ? <OsmLink osmRef={view.place.currentOsmRef} /> : null}

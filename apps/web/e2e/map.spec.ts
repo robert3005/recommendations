@@ -74,12 +74,18 @@ test.describe("map display", () => {
       const stored = JSON.parse(raw) as { lng: number; lat: number };
       return `${stored.lng.toFixed(4)},${stored.lat.toFixed(4)}` !== "-9.1400,38.7200";
     });
-    // By persist time the camera is idle — this is the settled center.
-    const settled = await mapEl.getAttribute("data-center");
+    // The persisted viewport is deliberately coarse (~1 km grid) so a
+    // Locate-driven recenter never stores a precise position — the next
+    // launch starts at the coarse persisted point, not the exact camera.
+    const persisted = await page.evaluate(() => {
+      const raw = localStorage.getItem("placemarks:viewport");
+      const stored = JSON.parse(raw ?? "{}") as { lng: number; lat: number };
+      return `${stored.lng.toFixed(4)},${stored.lat.toFixed(4)}`;
+    });
 
     await page.reload();
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
-    await expect(mapEl).toHaveAttribute("data-center", settled ?? "");
+    await expect(mapEl).toHaveAttribute("data-center", persisted);
   });
 
   test("geolocation denial produces a designed state, never a blank screen", async ({

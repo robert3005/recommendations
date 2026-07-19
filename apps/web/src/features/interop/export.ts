@@ -54,8 +54,14 @@ function rows(views: ExportPlaceView[]): ExportRow[] {
   return out;
 }
 
-const hasOsmDerived = (views: ExportPlaceView[]): boolean =>
-  views.some((v) => v.place.lastVerified !== undefined);
+/** OSM provenance survives an unresolved binding: history counts, not just live evidence. */
+const osmDerived = (place: ExportPlaceView["place"]): boolean =>
+  place.lastVerified !== undefined ||
+  place.firstSeen !== undefined ||
+  place.currentOsmRef !== undefined ||
+  place.osmRefHistory.length > 0;
+
+const hasOsmDerived = (views: ExportPlaceView[]): boolean => views.some((v) => osmDerived(v.place));
 
 function xmlEscape(value: string): string {
   return (
@@ -107,7 +113,10 @@ export function exportListKml(list: List, views: ExportPlaceView[]): string {
 
 /** The URL column mirrors import provenance: external ref, else OSM portal, else coordinates. */
 function urlFor(row: ExportRow): string {
-  const external = row.place.externalRefs?.[0]?.url;
+  // A retained Google listing is the deep link back — it outranks whichever
+  // generic web ref happened to be stored first.
+  const refs = row.place.externalRefs ?? [];
+  const external = (refs.find((ref) => ref.provider === "google-maps") ?? refs[0])?.url;
   if (external) return external;
   if (row.place.currentOsmRef) return osmElementUrl(row.place.currentOsmRef);
   return `https://www.google.com/maps/search/?api=1&query=${row.facts.lat},${row.facts.lng}`;
@@ -130,7 +139,7 @@ export function exportListCsv(_list: List, views: ExportPlaceView[]): string {
         formulaEscape(row.note ?? ""),
         urlFor(row),
         formulaEscape(row.facts.address ?? ""),
-        row.place.lastVerified ? OSM_ATTRIBUTION_TEXT : "",
+        osmDerived(row.place) ? OSM_ATTRIBUTION_TEXT : "",
       ]),
     },
     { newline: "\n" },

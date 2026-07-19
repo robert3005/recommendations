@@ -6,13 +6,19 @@
  * never silently degraded into unlinked pins. Shared manual anchors import as
  * unlinked places through the import dedup rules.
  */
-import { osmElementUrl, type PoiResolver } from "@placemarks/domain";
-import type { SharedGuide } from "@placemarks/schemas";
+import {
+  classifyCandidates,
+  osmElementUrl,
+  type PoiResolver,
+  type ResolvedPoi,
+  refKey,
+} from "@placemarks/domain";
+import type { SharedGuide, SharedPlaceAnchor } from "@placemarks/schemas";
 import type { ImportBatchRow, ImportItemRow } from "../../data/db";
 import type { DexieRepository } from "../../data/repo";
 import { newId } from "../../lib/id";
 import { nextUnusedColor } from "../../lib/markers";
-import { resolveSharedAnchor } from "./resolveShared";
+import { evidenceFromShared, resolveSharedAnchor } from "./resolveShared";
 
 export interface SaveSharedResult {
   listId: string;
@@ -81,12 +87,28 @@ export async function saveSharedGuide(
         const view = await repo.addToList(listId, { kind: "poi", poi: resolution.poi }, now);
         result.added += 1;
         await importNotes(repo, view.place.id, block.notes, now);
+        await resolvePendingRows(repo, anchor, view.place.id);
+        continue;
+      }
+
+      // Provider unavailable (or the element gone upstream): the local library
+      // can still answer. An exact local binding for the shared ref — or one
+      // unique local-evidence match — reuses the existing place offline.
+      const local =
+        (await repo.findPlaceByOsmRef(anchor.currentOsmRef)) ??
+        (await uniqueLocalEvidenceMatch(repo, anchor));
+      if (local) {
+        const view = await repo.addToList(listId, { kind: "existing", placeId: local.id }, now);
+        result.added += 1;
+        await importNotes(repo, view.place.id, block.notes, now);
+        await resolvePendingRows(repo, anchor, view.place.id);
         continue;
       }
 
       // Unresolved: a pending preview in the review queue, never a silent pin.
-      // The row keeps the copied anchor (as an OSM portal URL the importer
-      // resolves exactly), coordinates, and the selected shared note.
+      // The row keeps the COMPLETE recovery envelope — both evidence epochs
+      // and every selected note — plus the OSM portal URL the importer
+      // resolves exactly.
       batch ??= await createBatch(repo, guide, now);
       const note = (block.notes ?? [])
         .map((n) => n.body)
@@ -101,6 +123,8 @@ export async function saveSharedGuide(
           url: osmElementUrl(anchor.currentOsmRef),
           ...(anchor.lastVerified.address ? { address: anchor.lastVerified.address } : {}),
           ...(note ? { note } : {}),
+          sharedAnchor: anchor,
+          ...(block.notes ? { sharedNotes: block.notes } : {}),
         },
         coords: { lat: anchor.lastVerified.lat, lng: anchor.lastVerified.lng },
         status: "review",
@@ -117,6 +141,61 @@ export async function saveSharedGuide(
   }
 
   return result;
+}
+
+/**
+ * A unique high-confidence match between the copied evidence and a local
+ * OSM-linked place's own evidence — both epochs must converge on one winner
+ * (mirrors the viewer's recovery rule, applied to the local library).
+ */
+async function uniqueLocalEvidenceMatch(
+  repo: DexieRepository,
+  anchor: Extract<SharedPlaceAnchor, { kind: "osm" }>,
+): Promise<{ id: string } | undefined> {
+  const candidates: ResolvedPoi[] = [];
+  const candidatePlace = new Map<string, string>();
+  for (const { place } of await repo.listPlaces()) {
+    if (!place.currentOsmRef || !place.lastVerified) continue;
+    const evidence = place.lastVerified;
+    const candidate: ResolvedPoi = {
+      osmRef: place.currentOsmRef,
+      ...(evidence.osmVersion !== undefined ? { osmVersion: evidence.osmVersion } : {}),
+      ...(evidence.name ? { name: evidence.name } : {}),
+      category: evidence.category,
+      lat: evidence.lat,
+      lng: evidence.lng,
+      ...(evidence.address ? { address: evidence.address } : {}),
+      ...(evidence.website ? { website: evidence.website } : {}),
+      identityTags: evidence.identityTags,
+      resolvedAt: evidence.observedAt,
+    };
+    candidates.push(candidate);
+    candidatePlace.set(refKey(candidate.osmRef), place.id);
+  }
+  if (candidates.length === 0) return undefined;
+  const winners = new Set<string>();
+  for (const epoch of [anchor.lastVerified, anchor.firstSeen]) {
+    const classified = classifyCandidates(evidenceFromShared(epoch), candidates);
+    if (classified.kind === "auto") winners.add(refKey(classified.best.candidate.osmRef));
+  }
+  if (winners.size !== 1) return undefined;
+  const placeId = candidatePlace.get([...winners][0] ?? "");
+  return placeId ? { id: placeId } : undefined;
+}
+
+/** A later successful import of the same anchor clears its pending previews. */
+async function resolvePendingRows(
+  repo: DexieRepository,
+  anchor: Extract<SharedPlaceAnchor, { kind: "osm" }>,
+  placeId: string,
+): Promise<void> {
+  const url = osmElementUrl(anchor.currentOsmRef);
+  const stale = await repo.db.importItems
+    .filter((item) => item.status === "review" && item.raw.url === url)
+    .toArray();
+  for (const item of stale) {
+    await repo.db.importItems.put({ ...item, status: "placed", linkedOsm: true, placeId });
+  }
 }
 
 async function createBatch(

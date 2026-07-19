@@ -18,6 +18,7 @@ export interface ParsedItem {
   urls?: string[];
   address?: string;
   category?: string;
+  website?: string;
   phone?: string;
   openingHours?: string;
   tags?: string[];
@@ -141,6 +142,7 @@ function featureToItem(
   );
   const url = str(props["Google Maps URL"]) ?? str(props.url) ?? externalUrls[0];
   const urls = externalUrls.filter((value) => value !== url);
+  const website = str(props.website);
   const phone = str(props.phone);
   const openingHours = str(props.openingHours);
   const tags = Array.isArray(props.tags)
@@ -165,6 +167,7 @@ function featureToItem(
     ...(urls.length > 0 ? { urls } : {}),
     ...(address ? { address } : {}),
     ...(category ? { category } : {}),
+    ...(website ? { website } : {}),
     ...(phone ? { phone } : {}),
     ...(openingHours ? { openingHours } : {}),
     ...(tags && tags.length > 0 ? { tags } : {}),
@@ -193,8 +196,11 @@ export function parseGeoJson(
   listName: string,
   options: FeatureOptions = {},
 ): ParsedList {
-  const body = JSON.parse(text) as { features?: GeoJsonFeature[] };
-  return collectFeatures(body.features ?? [], listName, options);
+  const body = JSON.parse(text) as { name?: unknown; features?: GeoJsonFeature[] };
+  // The exported FeatureCollection names itself; the (sanitized) download
+  // filename is only a fallback.
+  const name = typeof body.name === "string" && body.name.trim() !== "" ? body.name : listName;
+  return collectFeatures(body.features ?? [], name, options);
 }
 
 // ---------- KML / KMZ / GPX (coordinates included) ----------
@@ -218,7 +224,12 @@ function colorFromKml(value: string | undefined): string | undefined {
 function styleColor(id: string, doc: Document): string | undefined {
   const direct = doc.querySelector(`Style[id="${id}"] IconStyle color`);
   if (direct) return colorFromKml(direct.textContent ?? undefined);
-  const mapped = doc.querySelector(`StyleMap[id="${id}"] Pair styleUrl`)?.textContent?.trim();
+  // A StyleMap's NORMAL pair is the resting marker — never the highlight,
+  // whatever order the pairs are declared in.
+  const pairs = [...doc.querySelectorAll(`StyleMap[id="${id}"] Pair`)];
+  const normal =
+    pairs.find((pair) => pair.querySelector("key")?.textContent?.trim() === "normal") ?? pairs[0];
+  const mapped = normal?.querySelector("styleUrl")?.textContent?.trim();
   if (mapped?.startsWith("#")) {
     const target = doc.querySelector(`Style[id="${mapped.slice(1)}"] IconStyle color`);
     return colorFromKml(target?.textContent ?? undefined);
@@ -289,7 +300,15 @@ export function parseKml(text: string, fallbackName: string): ParsedList[] {
         .join("")}</Document></kml>`,
     );
     const collection = kmlToGeoJson(wrapped) as { features?: GeoJsonFeature[] };
-    lists.push(collectFeatures(collection.features ?? [], uniqueName(docName || fallbackName)));
+    // Loose placemarks keep their own marker style beside styled folders.
+    const looseStyleUrl = loose[0]?.querySelector(":scope > styleUrl")?.textContent?.trim();
+    const looseColor = looseStyleUrl?.startsWith("#")
+      ? styleColor(looseStyleUrl.slice(1), doc)
+      : undefined;
+    lists.push({
+      ...collectFeatures(collection.features ?? [], uniqueName(docName || fallbackName)),
+      ...(looseColor ? { color: looseColor } : {}),
+    });
   }
   for (const [index, folder] of folders.entries()) {
     lists.push(

@@ -28,6 +28,9 @@ test("publish → public read-only page → update → unpublish", async ({ page
   await seedList(page);
 
   await page.getByTestId("publish-list").click();
+  // The preflight disclosure shows the exact projection before anything leaves.
+  await expect(page.getByTestId("publish-preflight")).toContainText("Café Central");
+  await page.getByTestId("confirm-publish-list").click();
   await expect(page.getByTestId("publication-status")).toHaveAttribute("data-status", "published");
   const publicUrl = await page.getByTestId("public-link").getAttribute("href");
   expect(publicUrl).toContain("/l/hosted-picks");

@@ -78,6 +78,10 @@ export interface ImportItemRow {
     openingHours?: string;
     tags?: string[];
     osmRef?: { type: "node" | "way" | "relation"; id: string };
+    /** A pending shared-guide anchor keeps its complete recovery envelope. */
+    sharedAnchor?: unknown;
+    /** Every selected shared note (title + body) travels with the pending row. */
+    sharedNotes?: { title?: string; body: string }[];
   };
   coords?: { lat: number; lng: number };
   /** Geocode candidates awaiting review (typed OSM refs from the search adapter). */

@@ -1,0 +1,8 @@
+# One restrictive document-level Content-Security-Policy for the app and every
+# public viewer page (book/src/sharing.md: hardened viewer). Scripts are only
+# our own bundle; images/styles allow what MapLibre needs (blob workers, data
+# URIs, https tiles/sprites); connections stay on https; no plugins, no eval.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Content-Type-Options: nosniff

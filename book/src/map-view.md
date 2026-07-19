@@ -137,6 +137,18 @@ managed or self-hosted adapters described in [Open Data Sources](./data-sources.
 - Geolocation denied/unavailable starts from the last viewport or the timezone approximation and leaves
   search fully usable.
 
+> **Implementation decisions (2026-07-19).**
+>
+> - The category chips ([Eat] [Drink] [Shop] [Stay] [Culture] [Health]) are keyboard-operable
+>   toggles over a fixed OSM-taxonomy mapping (`features/map/categories.ts`); no active chip means
+>   everything shows.
+> - The synchronized non-map equivalent is a "Nearby places (list view)" panel: every discovered
+>   POI is a focusable button naming the place and its category, selecting it like a pin tap.
+> - The persisted next-launch viewport is coarsened to a ~1 km grid before storage, so a
+>   Locate-driven recenter never persists a precise position.
+> - Below the discovery zoom the map says "Zoom in to see nearby places"; the nearby-candidate
+>   picker offers an in-place Retry after a resolver failure.
+
 ## Accessibility and responsiveness
 
 - All place, search, filter, list/guide, and publication workflows are keyboard operable.

@@ -62,14 +62,22 @@ function refForUrl(url: string, now: string): ExternalRef | undefined {
   return undefined;
 }
 
+function allRefs(item: ParsedItem, now: string): ExternalRef[] {
+  return [item.url, ...(item.urls ?? [])]
+    .filter((url): url is string => typeof url === "string" && url !== "")
+    .map((url) => refForUrl(url, now))
+    .filter((ref): ref is ExternalRef => ref !== undefined);
+}
+
+/** The identity ref: a Google listing outranks generic web provenance, wherever it is listed. */
 function externalRefFor(item: ParsedItem, now: string): ExternalRef | undefined {
-  return item.url ? refForUrl(item.url, now) : undefined;
+  const refs = allRefs(item, now);
+  return refs.find((ref) => ref.provider === "google-maps") ?? refs[0];
 }
 
 function extraRefs(item: ParsedItem, now: string): ExternalRef[] {
-  return (item.urls ?? [])
-    .map((url) => refForUrl(url, now))
-    .filter((ref): ref is ExternalRef => ref !== undefined);
+  const primary = externalRefFor(item, now);
+  return allRefs(item, now).filter((ref) => ref.url !== primary?.url);
 }
 
 function factsFor(item: ParsedItem, coords: { lat: number; lng: number }): ManualFacts {
@@ -312,8 +320,14 @@ async function geocode(
   const wanted = normalizeName(item.title);
   const named = results.filter((r) => normalizeName(r.name) === wanted);
   // A name match alone never links (chains exist everywhere): the row must
-  // carry an address that does not contradict the candidate.
-  const qualified = item.address ? named.filter((r) => addressCompatible(item.address, r)) : [];
+  // carry an address that does not contradict the candidate — and a
+  // category-contradicting candidate (cafe vs school) goes to review too.
+  const qualified = (
+    item.address ? named.filter((r) => addressCompatible(item.address, r)) : []
+  ).filter(
+    (r) =>
+      !item.category || !r.category || normalizeName(r.category) === normalizeName(item.category),
+  );
   const uniqueRefs = new Set(qualified.map((r) => `${r.ref.type}/${r.ref.id}`));
   if (qualified.length > 0 && uniqueRefs.size === 1 && qualified[0]) {
     return { kind: "auto", result: qualified[0] };
@@ -604,6 +618,20 @@ export async function resolveReviewItem(
     }
     const placed = await materializeItem(repo, row.targetListId, item, choice, undefined, now);
     if (placed.status === "review") return; // ambiguous locally — still reviewable
+    // ODbL continuity: a manually placed row that descends from an OSM anchor
+    // keeps that provenance on the place (as unresolved link history), so
+    // exports keep attributing the facts correctly.
+    const anchorRef = item.osmRef ?? (item.url ? osmRefFromUrl(item.url) : undefined);
+    if (anchorRef && placed.placeId) {
+      const place = await repo.getPlace(placed.placeId);
+      if (place && !place.currentOsmRef && place.osmRefHistory.length === 0) {
+        await repo.updatePlace({
+          ...place,
+          osmRefHistory: [{ ref: anchorRef, linkedAt: now, unlinkedAt: now, reason: "replaced" }],
+          updatedAt: now,
+        });
+      }
+    }
     await repo.db.importItems.put({
       ...row,
       status: placed.status,

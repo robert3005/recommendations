@@ -64,11 +64,20 @@ export class PhotonSearchProvider implements SearchProvider {
       url.searchParams.set("lat", String(opts.bias.lat));
       url.searchParams.set("lon", String(opts.bias.lng));
     }
-    const response = await fetch(url, { signal: opts?.signal ?? null });
+    // One retry for a transient upstream failure — adapter policy, so callers
+    // do not recreate it (book/src/data-sources.md).
+    let response = await fetch(url, { signal: opts?.signal ?? null });
+    if (response.status >= 500) {
+      response = await fetch(url, { signal: opts?.signal ?? null });
+    }
     if (!response.ok) throw new Error(`photon ${response.status}`);
     const body = (await response.json()) as { features?: PhotonFeature[] };
-    return (body.features ?? [])
-      .map(toSearchResult)
-      .filter((result): result is SearchResult => result !== undefined);
+    return (
+      (body.features ?? [])
+        .map(toSearchResult)
+        .filter((result): result is SearchResult => result !== undefined)
+        // The caller's budget binds even when the upstream ignores its limit.
+        .slice(0, opts?.limit ?? 8)
+    );
   }
 }

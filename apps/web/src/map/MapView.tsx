@@ -7,7 +7,7 @@ import type { BBox, OsmElementRef } from "@placemarks/domain";
 import type { FeatureCollection } from "geojson";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import { DISCOVER_DEBOUNCE_MS, OSM_ATTRIBUTION } from "../config";
+import { DISCOVER_DEBOUNCE_MS, OSM_ATTRIBUTION_HTML } from "../config";
 
 export interface PlacePinFeature {
   placeId: string;
@@ -115,7 +115,10 @@ export function MapView({
 
     // OSM attribution is a licensing requirement on every map surface.
     map.addControl(
-      new maplibregl.AttributionControl({ compact: false, customAttribution: OSM_ATTRIBUTION }),
+      new maplibregl.AttributionControl({
+        compact: false,
+        customAttribution: OSM_ATTRIBUTION_HTML,
+      }),
     );
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
     // Geolocation is user-triggered; denial/timeout must never block the map (Phase 0).

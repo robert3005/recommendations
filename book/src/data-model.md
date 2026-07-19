@@ -1,5 +1,13 @@
 # Places, Tags & Lists — Data Model
 
+> **Repository-boundary rulings (2026-07-19).** `updatePlace` treats durable identity as
+> immutable: origin and first-seen never change, completed link history only grows, and an update
+> that would fork an exact OSM element held by another live place is refused. Name+proximity
+> dedup never folds an unlinked anchor onto an OSM-linked place. A current-ref observation that is
+> no longer plausibly the same real-world place marks `needs-review` without touching the copied
+> evidence. Notes attach only to live targets, only shareable notes attach to guide blocks, and
+> retargeting a note tombstones its stale attachments in the same transaction.
+
 The model separates two kinds of data:
 
 1. **OSM observations** — source facts that Placemarks copies for display, offline fallback, and

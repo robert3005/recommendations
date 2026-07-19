@@ -17,6 +17,7 @@ import { CandidatePicker } from "../picker/CandidatePicker";
 import { ManualPinDialog } from "../picker/ManualPinDialog";
 import { PlaceSheet } from "../place/PlaceSheet";
 import { SearchBar } from "../search/SearchBar";
+import { TOP_CATEGORIES, type TopCategory, topCategoryOf } from "./categories";
 
 interface Viewport {
   bbox: BBox;
@@ -46,6 +47,8 @@ export function MapPage() {
   const membership = useListMembership();
   const [manualAt, setManualAt] = useState<{ lat: number; lng: number } | null>(null);
   const [viewport, setViewport] = useState<Viewport | null>(null);
+  // Active top-level category chips; none active shows everything.
+  const [activeFilters, setActiveFilters] = useState<ReadonlySet<TopCategory>>(new Set());
   // The starting camera: last viewport, else a timezone-derived approximation
   // (book/src/map-view.md — no permission prompt, nothing leaves the device).
   const [startViewport] = useState(() => initialViewport());
@@ -62,16 +65,22 @@ export function MapPage() {
     staleTime: 5 * 60_000,
   });
 
-  const poiPins: PoiPinFeature[] = discoverEnabled
-    ? (discoverQuery.data?.pois ?? []).map((poi: ResolvedPoi) => ({
-        refKey: refKey(poi.osmRef),
-        ref: poi.osmRef,
-        name: poi.name ?? "Unnamed",
-        category: poi.category,
-        lat: poi.lat,
-        lng: poi.lng,
-      }))
-    : [];
+  const poiPins: PoiPinFeature[] = (
+    discoverEnabled
+      ? (discoverQuery.data?.pois ?? []).map((poi: ResolvedPoi) => ({
+          refKey: refKey(poi.osmRef),
+          ref: poi.osmRef,
+          name: poi.name ?? "Unnamed",
+          category: poi.category,
+          lat: poi.lat,
+          lng: poi.lng,
+        }))
+      : []
+  ).filter((pin) => {
+    if (activeFilters.size === 0) return true;
+    const top = topCategoryOf(pin.category);
+    return top !== undefined && activeFilters.has(top);
+  });
 
   const listsById = new Map((lists ?? []).map((l) => [l.id, l]));
   const placePins: PlacePinFeature[] = (libraryPlaces ?? []).flatMap((view) => {
@@ -143,8 +152,15 @@ export function MapPage() {
         }}
         onViewportChange={(view) => {
           setViewport(view);
-          // The next launch starts where this session left off.
-          persistViewport({ lat: view.center.lat, lng: view.center.lng, zoom: view.zoom });
+          // The next launch starts where this session left off — coarsened to
+          // a ~1 km grid so a Locate-driven recenter never persists a precise
+          // position (book/src/map-view.md: nothing precise leaves the session).
+          const coarse = (value: number) => Math.round(value * 100) / 100;
+          persistViewport({
+            lat: coarse(view.center.lat),
+            lng: coarse(view.center.lng),
+            zoom: view.zoom,
+          });
         }}
       />
       {placingImportItemId ? (
@@ -154,6 +170,67 @@ export function MapPage() {
         >
           Long-press (or right-click) the map to place the imported item
         </output>
+      ) : null}
+      {/* Category chips (book/src/map-view.md): keyboard-operable toggles. */}
+      <div
+        className="absolute top-16 left-1/2 z-10 flex w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 flex-wrap gap-1.5"
+        role="group"
+        aria-label="Filter nearby places by category"
+      >
+        {TOP_CATEGORIES.map(({ key, label }) => {
+          const active = activeFilters.has(key);
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-pressed={active}
+              onClick={() =>
+                setActiveFilters((current) => {
+                  const next = new Set(current);
+                  if (next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                })
+              }
+              className={`rounded-full px-2.5 py-0.5 text-xs font-medium shadow ${
+                active ? "bg-stone-800 text-white" : "bg-white/95 text-stone-700"
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      {/* The synchronized non-map equivalent of canvas results
+          (book/src/map-view.md §Accessibility): every discovered POI is
+          reachable by keyboard and screen reader. */}
+      {poiPins.length > 0 ? (
+        <section
+          aria-label="Nearby places (list view)"
+          className="absolute bottom-16 left-3 z-10 max-h-40 w-56 overflow-y-auto rounded-lg bg-white/95 p-1.5 text-xs shadow"
+        >
+          <ul>
+            {poiPins.map((pin) => (
+              <li key={pin.refKey}>
+                <button
+                  type="button"
+                  className="w-full rounded px-1.5 py-1 text-left hover:bg-stone-100"
+                  onClick={() =>
+                    selectOsm(pin.ref, {
+                      name: pin.name,
+                      lat: pin.lat,
+                      lng: pin.lng,
+                      category: pin.category,
+                    })
+                  }
+                >
+                  <span className="font-medium text-stone-800">{pin.name}</span>{" "}
+                  <span className="text-stone-500">({pin.category})</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       ) : null}
       <div className="absolute top-3 left-1/2 z-10 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2">
         <SearchBar
@@ -168,6 +245,11 @@ export function MapPage() {
           }}
         />
       </div>
+      {viewport && !discoverEnabled ? (
+        <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-stone-800/85 px-3 py-1 text-xs text-white">
+          Zoom in to see nearby places
+        </div>
+      ) : null}
       {discoverEnabled && discoverQuery.data?.truncated ? (
         <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-stone-800/85 px-3 py-1 text-xs text-white">
           Showing a capped set of places — zoom in for more

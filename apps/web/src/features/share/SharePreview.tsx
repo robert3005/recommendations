@@ -59,7 +59,10 @@ export function SharePreview({
       evidence.address,
       evidence.website,
       evidence.phone,
-      ...(evidence.stableIds ? Object.values(evidence.stableIds) : []),
+      // Copied identity records disclose their keys, not just opaque values.
+      ...(evidence.stableIds
+        ? Object.entries(evidence.stableIds).map(([key, value]) => `${key} ${value}`)
+        : []),
       `observed ${evidence.observedAt}`,
       evidence.license,
     ]
@@ -123,7 +126,16 @@ export function SharePreview({
           </li>
           {stats.sections > 0 ? <li>{stats.sections} shareable narrative sections</li> : null}
           {stats.imagesOmitted ? (
-            <li>Images are omitted — the page shows text placeholders instead</li>
+            <li>
+              Images are omitted — the page shows text placeholders instead
+              {stats.omittedImages && stats.omittedImages.length > 0 ? (
+                <ul className="list-disc pl-4 text-xs text-stone-500">
+                  {stats.omittedImages.map((alt, index) => (
+                    <li key={`${alt}-${index.toString()}`}>Omitted image: “{alt}”</li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
           ) : null}
           {stats.omittedPlaces > 0 ? (
             <li className="text-orange-700">
@@ -140,6 +152,18 @@ export function SharePreview({
           data-testid="share-payload"
         >
           <ul className="space-y-1 text-xs text-stone-700">
+            {guide.blocks.flatMap((block) =>
+              block.type === "section"
+                ? [
+                    <li key={block.id}>
+                      {block.note.title ? (
+                        <span className="font-medium">{block.note.title}: </span>
+                      ) : null}
+                      <span className="text-stone-600">{block.note.body}</span>
+                    </li>,
+                  ]
+                : [],
+            )}
             {placeRows.map((row) => (
               <li key={row.id}>
                 <span className="font-medium">{row.name}</span>
@@ -167,8 +191,10 @@ export function SharePreview({
         {snapshotUrl ? (
           <div className="mt-3">
             <p className="text-xs text-stone-500">
-              Link size: {Math.ceil((compressedBytes ?? 0) / 1024)} KiB of{" "}
-              {SNAPSHOT_COMPRESSED_LIMIT / 1024} KiB. The page lives entirely in this link — no
+              {/* The user shares the URL, so the disclosed size is the URL's. */}
+              Link size: {Math.ceil(new TextEncoder().encode(snapshotUrl).byteLength / 1024)} KiB
+              (compressed payload {Math.ceil((compressedBytes ?? 0) / 1024)} of{" "}
+              {SNAPSHOT_COMPRESSED_LIMIT / 1024} KiB). The page lives entirely in this link — no
               server stores it.
             </p>
             <div className="mt-2 flex gap-2">

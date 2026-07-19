@@ -40,7 +40,15 @@ export class SnapshotTooLargeError extends Error {
 
 /** Encode a guide for the `/l#…` fragment. Never silently truncates. */
 export function encodeSnapshot(guide: SharedGuide): { fragment: string; compressedBytes: number } {
-  const compressed = deflateSync(strToU8(JSON.stringify(guide)), { level: 9 });
+  const json = strToU8(JSON.stringify(guide));
+  // The generator must never hand out a link its own decoder would refuse.
+  if (json.byteLength > SNAPSHOT_INFLATED_LIMIT) {
+    throw new Error(
+      `this guide is ${Math.ceil(json.byteLength / 1024)} KiB uncompressed — over the ` +
+        `${SNAPSHOT_INFLATED_LIMIT / 1024} KiB snapshot decoder limit. Use a hosted link instead.`,
+    );
+  }
+  const compressed = deflateSync(json, { level: 9 });
   if (compressed.length > SNAPSHOT_COMPRESSED_LIMIT) {
     throw new SnapshotTooLargeError(compressed.length);
   }

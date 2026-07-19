@@ -33,5 +33,8 @@ export function shouldRemindBackup(
   // Absent or unparseable metadata means no usable backup — remind.
   if (!last || !Number.isFinite(Date.parse(last))) return true;
   const elapsed = Date.parse(now) - Date.parse(last);
+  // A timestamp from the future (clock correction, imported state) is not a
+  // usable backup record either — it must not suppress reminders.
+  if (elapsed < 0) return true;
   return elapsed > BACKUP_REMINDER_DAYS * 24 * 60 * 60 * 1000;
 }

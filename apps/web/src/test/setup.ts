@@ -64,3 +64,14 @@ if (!URL.createObjectURL) {
   URL.createObjectURL = () => "blob:jsdom-stub";
   URL.revokeObjectURL = () => {};
 }
+
+// Several audit tests close the IndexedDB database under a still-mounted
+// component (no unmount) — Dexie's live queries then reject internally with
+// DatabaseClosedError, which is teardown noise, not an app defect. Filter
+// exactly that error; every other unhandled rejection still fails the run.
+const vitestRejectionListeners = process.listeners("unhandledRejection");
+process.removeAllListeners("unhandledRejection");
+process.on("unhandledRejection", (reason, promise) => {
+  if ((reason as { name?: string } | null)?.name === "DatabaseClosedError") return;
+  for (const listener of vitestRejectionListeners) listener(reason, promise);
+});

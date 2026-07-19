@@ -175,8 +175,8 @@ function validateGraph(
       deleted?: boolean;
       currentOsmRef?: RefLike;
       osmRefHistory?: { ref?: RefLike }[];
-      firstSeen?: { ref?: RefLike };
-      lastVerified?: { ref?: RefLike };
+      firstSeen?: { ref?: RefLike; source?: unknown; license?: unknown; attribution?: unknown };
+      lastVerified?: { ref?: RefLike; source?: unknown; license?: unknown; attribution?: unknown };
     };
     const refs: (RefLike | undefined)[] = [
       row.currentOsmRef,
@@ -187,6 +187,35 @@ function validateGraph(
     for (const ref of refs) {
       if (!validRef(ref)) {
         throw new Error(`place ${row.id} carries a malformed OSM reference — refusing to import`);
+      }
+    }
+    if (row.deleted) continue;
+    // A linked place without its copied evidence cannot render offline or
+    // recover a moved element — the shape is invalid, not merely incomplete.
+    if (row.currentOsmRef && (!row.firstSeen || !row.lastVerified)) {
+      throw new Error(
+        `place ${row.id} is OSM-linked but carries no copied evidence — refusing to import`,
+      );
+    }
+    // An OSM-origin place always has copied evidence from its creation; a row
+    // claiming the origin without any binding or evidence is malformed.
+    if ((place as { origin?: string }).origin === "osm" && (!row.firstSeen || !row.lastVerified)) {
+      throw new Error(
+        `place ${row.id} claims OSM origin without binding or copied evidence — refusing to import`,
+      );
+    }
+    // Copied evidence always states its true provenance; anything else is a
+    // false source/licence/attribution claim.
+    for (const evidence of [row.firstSeen, row.lastVerified]) {
+      if (!evidence) continue;
+      if (
+        evidence.source !== "OpenStreetMap" ||
+        evidence.license !== "ODbL-1.0" ||
+        evidence.attribution !== "© OpenStreetMap contributors"
+      ) {
+        throw new Error(
+          `place ${row.id} carries evidence with a false source/license/attribution claim — refusing to import`,
+        );
       }
     }
   }
@@ -397,30 +426,32 @@ async function validateMergeIdentities(repo: DexieRepository, data: BackupData):
  * orphan place — membership is existence, merged or not.
  */
 async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData): Promise<void> {
-  const liveLists = new Set<string>();
-  for (const list of await repo.db.lists.toArray()) if (!list.deleted) liveLists.add(list.id);
-  for (const list of data.lists) {
-    const row = list as { id: string; deleted?: boolean };
-    if (row.deleted) liveLists.delete(row.id);
-    else liveLists.add(row.id);
-  }
-  // Blocks resolve per id with the same LWW rule the merge applies — an
-  // incoming tombstone can remove the only membership an existing row grants.
-  type BlockLike = {
-    id: string;
-    deleted?: boolean;
-    listId: string;
-    updatedAt: string;
-    content?: { type?: string; placeId?: string };
+  // Every table resolves per id with the same last-write-wins rule the merge
+  // itself applies — an older incoming tombstone must not falsely kill a
+  // newer live row, and a newer tombstone must count as a deletion.
+  type Aged = { id: string; deleted?: boolean; updatedAt: string };
+  const lww = <T extends Aged>(existing: T[], incoming: T[]): Map<string, T> => {
+    const byId = new Map<string, T>();
+    for (const row of existing) byId.set(row.id, row);
+    for (const row of incoming) {
+      const current = byId.get(row.id);
+      if (!current || row.updatedAt > current.updatedAt) byId.set(row.id, row);
+    }
+    return byId;
   };
-  const blockById = new Map<string, BlockLike>();
-  for (const block of (await repo.db.listBlocks.toArray()) as unknown as BlockLike[]) {
-    blockById.set(block.id, block);
-  }
-  for (const block of data.listBlocks as unknown as BlockLike[]) {
-    const current = blockById.get(block.id);
-    if (!current || block.updatedAt > current.updatedAt) blockById.set(block.id, block);
-  }
+
+  const listById = lww(
+    (await repo.db.lists.toArray()) as unknown as Aged[],
+    data.lists as unknown as Aged[],
+  );
+  const liveLists = new Set<string>();
+  for (const list of listById.values()) if (!list.deleted) liveLists.add(list.id);
+
+  type BlockLike = Aged & { listId: string; content?: { type?: string; placeId?: string } };
+  const blockById = lww(
+    (await repo.db.listBlocks.toArray()) as unknown as BlockLike[],
+    data.listBlocks as unknown as BlockLike[],
+  );
   const membership = new Set<string>();
   for (const block of blockById.values()) {
     if (block.deleted || block.content?.type !== "place") continue;
@@ -428,12 +459,13 @@ async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData):
       membership.add(block.content.placeId);
     }
   }
+
+  const placeById = lww(
+    (await repo.db.places.toArray()) as unknown as Aged[],
+    data.places as unknown as Aged[],
+  );
   const livePlaces = new Map<string, boolean>();
-  for (const place of await repo.db.places.toArray()) livePlaces.set(place.id, !place.deleted);
-  for (const place of data.places) {
-    const row = place as { id: string; deleted?: boolean };
-    livePlaces.set(row.id, !row.deleted);
-  }
+  for (const place of placeById.values()) livePlaces.set(place.id, !place.deleted);
   for (const [placeId, isLive] of livePlaces) {
     if (isLive && !membership.has(placeId)) {
       throw new Error(
@@ -441,42 +473,60 @@ async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData):
       );
     }
   }
-  // Tag edges must also survive the merge: a live assignment with no live tag
-  // in the final state is a broken graph.
-  const liveTags = new Map<string, boolean>();
-  for (const tag of await repo.db.tags.toArray()) liveTags.set(tag.id, !tag.deleted);
-  for (const tag of data.tags) {
-    const row = tag as { id: string; deleted?: boolean };
-    liveTags.set(row.id, !row.deleted);
-  }
-  const assignments = new Map<string, { tagId: string; deleted: boolean }>();
-  for (const a of await repo.db.tagAssignments.toArray()) {
-    assignments.set(a.id, { tagId: a.tagId, deleted: a.deleted === true });
-  }
-  for (const a of data.tagAssignments) {
-    const row = a as { id: string; tagId: string; deleted?: boolean };
-    assignments.set(row.id, { tagId: row.tagId, deleted: row.deleted === true });
-  }
-  for (const [id, edge] of assignments) {
-    if (!edge.deleted && liveTags.get(edge.tagId) !== true) {
-      throw new Error(`merging would leave tag assignment ${id} without a live tag — refusing`);
+  // The inverse edge must hold too: a live block never targets a dead place.
+  for (const block of blockById.values()) {
+    if (block.deleted || block.content?.type !== "place") continue;
+    if (!liveLists.has(block.listId)) continue;
+    const placeId = block.content.placeId ?? "";
+    if (livePlaces.get(placeId) !== true) {
+      throw new Error(`merging would leave block ${block.id} targeting a deleted place — refusing`);
     }
   }
-  // Attachments must also join consistently in the final state: a live edge
-  // joins a live place block to a live note about the SAME place.
-  type NoteLike = {
-    id: string;
-    deleted?: boolean;
-    updatedAt: string;
-    target?: { kind?: string; placeId?: string };
-  };
-  const noteById = new Map<string, NoteLike>();
-  for (const note of (await repo.db.notes.toArray()) as unknown as NoteLike[]) {
-    noteById.set(note.id, note);
+
+  // Tag edges must also survive the merge: a live assignment needs a live tag
+  // AND a live place in the final state.
+  const tagById = lww(
+    (await repo.db.tags.toArray()) as unknown as Aged[],
+    data.tags as unknown as Aged[],
+  );
+  const liveTags = new Map<string, boolean>();
+  for (const tag of tagById.values()) liveTags.set(tag.id, !tag.deleted);
+  type AssignmentLike = Aged & { tagId: string; placeId: string };
+  const assignments = lww(
+    (await repo.db.tagAssignments.toArray()) as unknown as AssignmentLike[],
+    data.tagAssignments as unknown as AssignmentLike[],
+  );
+  for (const edge of assignments.values()) {
+    if (edge.deleted) continue;
+    if (liveTags.get(edge.tagId) !== true) {
+      throw new Error(
+        `merging would leave tag assignment ${edge.id} without a live tag — refusing`,
+      );
+    }
+    if (livePlaces.get(edge.placeId) !== true) {
+      throw new Error(
+        `merging would leave tag assignment ${edge.id} without a live place — refusing`,
+      );
+    }
   }
-  for (const note of data.notes as unknown as NoteLike[]) {
-    const current = noteById.get(note.id);
-    if (!current || note.updatedAt > current.updatedAt) noteById.set(note.id, note);
+
+  // Every live note must target a live row in the final state.
+  type NoteLike = Aged & { target?: { kind?: string; placeId?: string; listId?: string } };
+  const noteById = lww(
+    (await repo.db.notes.toArray()) as unknown as NoteLike[],
+    data.notes as unknown as NoteLike[],
+  );
+  for (const note of noteById.values()) {
+    if (note.deleted) continue;
+    const targetLive =
+      note.target?.kind === "place"
+        ? livePlaces.get(note.target.placeId ?? "") === true
+        : note.target?.kind === "list"
+          ? liveLists.has(note.target.listId ?? "")
+          : false;
+    if (!targetLive) {
+      throw new Error(`merging would leave note ${note.id} targeting no live row — refusing`);
+    }
   }
   type AttachmentLike = {
     id: string;
@@ -535,8 +585,8 @@ export const ARCHIVE_BYTE_LIMIT = 256 * 1024 * 1024;
 export const ARCHIVE_ENTRY_LIMIT = 4096;
 export const INFLATED_BYTE_LIMIT = 48 * 1024 * 1024;
 
-/** Entry count from the ZIP end-of-central-directory record (0 if not found). */
-function declaredZipEntryCount(bytes: Uint8Array): number {
+/** The ZIP end-of-central-directory record, scanned from the tail. */
+function findEocd(bytes: Uint8Array): number {
   const scanFrom = Math.max(0, bytes.length - 65557);
   for (let i = bytes.length - 22; i >= scanFrom; i -= 1) {
     if (
@@ -545,10 +595,40 @@ function declaredZipEntryCount(bytes: Uint8Array): number {
       bytes[i + 2] === 0x05 &&
       bytes[i + 3] === 0x06
     ) {
-      return (bytes[i + 10] ?? 0) | ((bytes[i + 11] ?? 0) << 8);
+      return i;
     }
   }
-  return 0;
+  return -1;
+}
+
+const u16 = (bytes: Uint8Array, at: number): number =>
+  (bytes[at] ?? 0) | ((bytes[at + 1] ?? 0) << 8);
+const u32 = (bytes: Uint8Array, at: number): number =>
+  ((bytes[at] ?? 0) | ((bytes[at + 1] ?? 0) << 8) | ((bytes[at + 2] ?? 0) << 16)) +
+  (bytes[at + 3] ?? 0) * 0x1000000;
+
+/** Entry count from the ZIP end-of-central-directory record (0 if not found). */
+function declaredZipEntryCount(bytes: Uint8Array): number {
+  const eocd = findEocd(bytes);
+  return eocd < 0 ? 0 : u16(bytes, eocd + 10);
+}
+
+/**
+ * The uncompressed total the central directory itself declares — checked
+ * BEFORE any decompression so a bomb is refused without inflating a byte.
+ */
+function declaredZipInflatedTotal(bytes: Uint8Array): number {
+  const eocd = findEocd(bytes);
+  if (eocd < 0) return 0;
+  const count = u16(bytes, eocd + 10);
+  let offset = u32(bytes, eocd + 16);
+  let total = 0;
+  for (let i = 0; i < count; i += 1) {
+    if (offset + 46 > bytes.length || u32(bytes, offset) !== 0x02014b50) break;
+    total += u32(bytes, offset + 24);
+    offset += 46 + u16(bytes, offset + 28) + u16(bytes, offset + 30) + u16(bytes, offset + 32);
+  }
+  return total;
 }
 
 export async function importBackup(
@@ -561,6 +641,13 @@ export async function importBackup(
     throw new Error("backup archive is too large — refusing to read it");
   }
   const bytes = await blobBytes(file);
+  // Declared bounds are enforced before any decompression work.
+  if (declaredZipEntryCount(bytes) > ARCHIVE_ENTRY_LIMIT) {
+    throw new Error("backup entry count exceeds the limit — refusing to import");
+  }
+  if (declaredZipInflatedTotal(bytes) > INFLATED_BYTE_LIMIT) {
+    throw new Error("backup declares an uncompressed size beyond the limit — refusing to import");
+  }
   let entries: Record<string, Uint8Array>;
   try {
     entries = unzipSync(bytes);
@@ -659,13 +746,18 @@ export async function importBackup(
       }
       const remap = new Map<string, string>();
       const incomingByRefKey = new Map<string, string>();
+      type EvidenceLike = { observedAt: string };
+      type PlaceShape = {
+        id: string;
+        deleted?: boolean;
+        currentOsmRef?: OsmElementRef;
+        osmRefHistory?: { ref: OsmElementRef }[];
+        firstSeen?: EvidenceLike;
+        lastVerified?: EvidenceLike;
+      };
+      const evidenceDonors: { retainedId: string; donor: PlaceShape }[] = [];
       data.places = data.places.filter((place) => {
-        const row = place as unknown as {
-          id: string;
-          deleted?: boolean;
-          currentOsmRef?: OsmElementRef;
-          osmRefHistory?: { ref: OsmElementRef }[];
-        };
+        const row = place as unknown as PlaceShape;
         if (row.deleted) return true;
         const keys = canonicalKeys(row);
         // The same exact OSM element must not arrive twice under two ids —
@@ -678,8 +770,47 @@ export async function importBackup(
           return true;
         }
         remap.set(row.id, retained);
+        evidenceDonors.push({ retainedId: retained, donor: row });
         return false;
       });
+      // Coalescing must never discard the dropped row's newer observation —
+      // the retained place keeps the earliest firstSeen and latest lastVerified.
+      for (const { retainedId, donor } of evidenceDonors) {
+        const graft = (target: PlaceShape): boolean => {
+          let changed = false;
+          if (
+            donor.lastVerified &&
+            (!target.lastVerified || donor.lastVerified.observedAt > target.lastVerified.observedAt)
+          ) {
+            target.lastVerified = donor.lastVerified;
+            changed = true;
+          }
+          if (
+            donor.firstSeen &&
+            (!target.firstSeen || donor.firstSeen.observedAt < target.firstSeen.observedAt)
+          ) {
+            target.firstSeen = donor.firstSeen;
+            changed = true;
+          }
+          return changed;
+        };
+        const incomingRetained = data.places.find((p) => p.id === retainedId) as
+          | PlaceShape
+          | undefined;
+        if (incomingRetained) {
+          graft(incomingRetained);
+          continue;
+        }
+        const existingRetained = (await db.places.get(retainedId)) as unknown as
+          | (PlaceShape & Place)
+          | undefined;
+        if (existingRetained && !existingRetained.deleted && graft(existingRetained)) {
+          await db.places.put({
+            ...existingRetained,
+            refKeys: allRefKeys(existingRetained as unknown as Place),
+          } as never);
+        }
+      }
       if (remap.size > 0) {
         for (const assignment of data.tagAssignments) {
           const target = remap.get(assignment.placeId);
@@ -743,6 +874,27 @@ export async function importBackup(
                 .equals([row.placeId, row.tagId])
                 .toArray();
               const clash = pairs.find((a) => !a.deleted && a.id !== row.id);
+              if (clash) continue;
+            }
+          }
+          if (key === "blockNoteAttachments") {
+            const row = incoming as unknown as {
+              id: string;
+              blockId: string;
+              noteId: string;
+              deleted?: boolean;
+            };
+            if (!row.deleted) {
+              // One live edge per (block, note) — a re-identified duplicate
+              // from another device must not double the attachment.
+              const edges = await db.blockNoteAttachments.toArray();
+              const clash = edges.find(
+                (edge) =>
+                  !edge.deleted &&
+                  edge.blockId === row.blockId &&
+                  edge.noteId === row.noteId &&
+                  edge.id !== row.id,
+              );
               if (clash) continue;
             }
           }

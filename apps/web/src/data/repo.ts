@@ -37,6 +37,7 @@ import {
   type PlaceId,
   type PlacemarksRepository,
   type PlaceView,
+  plausiblySameElement,
   type ResolvedPoi,
   rankAfter,
   rankBetween,
@@ -91,7 +92,49 @@ export class DexieRepository implements PlacemarksRepository {
     // Not a creation path: places come to exist through addToList only.
     const existing = live(await this.db.places.get(place.id));
     if (!existing) throw new Error("place not found — updatePlace is not a creation path");
-    await this.db.places.put(toPlaceRow(place));
+    // One live PlaceId per exact OSM element: an upgrade that would fork an
+    // element already held by another place is refused for explicit review
+    // (book/src/place-identity.md).
+    if (place.currentOsmRef) {
+      const holder = await this.findPlaceByOsmRef(place.currentOsmRef);
+      if (holder && holder.id !== place.id) {
+        throw new Error(
+          "another place already holds this exact OSM element — refusing to fork its identity",
+        );
+      }
+    }
+    // Durable identity is immutable at this boundary: origin and the first
+    // observation never change, and completed link history only grows — a
+    // stale or tampered whole-object update cannot rewrite them.
+    // The write and its publication dirtying commit together: a changed place
+    // changes every hosted guide containing it (e.g. an owner-confirmed OSM
+    // relink), so those publications queue payload-less markers.
+    await this.db.transaction(
+      "rw",
+      [
+        this.db.places,
+        this.db.listBlocks,
+        this.db.lists,
+        this.db.publications,
+        this.db.publicationOutbox,
+      ],
+      async () => {
+        await this.db.places.put(
+          toPlaceRow({
+            ...place,
+            origin: existing.origin,
+            ...(existing.firstSeen ? { firstSeen: existing.firstSeen } : {}),
+            osmRefHistory:
+              place.osmRefHistory.length >= existing.osmRefHistory.length
+                ? place.osmRefHistory
+                : existing.osmRefHistory,
+          }),
+        );
+        for (const listId of await this.listIdsForPlace(place.id)) {
+          await this.dirtyListPublications(listId, place.updatedAt);
+        }
+      },
+    );
   }
 
   /**
@@ -148,6 +191,9 @@ export class DexieRepository implements PlacemarksRepository {
     const rows = await this.db.places.toArray();
     const matches = rows.filter((row) => {
       if (row.deleted) return false;
+      // An OSM-linked place has a stronger identity than a name — an unlinked
+      // imported anchor never folds onto it by name and coordinates alone.
+      if (row.currentOsmRef) return false;
       const display = displayFacts(row);
       if (!display) return false;
       return (
@@ -239,13 +285,53 @@ export class DexieRepository implements PlacemarksRepository {
       );
       if (pending) {
         const { payload: _stale, ...rest } = pending;
-        await this.db.publicationOutbox.put({ ...rest, localRevision });
+        await this.db.publicationOutbox.put({ ...rest, payload: undefined, localRevision });
       } else {
         await this.db.publicationOutbox.put({
           id: newId(),
           publicationId: publication.id,
           action: "publish",
+          payload: undefined,
           localRevision,
+          createdAt: now,
+          attempts: 0,
+        });
+      }
+    }
+  }
+
+  /**
+   * Queue revocation for every live hosted publication of a deleted target —
+   * a deleted aggregate must never orphan its public page or credential
+   * (book/src/sharing.md §Local publication record).
+   */
+  private async revokePublicationsFor(
+    target: { kind: "list" | "note"; id: string },
+    now: string,
+  ): Promise<void> {
+    const publications = (await this.db.publications.toArray()).filter(
+      (p) =>
+        !p.deleted &&
+        p.mode === "hosted" &&
+        p.target.kind === target.kind &&
+        p.target.id === target.id &&
+        p.status !== "revoked" &&
+        p.status !== "revoking",
+    );
+    for (const publication of publications) {
+      await this.db.publications.put({ ...publication, status: "revoking", updatedAt: now });
+      const jobs = await this.db.publicationOutbox.toArray();
+      for (const job of jobs) {
+        if (job.publicationId === publication.id && job.action === "publish") {
+          await this.db.publicationOutbox.delete(job.id);
+        }
+      }
+      if (!jobs.some((j) => j.publicationId === publication.id && j.action === "revoke")) {
+        await this.db.publicationOutbox.put({
+          id: newId(),
+          publicationId: publication.id,
+          action: "revoke",
+          localRevision: publication.localRevision,
           createdAt: now,
           attempts: 0,
         });
@@ -286,10 +372,18 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.listBlocks,
         this.db.blockNoteAttachments,
         this.db.lists,
+        this.db.publications,
+        this.db.publicationOutbox,
       ],
       async () => {
         const place = live(await this.db.places.get(placeId));
-        if (place) await this.tombstonePlace(place, now);
+        if (!place) return;
+        const listIds = await this.listIdsForPlace(placeId);
+        await this.tombstonePlace(place, now);
+        // Every hosted guide that contained the place re-projects without it.
+        for (const listId of listIds) {
+          await this.dirtyListPublications(listId, now);
+        }
       },
     );
   }
@@ -354,93 +448,134 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async createNote(note: Note): Promise<void> {
+    // A note attaches to a live aggregate — an orphan note is a graph error.
+    const targetLive =
+      note.target.kind === "place"
+        ? live(await this.db.places.get(note.target.placeId))
+        : live(await this.db.lists.get(note.target.listId));
+    if (!targetLive)
+      throw new Error("note target not found — notes attach to a live place or list");
     await this.db.notes.put(toNoteRow(note));
   }
 
   async updateNote(note: Note): Promise<void> {
-    const wasShareable = (await this.db.notes.get(note.id))?.shareable === true;
-    if (!note.shareable) {
-      // A note that stops being shareable queues removal of its public page
-      // (book/src/notes.md): the old revision stays up until revocation lands.
-      const publications = (await this.db.publications.toArray()).filter(
-        (p) =>
-          !p.deleted &&
-          p.mode === "hosted" &&
-          p.target.kind === "note" &&
-          p.target.id === note.id &&
-          (p.status === "published" || p.status === "queued" || p.status === "failed"),
-      );
-      for (const publication of publications) {
-        await this.db.publications.put({
-          ...publication,
-          status: "revoking",
-          updatedAt: note.updatedAt,
-        });
-        await this.db.publicationOutbox.put({
-          id: newId(),
-          publicationId: publication.id,
-          action: "revoke",
-          localRevision: publication.localRevision,
-          createdAt: note.updatedAt,
-          attempts: 0,
-        });
-      }
-    }
-    await this.db.notes.put(toNoteRow(note));
-    if (note.shareable) {
-      // A shareable-note edit dirties its standalone page AND every hosted
-      // guide that contains it (book/src/sharing.md: mutating an attached
-      // note queues every affected publication).
-      const notePublications = (await this.db.publications.toArray()).filter(
-        (p) =>
-          !p.deleted &&
-          p.mode === "hosted" &&
-          p.target.kind === "note" &&
-          p.target.id === note.id &&
-          p.status !== "revoked" &&
-          p.status !== "revoking",
-      );
-      for (const publication of notePublications) {
-        const localRevision = `dirty:${note.updatedAt}:${newId()}`;
-        await this.db.publications.put({
-          ...publication,
-          status: publication.status === "published" ? "queued" : publication.status,
-          localRevision,
-          updatedAt: note.updatedAt,
-        });
-        const pending = (await this.db.publicationOutbox.toArray()).find(
-          (job) => job.publicationId === publication.id && job.action === "publish",
-        );
-        if (pending) {
-          const { payload: _stale, ...rest } = pending;
-          await this.db.publicationOutbox.put({ ...rest, localRevision });
-        } else {
-          await this.db.publicationOutbox.put({
-            id: newId(),
-            publicationId: publication.id,
-            action: "publish",
-            localRevision,
-            createdAt: note.updatedAt,
-            attempts: 0,
-          });
+    // The edit and every affected publication commit (or fail) as ONE
+    // IndexedDB transaction — aggregate atomicity (book/src/storage-sync.md).
+    await this.db.transaction(
+      "rw",
+      [
+        this.db.notes,
+        this.db.blockNoteAttachments,
+        this.db.publications,
+        this.db.publicationOutbox,
+        this.db.listBlocks,
+        this.db.lists,
+      ],
+      async () => {
+        const oldRow = await this.db.notes.get(note.id);
+        const wasShareable = oldRow?.shareable === true;
+        // Retargeting invalidates every attachment made under the old target —
+        // an attachment joins a block and note about the SAME place, so the edge
+        // tombstones with the retarget rather than dangling inconsistently.
+        if (oldRow && noteTargetKey(oldRow.target) !== noteTargetKey(note.target)) {
+          const edges = (await this.db.blockNoteAttachments.toArray()).filter(
+            (edge) => !edge.deleted && edge.noteId === note.id,
+          );
+          for (const edge of edges) {
+            await this.db.blockNoteAttachments.put({
+              ...edge,
+              deleted: true,
+              updatedAt: note.updatedAt,
+            });
+          }
         }
-      }
-    }
-    // Any transition visible in a hosted guide dirties that guide — including
-    // a shareable note going private (it disappears from the projection).
-    if (note.shareable || wasShareable) {
-      const listIds =
-        note.target.kind === "list"
-          ? [note.target.listId]
-          : await this.listIdsForPlace(note.target.placeId);
-      for (const listId of listIds) {
-        await this.dirtyListPublications(listId, note.updatedAt);
-      }
-    }
+        if (!note.shareable) {
+          // A note that stops being shareable queues removal of its public page
+          // (book/src/notes.md): the old revision stays up until revocation lands.
+          const publications = (await this.db.publications.toArray()).filter(
+            (p) =>
+              !p.deleted &&
+              p.mode === "hosted" &&
+              p.target.kind === "note" &&
+              p.target.id === note.id &&
+              (p.status === "published" || p.status === "queued" || p.status === "failed"),
+          );
+          for (const publication of publications) {
+            await this.db.publications.put({
+              ...publication,
+              status: "revoking",
+              updatedAt: note.updatedAt,
+            });
+            await this.db.publicationOutbox.put({
+              id: newId(),
+              publicationId: publication.id,
+              action: "revoke",
+              localRevision: publication.localRevision,
+              createdAt: note.updatedAt,
+              attempts: 0,
+            });
+          }
+        }
+        await this.db.notes.put(toNoteRow(note));
+        if (note.shareable) {
+          // A shareable-note edit dirties its standalone page AND every hosted
+          // guide that contains it (book/src/sharing.md: mutating an attached
+          // note queues every affected publication).
+          const notePublications = (await this.db.publications.toArray()).filter(
+            (p) =>
+              !p.deleted &&
+              p.mode === "hosted" &&
+              p.target.kind === "note" &&
+              p.target.id === note.id &&
+              p.status !== "revoked" &&
+              p.status !== "revoking",
+          );
+          for (const publication of notePublications) {
+            const localRevision = `dirty:${note.updatedAt}:${newId()}`;
+            await this.db.publications.put({
+              ...publication,
+              status: publication.status === "published" ? "queued" : publication.status,
+              localRevision,
+              updatedAt: note.updatedAt,
+            });
+            const pending = (await this.db.publicationOutbox.toArray()).find(
+              (job) => job.publicationId === publication.id && job.action === "publish",
+            );
+            if (pending) {
+              const { payload: _stale, ...rest } = pending;
+              await this.db.publicationOutbox.put({ ...rest, payload: undefined, localRevision });
+            } else {
+              await this.db.publicationOutbox.put({
+                id: newId(),
+                publicationId: publication.id,
+                action: "publish",
+                payload: undefined,
+                localRevision,
+                createdAt: note.updatedAt,
+                attempts: 0,
+              });
+            }
+          }
+        }
+        // Any transition visible in a hosted guide dirties that guide — including
+        // a shareable note going private (it disappears from the projection).
+        if (note.shareable || wasShareable) {
+          const listIds =
+            note.target.kind === "list"
+              ? [note.target.listId]
+              : await this.listIdsForPlace(note.target.placeId);
+          for (const listId of listIds) {
+            await this.dirtyListPublications(listId, note.updatedAt);
+          }
+        }
+      },
+    );
   }
 
   private async tombstoneNote(note: Note, now: string): Promise<void> {
     await this.db.notes.put(toNoteRow({ ...note, deleted: true, updatedAt: now }));
+    // A deleted note's standalone public page queues its removal.
+    await this.revokePublicationsFor({ kind: "note", id: note.id }, now);
     // A deleted note disappears from every attachment…
     const attachments = (
       await this.db.blockNoteAttachments.where("noteId").equals(note.id).toArray()
@@ -462,10 +597,26 @@ export class DexieRepository implements PlacemarksRepository {
   async deleteNote(noteId: string, now: string): Promise<void> {
     await this.db.transaction(
       "rw",
-      [this.db.notes, this.db.blockNoteAttachments, this.db.listBlocks],
+      [
+        this.db.notes,
+        this.db.blockNoteAttachments,
+        this.db.listBlocks,
+        this.db.lists,
+        this.db.publications,
+        this.db.publicationOutbox,
+      ],
       async () => {
         const note = live(await this.db.notes.get(noteId));
-        if (note) await this.tombstoneNote(note, now);
+        if (!note) return;
+        await this.tombstoneNote(note, now);
+        // The note vanishes from every hosted guide projection containing it.
+        const listIds =
+          note.target.kind === "list"
+            ? [note.target.listId]
+            : await this.listIdsForPlace(note.target.placeId);
+        for (const listId of listIds) {
+          await this.dirtyListPublications(listId, now);
+        }
       },
     );
   }
@@ -494,7 +645,9 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async getList(id: string): Promise<List | undefined> {
-    return live(await this.db.lists.get(id));
+    const row = live(await this.db.lists.get(id));
+    // Normalized shape: a live list is explicitly not tombstoned.
+    return row ? { ...row, deleted: undefined } : undefined;
   }
 
   async createList(list: List): Promise<void> {
@@ -534,11 +687,15 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.notes,
         this.db.places,
         this.db.tagAssignments,
+        this.db.publications,
+        this.db.publicationOutbox,
       ],
       async () => {
         const list = live(await this.db.lists.get(listId));
         if (!list) return;
         await this.db.lists.put({ ...list, deleted: true, updatedAt: now });
+        // The public guide comes down with the list — durably, not orphaned.
+        await this.revokePublicationsFor({ kind: "list", id: listId }, now);
         const blocks = (await this.db.listBlocks.where("listId").equals(listId).toArray()).filter(
           (b) => !b.deleted,
         );
@@ -684,13 +841,26 @@ export class DexieRepository implements PlacemarksRepository {
             // Current-ref match refreshes evidence; a historical-ref match means
             // the element was replaced — reuse the place, keep the newer binding.
             if (found.currentOsmRef && sameRef(found.currentOsmRef, poi.osmRef)) {
-              place = {
-                ...found,
-                lastVerified: evidenceFromPoi(poi),
-                resolutionState: "resolved",
-                lastResolutionAttemptAt: now,
-                updatedAt: now,
-              };
+              if (found.lastVerified && !plausiblySameElement(found.lastVerified, poi)) {
+                // The element id survives but the observation no longer looks
+                // like the same real-world place (repurposed id). Keep the
+                // copied evidence untouched and flag for explicit review —
+                // never silently overwrite what the user saved.
+                place = {
+                  ...found,
+                  resolutionState: "needs-review",
+                  lastResolutionAttemptAt: now,
+                  updatedAt: now,
+                };
+              } else {
+                place = {
+                  ...found,
+                  lastVerified: evidenceFromPoi(poi),
+                  resolutionState: "resolved",
+                  lastResolutionAttemptAt: now,
+                  updatedAt: now,
+                };
+              }
               await this.db.places.put(toPlaceRow(place));
             } else {
               place = found;
@@ -767,32 +937,51 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async moveBlock(blockId: string, beforeBlockId: string | null, now: string): Promise<void> {
-    let touchedListId: string | undefined;
-    await this.db.transaction("rw", [this.db.listBlocks], async () => {
-      const block = live(await this.db.listBlocks.get(blockId));
-      if (!block) throw new Error("block not found");
-      touchedListId = block.listId;
-      const siblings = (await this.liveBlocks(block.listId)).filter((b) => b.id !== blockId);
-      let rank: string;
-      if (beforeBlockId === null) {
-        rank = rankAfter(
-          siblings.length > 0 ? (siblings[siblings.length - 1]?.rank ?? null) : null,
-        );
-      } else {
-        const index = siblings.findIndex((b) => b.id === beforeBlockId);
-        if (index === -1) throw new Error("target block not found");
-        const before = index > 0 ? (siblings[index - 1]?.rank ?? null) : null;
-        rank = rankBetween(before, siblings[index]?.rank ?? null);
-      }
-      await this.db.listBlocks.put({ ...block, rank, updatedAt: now });
-    });
-    if (touchedListId) await this.dirtyListPublications(touchedListId, now);
+    // The reorder and its publication dirtying commit (or fail) together.
+    await this.db.transaction(
+      "rw",
+      [this.db.listBlocks, this.db.lists, this.db.publications, this.db.publicationOutbox],
+      async () => {
+        const block = live(await this.db.listBlocks.get(blockId));
+        if (!block) throw new Error("block not found");
+        const siblings = (await this.liveBlocks(block.listId)).filter((b) => b.id !== blockId);
+        let rank: string;
+        if (beforeBlockId === null) {
+          rank = rankAfter(
+            siblings.length > 0 ? (siblings[siblings.length - 1]?.rank ?? null) : null,
+          );
+        } else {
+          const index = siblings.findIndex((b) => b.id === beforeBlockId);
+          if (index === -1) throw new Error("target block not found");
+          const before = index > 0 ? (siblings[index - 1]?.rank ?? null) : null;
+          rank = rankBetween(before, siblings[index]?.rank ?? null);
+        }
+        await this.db.listBlocks.put({ ...block, rank, updatedAt: now });
+        await this.dirtyListPublications(block.listId, now);
+      },
+    );
   }
 
   async removeBlock(blockId: string, now: string): Promise<void> {
-    const touched = live(await this.db.listBlocks.get(blockId))?.listId;
-    await this.removeBlockInner(blockId, now);
-    if (touched) await this.dirtyListPublications(touched, now);
+    // The removal cascade and its publication dirtying are one commit.
+    await this.db.transaction(
+      "rw",
+      [
+        this.db.listBlocks,
+        this.db.blockNoteAttachments,
+        this.db.notes,
+        this.db.places,
+        this.db.tagAssignments,
+        this.db.lists,
+        this.db.publications,
+        this.db.publicationOutbox,
+      ],
+      async () => {
+        const touched = live(await this.db.listBlocks.get(blockId))?.listId;
+        await this.removeBlockInner(blockId, now);
+        if (touched) await this.dirtyListPublications(touched, now);
+      },
+    );
   }
 
   private async removeBlockInner(blockId: string, now: string): Promise<void> {
@@ -843,6 +1032,11 @@ export class DexieRepository implements PlacemarksRepository {
         }
         const note = live(await this.db.notes.get(noteId));
         if (!note) throw new Error("note not found");
+        // Attaching puts the note into the guide — only shareable notes may
+        // enter a shareable surface (book/src/notes.md §Share eligibility).
+        if (!note.shareable) {
+          throw new Error("only shareable notes can be attached to a guide block");
+        }
         // The invariant: an attached note is about the SAME place as the block.
         if (note.target.kind !== "place" || note.target.placeId !== block.content.placeId) {
           throw new Error("note targets a different place than this block");

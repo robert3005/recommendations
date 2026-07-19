@@ -1,5 +1,24 @@
 # Open Data Sources
 
+> **Adapter and deployment decisions (2026-07-19).**
+>
+> - Provider adapters own resilience policy so callers never re-create it: result budgets bind
+>   locally even when an upstream ignores its limit; Photon retries one transient 5xx; Overpass
+>   coalesces concurrent identical viewport queries and negative-caches identical empty
+>   viewports for five minutes.
+> - A production build fails closed not only on missing provider variables but on the known
+>   development/demo hosts (photon.komoot.io, overpass-api.de, api.openstreetmap.org,
+>   tiles.openfreemap.org, demotiles.maplibre.org) — copying dev URLs into env vars is not a
+>   production provider path.
+> - Settings carries the per-provider privacy disclosure: what each request contains (tile
+>   coordinates + network metadata; search text + location bias; bounding boxes / element ids),
+>   what never leaves the device (note bodies, list names, tags), direct-vs-proxied routing, and
+>   retention.
+> - A checked-in `_headers` file gives the app and every public viewer one restrictive
+>   document-level Content-Security-Policy (self-only scripts, no eval, `object-src 'none'`).
+> - Map-surface attribution is a live link to openstreetmap.org/copyright wherever OSM-derived
+>   facts are presented — on the map control, public guide pages, and note pages.
+
 All **live** geographic facts come from OpenStreetMap or OSM-derived services. Placemarks does not
 create a second public POI database. It stores bounded OSM observations for identity/offline
 recovery and directs corrections upstream.

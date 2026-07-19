@@ -26,4 +26,12 @@ describe("Phase 6 privacy and recovery", () => {
 
     expect(shouldRemindBackup(3, "2026-07-19T12:00:00.000Z", storage)).toBe(true);
   });
+
+  it("does not let a future backup timestamp suppress reminders after a clock correction", () => {
+    const storage = {
+      getItem: () => "2036-07-19T12:00:00.000Z",
+    };
+
+    expect(shouldRemindBackup(3, "2026-07-19T12:00:00.000Z", storage)).toBe(true);
+  });
 });

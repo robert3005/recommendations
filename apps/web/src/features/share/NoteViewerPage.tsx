@@ -52,7 +52,16 @@ function NotePlaceContext({
       ) : null}
       {anchor.kind === "manual" ? null : (
         <span className="mt-1 block text-[11px] text-stone-400">
-          Place facts © OpenStreetMap contributors (ODbL)
+          Place facts{" "}
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline"
+          >
+            © OpenStreetMap contributors
+          </a>{" "}
+          (ODbL)
         </span>
       )}
     </div>

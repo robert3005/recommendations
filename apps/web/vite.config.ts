@@ -11,16 +11,39 @@ const REQUIRED_PROVIDER_VARS = [
   "VITE_OVERPASS_URL",
 ] as const;
 
+/** The community/demo hosts the book designates development-only. */
+const DEVELOPMENT_ONLY_HOSTS = [
+  "photon.komoot.io",
+  "overpass-api.de",
+  "api.openstreetmap.org",
+  "master.apis.dev.openstreetmap.org",
+  "tiles.openfreemap.org",
+  "demotiles.maplibre.org",
+] as const;
+
 export default defineConfig(({ command, mode }) => {
   // Storybook's static build is a component workshop, never a deployment.
   if (command === "build" && mode === "production" && !process.env.PLACEMARKS_STORYBOOK) {
     const env = loadEnv(mode, process.cwd(), "VITE_");
-    const missing = REQUIRED_PROVIDER_VARS.filter((key) => !env[key] && !process.env[key]);
+    const valueOf = (key: string) => env[key] ?? process.env[key];
+    const missing = REQUIRED_PROVIDER_VARS.filter((key) => !valueOf(key));
     if (missing.length > 0) {
       throw new Error(
         `production build fails closed: missing provider configuration ${missing.join(", ")} — ` +
           "public/demo OSM endpoints are development-only (book/src/data-sources.md); point " +
           "every VITE_ provider variable at a contracted or self-hosted deployment.",
+      );
+    }
+    // Copying the development/demo URLs into env vars is not a production
+    // provider path — the public community services must not carry deployments.
+    const demo = REQUIRED_PROVIDER_VARS.filter((key) =>
+      DEVELOPMENT_ONLY_HOSTS.some((host) => (valueOf(key) ?? "").includes(host)),
+    );
+    if (demo.length > 0) {
+      throw new Error(
+        `production build fails closed: ${demo.join(", ")} point at development/demo provider ` +
+          "endpoints (book/src/data-sources.md); a production provider path must be a contracted " +
+          "or self-hosted deployment.",
       );
     }
   }

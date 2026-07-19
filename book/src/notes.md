@@ -46,6 +46,10 @@ Markdown → CommonMark/GFM parser → HTML → sanitizer → safe rendered cont
 
 ## Images and media
 
+> **Implementation decision (2026-07-19).** Image import REQUIRES the canvas re-encode (WebP,
+> EXIF/location stripped). Where no re-encode path exists or decoding fails, the import is
+> rejected — the original bytes (and their embedded location) are never retained.
+
 Markdown references images through stable asset ids:
 
 ```markdown
