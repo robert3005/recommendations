@@ -67,15 +67,59 @@ describe("Phase 5 failed-revocation retry", () => {
         lastError: publication.lastError,
       });
 
+      // Hold the component's first outbox lookup open. Publication state is
+      // already available, so the Retry control can render while its action is
+      // still unknown. The book requires that this window never defaults to a
+      // publish: Retry must be disabled until the pending DELETE is known, or
+      // otherwise resolve the operation before acting.
+      const realToArray = repo.db.publicationOutbox.toArray.bind(repo.db.publicationOutbox);
+      let releaseLookup!: () => void;
+      let markLookupStarted!: () => void;
+      const lookupStarted = new Promise<void>((resolve) => {
+        markLookupStarted = resolve;
+      });
+      const lookupGate = new Promise<void>((resolve) => {
+        releaseLookup = resolve;
+      });
+      const delayedToArray = (async () => {
+        markLookupStarted();
+        await lookupGate;
+        return realToArray();
+      }) as unknown as typeof repo.db.publicationOutbox.toArray;
+      vi.spyOn(repo.db.publicationOutbox, "toArray")
+        .mockImplementationOnce(delayedToArray)
+        .mockImplementation(realToArray);
+
       const view = render(
         createElement(RepoProvider, { repo }, createElement(PublishControls, { listId: "list-1" })),
       );
-      await userEvent.click(await screen.findByRole("button", { name: /^retry$/i }));
+      await lookupStarted;
+      // Hiding Retry until its operation is known is just as safe as disabling
+      // it. If the UI exposes an enabled control during the lookup, activate
+      // that exact race window and prove it still cannot publish.
+      const earlyRetry = screen.queryByRole("button", { name: /^retry$/i });
+      const activatedEarly = Boolean(earlyRetry && !earlyRetry.hasAttribute("disabled"));
+      if (activatedEarly && earlyRetry) await userEvent.click(earlyRetry);
+      releaseLookup();
+
+      // A safely hidden/disabled control becomes actionable only after its
+      // DELETE meaning is known.
+      if (!activatedEarly) {
+        const retry = await screen.findByRole("button", { name: /^retry$/i });
+        await waitFor(() => expect(retry).toBeEnabled());
+        await userEvent.click(retry);
+      }
 
       await waitFor(async () => {
         await expect(repo.db.publications.get(publication.id)).resolves.toMatchObject({
           status: "revoked",
         });
+      });
+      // Wait for the chosen action to drain completely. Without this, the
+      // erroneous path can momentarily mark the DELETE successful and only
+      // issue its forbidden PUT on the next microtask.
+      await waitFor(async () => {
+        await expect(repo.db.publicationOutbox.count()).resolves.toBe(0);
       });
       // A retry may perform a harmless public read, but it must not turn the
       // failed revoke into a POST/PUT. The only mutation is the original

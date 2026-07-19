@@ -19,6 +19,15 @@ describe("Phase 6 privacy and recovery", () => {
     expect(detail).not.toContain("family-trip");
   });
 
+  it("redacts precise coordinates when a failing URL percent-encodes its decimal points", () => {
+    const detail = redact(
+      "resolver failed at https://geo.example/nearby?lat=38%2E713944&lng=-9%2E139412",
+    );
+
+    expect(detail).not.toContain("38%2E713944");
+    expect(detail).not.toContain("-9%2E139412");
+  });
+
   it("treats a corrupt last-backup timestamp as no usable backup", () => {
     const storage = {
       getItem: () => "not-an-iso-timestamp",

@@ -5,6 +5,7 @@
  */
 import { refKey } from "@placemarks/domain";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
 import { useLists, usePlaceForRef } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import { newId } from "../../lib/id";
@@ -18,8 +19,17 @@ import { PlaceFields } from "./PlaceFields";
 
 function SheetShell({ children, label }: { children: React.ReactNode; label: string }) {
   const clearSelection = useUiStore((s) => s.clearSelection);
+  // Modal focus: enter the sheet on open, return to the invoker on close.
+  const sheetRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    sheetRef.current?.focus();
+    return () => previous?.focus();
+  }, []);
   return (
     <section
+      ref={sheetRef}
+      tabIndex={-1}
       role="dialog"
       aria-label={label}
       className="absolute inset-x-0 bottom-0 z-20 max-h-[60%] overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-4 shadow-xl md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-2xl"

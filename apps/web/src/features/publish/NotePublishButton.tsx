@@ -12,7 +12,20 @@ import { publicationForNote, publishNote, revokePublication } from "./publicatio
 export function NotePublishButton({ note }: { note: Note }) {
   const repo = useDexieRepo();
   const [busy, setBusy] = useState(false);
+  const [preflight, setPreflight] = useState(false);
   const publication = useLiveQuery(() => publicationForNote(repo, note.id), [repo, note.id]);
+  // The disclosure names where the note lives (its list or place context).
+  const contextTitle = useLiveQuery(async () => {
+    try {
+      if (note.target.kind === "list") {
+        return (await repo.getList(note.target.listId))?.name;
+      }
+      const place = await repo.getPlace(note.target.placeId);
+      return place ? (place.lastVerified?.name ?? place.manual?.name) : undefined;
+    } catch {
+      return undefined; // database closing during teardown
+    }
+  }, [repo, note.target]);
   // The page stays reachable (and recoverable) through a failed update — the
   // last published revision is still public until revoked.
   const hasPage = Boolean(
@@ -61,17 +74,56 @@ export function NotePublishButton({ note }: { note: Note }) {
         disabled={busy}
         data-testid="publish-note"
         onClick={() => {
+          if (!hasPage || !publication) {
+            // First publish creates a public link — stop for the exact
+            // disclosure before anything leaves the device.
+            setPreflight(true);
+            return;
+          }
           setBusy(true);
-          const action =
-            hasPage && publication
-              ? revokePublication(repo, publication.id, nowIso())
-              : publishNote(repo, note, note.title ?? "A shared note", nowIso());
-          void action.finally(() => setBusy(false));
+          void revokePublication(repo, publication.id, nowIso()).finally(() => setBusy(false));
         }}
         className="rounded px-1.5 text-xs text-stone-500 hover:bg-stone-200 disabled:opacity-40"
       >
         {hasPage ? "Unpublish page" : "Publish page"}
       </button>
+      {preflight ? (
+        <div
+          className="w-full rounded border border-stone-200 bg-stone-50 p-2 text-xs"
+          data-testid="note-publish-preflight"
+        >
+          <p className="font-medium text-stone-800">
+            Exactly this becomes a public read-only page:
+          </p>
+          {note.title ? <p className="mt-1 font-medium text-stone-900">{note.title}</p> : null}
+          {contextTitle ? <p className="text-stone-500">{contextTitle}</p> : null}
+          <p className="mt-1 whitespace-pre-wrap text-stone-700">{note.body}</p>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              data-testid="confirm-publish-note"
+              onClick={() => {
+                setPreflight(false);
+                setBusy(true);
+                void publishNote(repo, note, note.title ?? "A shared note", nowIso()).finally(() =>
+                  setBusy(false),
+                );
+              }}
+              className="rounded bg-stone-800 px-2 py-0.5 font-medium text-white disabled:opacity-40"
+            >
+              Confirm &amp; publish
+            </button>
+            <button
+              type="button"
+              onClick={() => setPreflight(false)}
+              className="rounded px-2 py-0.5 text-stone-600 hover:bg-stone-200"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

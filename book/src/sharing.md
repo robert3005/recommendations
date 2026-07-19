@@ -235,6 +235,16 @@ not include them.
 >   unique winner; disagreeing winners render as ambiguity. Snapshot generation also enforces the
 >   decoder's inflated-size limit, the preview names every omitted image and stable-id key, and
 >   the disclosed link size is the final URL's.
+> - **Convergence, refined (2026-07-19, late):** a high-confidence winner in one epoch is accepted
+>   when the other epoch does not contradict it — it names the same winner, lists it among its
+>   plausible candidates, or its own observation is still plausibly the same real-world place.
+>   An epoch that actively points elsewhere (moved + renamed) makes the recovery ambiguous. The
+>   same rule governs offline local-evidence reuse when importing a shared guide.
+> - **Retry knows its meaning first.** A failed publication's Retry control stays disabled until
+>   the outbox has answered whether an unpublish is pending — the unknown window can never default
+>   to a publish. First-publishing a NOTE page also stops for the exact-prose preflight.
+> - **Selection follows resolution.** In the public viewer, selecting an article entry recentres
+>   at the live-resolved coordinates when resolution succeeded, never stale copied ones.
 
 ## Public guide viewer
 
@@ -308,6 +318,12 @@ DELETE /s/lists/:slug
   token + key completes the original create on retry.
 - Public `GET`/`304` responses carry a stable per-publication `Surrogate-Key` so an update or
   revoke can purge every cached representation deterministically.
+- Each create and update commits as ONE transactional storage unit (a D1 batch): audit entry,
+  idempotency-key reservation, the document write, and — last, as the commit acknowledgement —
+  the replayable success record. An interrupted commit leaves nothing durable and re-executes.
+- The schema keeps an append-only `document_revisions` store (trigger-populated) as internal
+  version backups. Internal audit entries and version backups are retained for **90 days**, then
+  purged (services/share/OPERATIONS.md); they are never publicly addressable.
 - `DELETE` counts against the same per-token mutation quota as create and update.
 - Every `/s/*` response (not just the preflight) carries the CORS grant for the separately hosted
   web client.

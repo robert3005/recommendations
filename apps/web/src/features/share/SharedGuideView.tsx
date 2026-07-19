@@ -110,11 +110,20 @@ export function SharedGuideView({
     setSelectedBlockId(blockId);
     entryRefs.current.get(blockId)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
+  const shownCoords = (row: DisplayRow): { lat: number; lng: number } | undefined => {
+    // A successful live resolve moves the pin — selection and recentring
+    // follow the resolved coordinates, never stale copied ones.
+    const live = resolutions[row.blockId];
+    const poi = live?.state === "live" || live?.state === "recovered" ? live.poi : undefined;
+    if (poi) return { lat: poi.lat, lng: poi.lng };
+    return row.lat !== undefined && row.lng !== undefined
+      ? { lat: row.lat, lng: row.lng }
+      : undefined;
+  };
   const selectFromArticle = (row: DisplayRow) => {
     setSelectedBlockId(row.blockId);
-    if (row.lat !== undefined && row.lng !== undefined) {
-      setFlyTarget({ lat: row.lat, lng: row.lng, zoom: 16 });
-    }
+    const coords = shownCoords(row);
+    if (coords) setFlyTarget({ ...coords, zoom: 16 });
   };
 
   useEffect(() => {
@@ -160,9 +169,7 @@ export function SharedGuideView({
           poiPins={[]}
           selectionPin={(() => {
             const selected = rows.find((row) => row.blockId === selectedBlockId);
-            return selected?.lat !== undefined && selected.lng !== undefined
-              ? { lat: selected.lat, lng: selected.lng }
-              : null;
+            return selected ? (shownCoords(selected) ?? null) : null;
           })()}
           flyTo={flyTarget}
           onSelectPlace={selectFromMap}

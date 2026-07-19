@@ -219,26 +219,27 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         return c.text("slug already taken", 409, MUTATION_HEADERS);
       };
       if (await storage.get(kind, slug)) return collision();
-      // Everything durable precedes the public claim: audit, then the key
-      // reservation, then the replayable result, then the document itself. An
-      // interrupted create leaves no public document; because the audit
-      // strictly precedes the reservation, a retry that finds the reservation
-      // knows the audit already landed and never duplicates it.
-      if (!replay) await storage.audit({ at, slug, kind, action: "create", revision: 1 });
-      await storage.putIdempotent({ key: scopedKey, response: "", status: 0 });
+      // The whole first-publish transition is ONE storage commit: audit → key
+      // reservation → atomic slug claim → replayable success. The success
+      // record is the commit acknowledgement, so it lands last; an interrupted
+      // commit leaves nothing durable and simply re-executes on retry.
       const response = JSON.stringify({ slug, revision: 1 });
-      await storage.putIdempotent({ key: scopedKey, response, status: 201 });
-      const created = await storage.create({
-        slug,
-        kind,
-        revision: 1,
-        tokenHash,
-        body: documentBody,
-        createdAt: at,
-        updatedAt: at,
-        revoked: false,
+      const committed = await storage.createCommit({
+        audit: { at, slug, kind, action: "create", revision: 1 },
+        reservationKey: scopedKey,
+        document: {
+          slug,
+          kind,
+          revision: 1,
+          tokenHash,
+          body: documentBody,
+          createdAt: at,
+          updatedAt: at,
+          revoked: false,
+        },
+        response,
       });
-      if (!created) return collision();
+      if (committed === "collision") return collision();
       return c.body(response, 201, {
         ...MUTATION_HEADERS,
         "Content-Type": "application/json; charset=utf-8",
@@ -352,33 +353,35 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         return c.text("mutation refused", auth.status, MUTATION_HEADERS);
       }
       const at = now();
-      // Audit and the key reservation precede the commit: a revision must not
-      // exist without either (a failed write aborts with nothing changed). The
-      // replayable SUCCESS record lands only after the document write — a
-      // failed write must re-execute, never phantom-replay success.
-      await storage.audit({
-        at,
-        slug: auth.slug,
+      // The whole update transition is ONE storage commit: audit → key
+      // reservation → conditional revision write → replayable success. An
+      // interrupted commit leaves nothing durable; the success record is the
+      // acknowledgement and lands last.
+      const response = JSON.stringify({ slug: auth.slug, revision: auth.expected + 1 });
+      const result = await storage.updateCommit({
+        audit: { at, slug: auth.slug, kind, action: "update", revision: auth.expected + 1 },
+        reservationKey: scopedKey,
         kind,
-        action: "update",
-        revision: auth.expected + 1,
+        slug: auth.slug,
+        expectedRevision: auth.expected,
+        body: serialized,
+        updatedAt: at,
+        response,
       });
-      await storage.putIdempotent({ key: scopedKey, response: "", status: 0 });
-      const result = await storage.update(kind, auth.slug, auth.expected, serialized, at);
-      if (result === "missing" || result === "conflict") {
-        const status = result === "missing" ? 404 : 412;
-        await storage.putIdempotent({
-          key: scopedKey,
-          response: result === "missing" ? "not found" : "stale revision",
-          status,
-        });
-        return c.text(result === "missing" ? "not found" : "stale revision", status, {
-          ...MUTATION_HEADERS,
-        });
+      if (result === "missing") return c.text("not found", 404, MUTATION_HEADERS);
+      if (result === "conflict") {
+        // A concurrent identical retry converges on the winner's committed
+        // result rather than reporting its own lost race as failure.
+        const winner = await storage.getIdempotent(scopedKey);
+        if (winner && winner.status >= 200) {
+          return c.body(winner.response, winner.status as 200, {
+            ...MUTATION_HEADERS,
+            "Content-Type": "application/json; charset=utf-8",
+          });
+        }
+        return c.text("stale revision", 412, MUTATION_HEADERS);
       }
-      const response = JSON.stringify({ slug: auth.slug, revision: result.revision });
-      await storage.putIdempotent({ key: scopedKey, response, status: 200 });
-      return c.body(response, 200, {
+      return c.body(JSON.stringify({ slug: auth.slug, revision: result.revision }), 200, {
         ...MUTATION_HEADERS,
         "Content-Type": "application/json; charset=utf-8",
       });

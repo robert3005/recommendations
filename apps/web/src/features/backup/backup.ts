@@ -93,6 +93,20 @@ export async function exportBackup(repo: DexieRepository, exportedAt: string): P
     checksums[name] = await sha256Hex(files[name]);
   }
 
+  // A successful export must be restorable: refuse up front when the archive
+  // would exceed the import resource caps.
+  let inflatedTotal = 0;
+  for (const fileBytes of Object.values(files)) inflatedTotal += fileBytes.byteLength;
+  if (inflatedTotal > INFLATED_BYTE_LIMIT) {
+    throw new Error(
+      `this library is ${Math.ceil(inflatedTotal / (1024 * 1024))} MiB uncompressed — over the ` +
+        `${INFLATED_BYTE_LIMIT / (1024 * 1024)} MiB restore size limit; export refused`,
+    );
+  }
+  if (Object.keys(files).length + 1 > ARCHIVE_ENTRY_LIMIT) {
+    throw new Error("this library exceeds the archive entry limit — export refused");
+  }
+
   const manifest = {
     app: "placemarks" as const,
     schemaVersion: BACKUP_SCHEMA_VERSION,
@@ -360,6 +374,12 @@ function validateGraph(
           `attachment ${row.id} joins a note to a block about a different place — graph refused`,
         );
       }
+      // Attachment implies guide membership: only shareable notes qualify.
+      if ((note as { shareable?: boolean }).shareable !== true) {
+        throw new Error(
+          `attachment ${row.id} joins a private (non-shareable) note to a guide — graph refused`,
+        );
+      }
     }
   }
 
@@ -511,7 +531,10 @@ async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData):
   }
 
   // Every live note must target a live row in the final state.
-  type NoteLike = Aged & { target?: { kind?: string; placeId?: string; listId?: string } };
+  type NoteLike = Aged & {
+    shareable?: boolean;
+    target?: { kind?: string; placeId?: string; listId?: string };
+  };
   const noteById = lww(
     (await repo.db.notes.toArray()) as unknown as NoteLike[],
     data.notes as unknown as NoteLike[],
@@ -556,7 +579,8 @@ async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData):
       !note ||
       note.deleted ||
       note.target?.kind !== "place" ||
-      note.target.placeId !== blockPlace
+      note.target.placeId !== blockPlace ||
+      note.shareable !== true
     ) {
       throw new Error(
         `merging would leave attachment ${attachment.id} joining a note to a block about a different place — refusing`,
@@ -607,28 +631,25 @@ const u32 = (bytes: Uint8Array, at: number): number =>
   ((bytes[at] ?? 0) | ((bytes[at + 1] ?? 0) << 8) | ((bytes[at + 2] ?? 0) << 16)) +
   (bytes[at + 3] ?? 0) * 0x1000000;
 
-/** Entry count from the ZIP end-of-central-directory record (0 if not found). */
-function declaredZipEntryCount(bytes: Uint8Array): number {
-  const eocd = findEocd(bytes);
-  return eocd < 0 ? 0 : u16(bytes, eocd + 10);
-}
-
 /**
- * The uncompressed total the central directory itself declares — checked
- * BEFORE any decompression so a bomb is refused without inflating a byte.
+ * The bounds the ZIP central directory itself declares — parsed strictly and
+ * BEFORE any decompression. A directory that cannot be walked as declared is
+ * "invalid", never interpreted as declaring zero.
  */
-function declaredZipInflatedTotal(bytes: Uint8Array): number {
+function declaredZipDirectory(
+  bytes: Uint8Array,
+): { entryCount: number; inflatedTotal: number } | "missing" | "invalid" {
   const eocd = findEocd(bytes);
-  if (eocd < 0) return 0;
-  const count = u16(bytes, eocd + 10);
+  if (eocd < 0) return "missing";
+  const entryCount = u16(bytes, eocd + 10);
   let offset = u32(bytes, eocd + 16);
-  let total = 0;
-  for (let i = 0; i < count; i += 1) {
-    if (offset + 46 > bytes.length || u32(bytes, offset) !== 0x02014b50) break;
-    total += u32(bytes, offset + 24);
+  let inflatedTotal = 0;
+  for (let i = 0; i < entryCount; i += 1) {
+    if (offset + 46 > bytes.length || u32(bytes, offset) !== 0x02014b50) return "invalid";
+    inflatedTotal += u32(bytes, offset + 24);
     offset += 46 + u16(bytes, offset + 28) + u16(bytes, offset + 30) + u16(bytes, offset + 32);
   }
-  return total;
+  return { entryCount, inflatedTotal };
 }
 
 export async function importBackup(
@@ -641,12 +662,19 @@ export async function importBackup(
     throw new Error("backup archive is too large — refusing to read it");
   }
   const bytes = await blobBytes(file);
-  // Declared bounds are enforced before any decompression work.
-  if (declaredZipEntryCount(bytes) > ARCHIVE_ENTRY_LIMIT) {
-    throw new Error("backup entry count exceeds the limit — refusing to import");
+  // Declared bounds are enforced before any decompression work — and a
+  // directory that cannot be walked as declared is refused outright.
+  const declared = declaredZipDirectory(bytes);
+  if (declared === "invalid") {
+    throw new Error("backup central directory is invalid — refusing to import");
   }
-  if (declaredZipInflatedTotal(bytes) > INFLATED_BYTE_LIMIT) {
-    throw new Error("backup declares an uncompressed size beyond the limit — refusing to import");
+  if (declared !== "missing") {
+    if (declared.entryCount > ARCHIVE_ENTRY_LIMIT) {
+      throw new Error("backup entry count exceeds the limit — refusing to import");
+    }
+    if (declared.inflatedTotal > INFLATED_BYTE_LIMIT) {
+      throw new Error("backup declares an uncompressed size beyond the limit — refusing to import");
+    }
   }
   let entries: Record<string, Uint8Array>;
   try {
@@ -657,7 +685,7 @@ export async function importBackup(
   // The central directory's own entry count also bounds the archive — the
   // keyed extraction collapses duplicate member names and would undercount.
   const names = Object.keys(entries);
-  if (Math.max(names.length, declaredZipEntryCount(bytes)) > ARCHIVE_ENTRY_LIMIT) {
+  if (names.length > ARCHIVE_ENTRY_LIMIT) {
     throw new Error("backup entry count exceeds the limit — refusing to import");
   }
   let inflated = 0;
@@ -841,6 +869,7 @@ export async function importBackup(
         }
       }
 
+      const skippedBlockTargets = new Map<string, string>();
       for (const [key, table] of tables) {
         for (const incoming of data[key]) {
           // Rewritten edges must not violate repository uniqueness invariants:
@@ -858,7 +887,13 @@ export async function importBackup(
               const clash = siblings.find(
                 (b) => !b.deleted && b.kind === "place" && b.refId === row.refId && b.id !== row.id,
               );
-              if (clash) continue;
+              if (clash) {
+                // The membership already exists locally — the incoming
+                // duplicate is skipped and its dependents follow the retained
+                // block instead of dangling.
+                skippedBlockTargets.set(row.id, clash.id);
+                continue;
+              }
             }
           }
           if (key === "tagAssignments") {
@@ -884,6 +919,9 @@ export async function importBackup(
               noteId: string;
               deleted?: boolean;
             };
+            // Follow a skipped duplicate membership onto its retained block.
+            const retainedBlock = skippedBlockTargets.get(row.blockId);
+            if (retainedBlock) row.blockId = retainedBlock;
             if (!row.deleted) {
               // One live edge per (block, note) — a re-identified duplicate
               // from another device must not double the attachment.

@@ -5,7 +5,7 @@
  */
 import type { SharedGuide } from "@placemarks/schemas";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useDexieRepo } from "../../data/RepoContext";
 import { nowIso } from "../../lib/time";
 import { projectGuide } from "../share/project";
@@ -30,17 +30,33 @@ export function PublishControls({ listId }: { listId: string }) {
       return false; // database closing during teardown
     }
   }, [repo, listId, publication?.lastPublishedLocalRevision]);
-  // A failed revocation retries its pending DELETE — never a publish.
-  const pendingRevoke = useLiveQuery(async () => {
-    if (!publication) return false;
-    try {
-      return (await repo.db.publicationOutbox.toArray()).some(
-        (job) => job.publicationId === publication.id && job.action === "revoke",
-      );
-    } catch {
-      return false; // database closing during teardown
-    }
-  }, [repo, publication?.id]);
+  // A failed revocation retries its pending DELETE — never a publish. The
+  // lookup is a plain read (not a live query): unknown stays undefined so
+  // Retry cannot enable — let alone default to a publish — before the outbox
+  // has actually answered.
+  const [pendingRevoke, setPendingRevoke] = useState<boolean | undefined>(undefined);
+  const publicationId = publication?.id;
+  const publicationStatus = publication?.status;
+  useEffect(() => {
+    let cancelled = false;
+    setPendingRevoke(undefined);
+    if (!publicationId) return;
+    repo.db.publicationOutbox
+      .toArray()
+      .then((jobs) => {
+        if (!cancelled) {
+          setPendingRevoke(
+            jobs.some((job) => job.publicationId === publicationId && job.action === "revoke"),
+          );
+        }
+      })
+      .catch(() => {
+        // database closing during teardown — stay unknown
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, publicationId, publicationStatus]);
 
   const act = (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -179,11 +195,14 @@ export function PublishControls({ listId }: { listId: string }) {
           ) : null}
           <button
             type="button"
-            disabled={busy}
+            // A failed state is ambiguous until the outbox says whether an
+            // unpublish is pending — Retry stays disabled until its meaning
+            // is known, so the window can never default to a publish.
+            disabled={busy || (status === "failed" && pendingRevoke === undefined)}
             onClick={() =>
               act(() =>
-                // A failed unpublish resumes its pending DELETE job; only a
-                // failed publish retries publishing.
+                // A pending DELETE job resumes; only a failed publish retries
+                // publishing.
                 pendingRevoke
                   ? revokePublication(repo, publication.id, nowIso())
                   : publishList(repo, listId, nowIso()),

@@ -7,6 +7,9 @@
 > no longer plausibly the same real-world place marks `needs-review` without touching the copied
 > evidence. Notes attach only to live targets, only shareable notes attach to guide blocks, and
 > retargeting a note tombstones its stale attachments in the same transaction.
+> Follow-ups (same day): link history is verbatim-append-only — an update keeps its history only
+> when the existing entries survive unchanged as its prefix; the fork guard and write run in one
+> transaction so concurrent upgrades serialize; and a retarget must land on a live aggregate.
 
 The model separates two kinds of data:
 

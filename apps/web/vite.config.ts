@@ -37,7 +37,8 @@ export default defineConfig(({ command, mode }) => {
     // Copying the development/demo URLs into env vars is not a production
     // provider path — the public community services must not carry deployments.
     const demo = REQUIRED_PROVIDER_VARS.filter((key) =>
-      DEVELOPMENT_ONLY_HOSTS.some((host) => (valueOf(key) ?? "").includes(host)),
+      // Host names are case-insensitive — normalize before matching.
+      DEVELOPMENT_ONLY_HOSTS.some((host) => (valueOf(key) ?? "").toLowerCase().includes(host)),
     );
     if (demo.length > 0) {
       throw new Error(

@@ -92,6 +92,44 @@ describe("Phase 4 public projection privacy", () => {
     }
   });
 
+  it("omits a reference-style remote image destination from the snapshot payload", async () => {
+    const repo = new DexieRepository(`phase4-reference-remote-image-${crypto.randomUUID()}`);
+    try {
+      await repo.createList({
+        id: "list-1",
+        name: "Remote media disclosure",
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      const place = await repo.addToList(
+        "list-1",
+        { kind: "manual", facts: { name: "Viewpoint", lat: 38.7, lng: -9.1 } },
+        NOW,
+      );
+      const privateDestination = "https://private.example/photos/family-trip.jpg";
+      await repo.createNote({
+        id: "note-1",
+        target: { kind: "place", placeId: place.place.id },
+        body: `A private photo: ![family][photo]\n\n[photo]: ${privateDestination}`,
+        mediaIds: [],
+        shareable: true,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+
+      const projection = await projectGuide(repo, "list-1");
+      if (!projection) throw new Error("projection missing");
+      const payload = JSON.stringify(projection.guide);
+
+      expect(payload).not.toContain(privateDestination);
+      expect(payload).toMatch(
+        /(?:image|photo)[^"\\n]{0,40}(?:omit|remove|unavailable)|(?:omit|remove)[^"\\n]{0,40}(?:image|photo)/i,
+      );
+    } finally {
+      repo.db.close();
+    }
+  });
+
   it("matches the SharedGuide schema in the book and does not add an undocumented colour field", async () => {
     const repo = new DexieRepository(`phase4-schema-drift-${crypto.randomUUID()}`);
     try {

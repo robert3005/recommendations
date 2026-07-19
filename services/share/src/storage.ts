@@ -35,10 +35,40 @@ export interface IdempotencyRecord {
   status: number;
 }
 
+/** One transactional first-publish commit: audit, key reservation, claim, ack. */
+export interface CreateCommit {
+  audit: AuditEntry;
+  reservationKey: string;
+  document: StoredDocument;
+  /** The replayable success body — stored (status 201) only after the claim. */
+  response: string;
+}
+
+/** One transactional update commit: audit, key reservation, conditional write, ack. */
+export interface UpdateCommit {
+  audit: AuditEntry;
+  reservationKey: string;
+  kind: "list" | "note";
+  slug: string;
+  expectedRevision: number;
+  body: string;
+  updatedAt: string;
+  /** The replayable success body — stored (status 200) only after the write. */
+  response: string;
+}
+
 export interface ShareStorage {
   get(kind: "list" | "note", slug: string): Promise<StoredDocument | undefined>;
   /** Atomic claim: fails (returns false) when the slug exists — live or tombstoned. */
   create(doc: StoredDocument): Promise<boolean>;
+  /**
+   * The whole first-publish transition as ONE unit: audit → key reservation →
+   * atomic slug claim → replayable success. An interrupted commit leaves
+   * nothing behind; the replayable record is the commit acknowledgement.
+   */
+  createCommit(input: CreateCommit): Promise<"created" | "collision">;
+  /** The whole update transition as ONE unit (same ordering guarantees). */
+  updateCommit(input: UpdateCommit): Promise<StoredDocument | "conflict" | "missing">;
   /** Conditional update: applies only when the stored revision matches; returns the new doc. */
   update(
     kind: "list" | "note",
@@ -80,6 +110,74 @@ export class MemoryStorage implements ShareStorage {
     if (this.docs.has(key)) return false;
     this.docs.set(key, doc);
     return true;
+  }
+
+  /** Snapshot/restore helpers give the in-memory adapter real commit atomicity. */
+  private commitSnapshot(docKey: string, reservationKey: string) {
+    const doc = this.docs.get(docKey);
+    const record = this.idempotency.get(reservationKey);
+    const auditLength = this.auditLog.length;
+    return () => {
+      if (doc) this.docs.set(docKey, doc);
+      else this.docs.delete(docKey);
+      if (record) this.idempotency.set(reservationKey, record);
+      else this.idempotency.delete(reservationKey);
+      this.auditLog.length = auditLength;
+    };
+  }
+
+  async createCommit(input: CreateCommit): Promise<"created" | "collision"> {
+    const restore = this.commitSnapshot(
+      this.key(input.document.kind, input.document.slug),
+      input.reservationKey,
+    );
+    try {
+      await this.audit(input.audit);
+      await this.putIdempotent({ key: input.reservationKey, response: "", status: 0 });
+      const created = await this.create(input.document);
+      if (!created) {
+        // The claim was lost — this attempt contributes nothing durable.
+        restore();
+        return "collision";
+      }
+      await this.putIdempotent({
+        key: input.reservationKey,
+        response: input.response,
+        status: 201,
+      });
+      return "created";
+    } catch (err) {
+      restore();
+      throw err;
+    }
+  }
+
+  async updateCommit(input: UpdateCommit): Promise<StoredDocument | "conflict" | "missing"> {
+    const restore = this.commitSnapshot(this.key(input.kind, input.slug), input.reservationKey);
+    try {
+      await this.audit(input.audit);
+      await this.putIdempotent({ key: input.reservationKey, response: "", status: 0 });
+      const result = await this.update(
+        input.kind,
+        input.slug,
+        input.expectedRevision,
+        input.body,
+        input.updatedAt,
+      );
+      if (result === "missing" || result === "conflict") {
+        restore();
+        return result;
+      }
+      await this.putIdempotent({
+        key: input.reservationKey,
+        response: input.response,
+        status: 200,
+      });
+      return result;
+    } catch (err) {
+      restore();
+      throw err;
+    }
   }
 
   async update(

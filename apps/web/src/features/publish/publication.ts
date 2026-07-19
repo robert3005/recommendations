@@ -221,38 +221,42 @@ export async function revokePublication(
   now: string,
   fetcher: typeof fetch = fetch,
 ): Promise<void> {
-  const exists = await repo.db.publications.get(publicationId);
-  if (!exists) return;
-  // The revocation state and its durable DELETE job are ONE local transition:
-  // a failed write leaves the prior state (and any publish marker) untouched,
-  // and the network never runs without a durable revoke job.
-  await repo.db.transaction("rw", [repo.db.publications, repo.db.publicationOutbox], async () => {
-    const publication = await repo.db.publications.get(publicationId);
-    if (!publication) return;
+  const prior = await repo.db.publications.get(publicationId);
+  if (!prior) return;
+  // The revocation state and its durable DELETE job are one local transition.
+  // Sequential writes with explicit compensation keep that guarantee without
+  // a multi-table transaction (which can deadlock under live-query zones): a
+  // failed write restores the prior publication state and any publish marker.
+  const jobs = await repo.db.publicationOutbox.toArray();
+  const priorJobs = jobs.filter((job) => job.publicationId === publicationId);
+  try {
     // An explicit revocation supersedes any unsent update — a failed draft
     // publish must never strand the unpublish.
-    const jobs = await repo.db.publicationOutbox.toArray();
-    for (const job of jobs) {
-      if (job.publicationId === publicationId && job.action === "publish") {
-        await repo.db.publicationOutbox.delete(job.id);
-      }
+    for (const job of priorJobs) {
+      if (job.action === "publish") await repo.db.publicationOutbox.delete(job.id);
     }
-    await repo.db.publications.put({ ...publication, status: "revoking", updatedAt: now });
+    await repo.db.publications.put({ ...prior, status: "revoking", updatedAt: now });
     // A failed earlier revocation retries under its original idempotency key.
-    const pendingRevoke = jobs.find(
-      (job) => job.publicationId === publicationId && job.action === "revoke",
-    );
-    if (!pendingRevoke) {
+    if (!priorJobs.some((job) => job.action === "revoke")) {
       await repo.db.publicationOutbox.put({
         id: newId(),
         publicationId,
         action: "revoke",
-        localRevision: publication.localRevision,
+        localRevision: prior.localRevision,
         createdAt: now,
         attempts: 0,
       });
     }
-  });
+  } catch (err) {
+    // Best-effort restoration of the pre-revocation state.
+    try {
+      await repo.db.publications.put(prior);
+      for (const job of priorJobs) await repo.db.publicationOutbox.put(job);
+    } catch {
+      // The original failure is the one to surface.
+    }
+    throw err;
+  }
   await runPublicationOutbox(repo, fetcher);
 }
 

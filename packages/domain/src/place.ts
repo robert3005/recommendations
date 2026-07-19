@@ -48,6 +48,7 @@ export interface ManualFacts {
   lng: number;
   category?: string;
   address?: string; // present on imported facts — Takeout carries addresses
+  website?: string; // imported interchange fidelity (GeoJSON round-trips)
   phone?: string; // imported interchange fidelity (GeoJSON round-trips)
   openingHours?: string;
 }
@@ -241,6 +242,7 @@ export function displayFacts(place: Place): DisplayFacts | undefined {
       lat: place.manual.lat,
       lng: place.manual.lng,
       ...(place.manual.address ? { address: place.manual.address } : {}),
+      ...(place.manual.website ? { website: place.manual.website } : {}),
       ...(place.manual.phone ? { phone: place.manual.phone } : {}),
       ...(place.manual.openingHours ? { openingHours: place.manual.openingHours } : {}),
       source: "manual",

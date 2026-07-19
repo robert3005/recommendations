@@ -145,12 +145,13 @@ export function MapView({
     updateViewData();
 
     // Any basemap failure — before or after the style loaded — surfaces the
-    // designed unavailable state; a successful render (idle) clears it, so a
-    // transient tile failure recovers with the connection.
+    // designed unavailable state. Clearing requires positive evidence of
+    // recovery (successful data traffic), never merely a failed request cycle
+    // going idle.
     map.on("error", () => {
       setUnavailable(true);
     });
-    map.on("idle", () => {
+    map.on("data", () => {
       setUnavailable(false);
     });
 

@@ -116,9 +116,16 @@ export function ListPage() {
     const fits = (chunk: ExportPlaceView[]): boolean =>
       new TextEncoder().encode(exportListKml(list, chunk)).byteLength <= MY_MAPS_FILE_LIMIT;
     const bySize = (chunk: ExportPlaceView[]): void => {
-      if (chunk.length <= 1 || fits(chunk)) {
+      if (fits(chunk)) {
         chunks.push(chunk);
         return;
+      }
+      if (chunk.length <= 1) {
+        // A single feature cannot be split — refusing beats emitting a file
+        // My Maps will reject.
+        throw new Error(
+          "one place's notes exceed the 5 MB My Maps file limit — trim the note and retry",
+        );
       }
       const mid = Math.ceil(chunk.length / 2);
       bySize(chunk.slice(0, mid));

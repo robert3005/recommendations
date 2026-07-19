@@ -109,7 +109,7 @@ Great bica, sit outside</description>
     const csv = exportListCsv(list, views);
     expect(csv).toBe(
       `Title,Note,URL,Address,Attribution
-Café Central,"Great bica, sit outside",https://www.openstreetmap.org/node/101,"Rua Example 12, Lisboa","Contains OSM-derived data © OpenStreetMap contributors, ODbL 1.0 (opendatacommons.org/licenses/odbl/1-0/)"
+Café Central,"Great bica, sit outside",https://www.openstreetmap.org/node/101,"Rua Example 12, Lisboa","Contains OSM-derived data © OpenStreetMap contributors, ODbL 1.0 (opendatacommons.org/licenses/odbl/1-0/) — source node/101"
 Dropped pin,,"https://www.google.com/maps/search/38.71,-9.15",,
 `,
     );

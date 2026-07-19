@@ -151,6 +151,9 @@ publication outbox, and shows the last successfully published revision. Public p
 > - **Guides and pages update together.** Editing a shareable note (or making it private) queues
 >   every hosted guide containing it as well as the standalone page — one edit, every affected
 >   public projection marked, none auto-published.
+> - **Deletion and privacy precedence.** Deleting a note (directly or through a list/place
+>   cascade) queues revocation of its standalone page, and making a note private deletes its
+>   pending publish jobs — the revocation supersedes every unsent page update.
 
 ## How notes build a guide
 

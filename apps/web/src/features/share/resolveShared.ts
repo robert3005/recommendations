@@ -77,19 +77,50 @@ export async function resolveSharedAnchor(
         candidates.push(candidate);
       }
     }
-    const winners = new Map<string, ResolvedPoi>();
-    let sawPlausible = false;
-    for (const source of epochs) {
-      const classified = classifyCandidates(source, candidates);
-      if (classified.kind === "auto") {
-        winners.set(refKey(classified.best.candidate.osmRef), classified.best.candidate);
-      }
-      if (classified.kind === "review") sawPlausible = true;
+    // Relink only when the epochs CONVERGE: a high-confidence winner in one
+    // epoch is accepted only when the other epoch supports the same element —
+    // as its own winner, or at least among its plausible candidates. One
+    // epoch's confidence against the other's contradiction is ambiguity.
+    const classifications = epochs.map((source) => classifyCandidates(source, candidates));
+    const winnerOf = (c: (typeof classifications)[number]): ResolvedPoi | undefined =>
+      c.kind === "auto" ? c.best.candidate : undefined;
+    const supports = (c: (typeof classifications)[number], ref: string): boolean =>
+      c.kind === "auto"
+        ? refKey(c.best.candidate.osmRef) === ref
+        : c.kind === "review"
+          ? c.candidates.some((scored) => refKey(scored.candidate.osmRef) === ref)
+          : false;
+    const [latestC, firstC] = classifications;
+    const latestWinner = latestC ? winnerOf(latestC) : undefined;
+    const firstWinner = firstC ? winnerOf(firstC) : undefined;
+    // A lone winner survives only when the other epoch does not contradict
+    // it: it supports the element outright, or its own observation is still
+    // plausibly the same real-world place as the winner.
+    const uncontradicted = (
+      other: (typeof classifications)[number] | undefined,
+      otherEvidence: OsmEvidence,
+      winner: ResolvedPoi,
+    ): boolean =>
+      (other !== undefined && supports(other, refKey(winner.osmRef))) ||
+      plausiblySameElement(otherEvidence, winner);
+    let converged: ResolvedPoi | undefined;
+    if (latestWinner && firstWinner) {
+      converged =
+        refKey(latestWinner.osmRef) === refKey(firstWinner.osmRef) ? latestWinner : undefined;
+    } else if (latestWinner) {
+      converged = uncontradicted(firstC, epochs[1] as OsmEvidence, latestWinner)
+        ? latestWinner
+        : undefined;
+    } else if (firstWinner) {
+      converged = uncontradicted(latestC, epochs[0] as OsmEvidence, firstWinner)
+        ? firstWinner
+        : undefined;
     }
-    const unique = winners.size === 1 ? [...winners.values()][0] : undefined;
-    if (unique) return { state: "recovered", poi: unique };
-    // Plausible-but-ambiguous replacements are not a disappearance verdict.
-    return winners.size > 1 || sawPlausible ? { state: "ambiguous" } : { state: "missing" };
+    if (converged) return { state: "recovered", poi: converged };
+    // Plausible-but-unconfirmed replacements are not a disappearance verdict.
+    return classifications.some((c) => c.kind !== "none")
+      ? { state: "ambiguous" }
+      : { state: "missing" };
   } catch {
     return { state: "evidence", reason: "error" };
   }

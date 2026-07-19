@@ -138,6 +138,11 @@ OSM place's id as an identity collision (linkage only ever gains OSM identity, n
 The archive's declared bounds (central-directory entry count and uncompressed totals) are checked
 before any decompression, and coalescing duplicate exact-OSM places grafts the dropped row's newer
 last-verified (and older first-seen) evidence onto the retained place instead of discarding it.
+A central directory that cannot be walked as declared is refused outright — never interpreted as
+declaring zero. Export itself fails closed when the archive would exceed the restore caps: a
+successful export is always restorable. Guide attachments restore only to shareable notes, and a
+merged duplicate membership block hands its attachments to the retained block instead of leaving
+them dangling.
 The user chooses merge or replace. Merge uses the place-deduplication order from
 [Durable Place Identity](./place-identity.md#import-and-deduplication): exact current or historical
 OSM references are coalesced before per-id merge, with incoming edges rewritten to the retained

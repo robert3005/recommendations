@@ -3,7 +3,14 @@
  * and conditional revision updates — not KV). Minimal structural typing keeps
  * the package free of a workers-types dependency.
  */
-import type { AuditEntry, IdempotencyRecord, ShareStorage, StoredDocument } from "./storage";
+import type {
+  AuditEntry,
+  CreateCommit,
+  IdempotencyRecord,
+  ShareStorage,
+  StoredDocument,
+  UpdateCommit,
+} from "./storage";
 
 interface D1Result {
   results?: unknown[];
@@ -18,6 +25,8 @@ interface D1PreparedStatement {
 
 export interface D1Like {
   prepare(sql: string): D1PreparedStatement;
+  /** Transactional statement group — D1 executes a batch atomically. */
+  batch?(statements: D1PreparedStatement[]): Promise<D1Result[]>;
 }
 
 export class D1Storage implements ShareStorage {
@@ -125,6 +134,109 @@ export class D1Storage implements ShareStorage {
       .prepare("INSERT OR IGNORE INTO idempotency (key, response, status) VALUES (?, ?, ?)")
       .bind(key, record.response, record.status)
       .run();
+  }
+
+  private auditStatement(entry: AuditEntry): D1PreparedStatement {
+    return this.db
+      .prepare("INSERT INTO audit (at, slug, kind, action, revision) VALUES (?, ?, ?, ?, ?)")
+      .bind(entry.at, entry.slug, entry.kind, entry.action, entry.revision ?? null);
+  }
+
+  private idempotentStatement(record: IdempotencyRecord): D1PreparedStatement {
+    const key = record.status >= 200 ? record.key : `pending:${record.key}`;
+    return this.db
+      .prepare("INSERT OR IGNORE INTO idempotency (key, response, status) VALUES (?, ?, ?)")
+      .bind(key, record.response, record.status);
+  }
+
+  async createCommit(input: CreateCommit): Promise<"created" | "collision"> {
+    if (!this.db.batch) {
+      // No transactional API — fall back to the ordered sequential writes.
+      await this.audit(input.audit);
+      await this.putIdempotent({ key: input.reservationKey, response: "", status: 0 });
+      const created = await this.create(input.document);
+      if (!created) return "collision";
+      await this.putIdempotent({
+        key: input.reservationKey,
+        response: input.response,
+        status: 201,
+      });
+      return "created";
+    }
+    const doc = input.document;
+    try {
+      // ONE atomic D1 unit: audit, key reservation, slug claim, replayable ack.
+      await this.db.batch([
+        this.auditStatement(input.audit),
+        this.idempotentStatement({ key: input.reservationKey, response: "", status: 0 }),
+        this.db
+          .prepare(
+            "INSERT INTO documents (slug, kind, revision, tokenHash, body, createdAt, updatedAt, revoked) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
+          )
+          .bind(
+            doc.slug,
+            doc.kind,
+            doc.revision,
+            doc.tokenHash,
+            doc.body,
+            doc.createdAt,
+            doc.updatedAt,
+          ),
+        this.idempotentStatement({
+          key: input.reservationKey,
+          response: input.response,
+          status: 201,
+        }),
+      ]);
+      return "created";
+    } catch (err) {
+      if (err instanceof Error && /UNIQUE constraint failed/i.test(err.message)) {
+        return "collision";
+      }
+      throw err;
+    }
+  }
+
+  async updateCommit(input: UpdateCommit): Promise<StoredDocument | "conflict" | "missing"> {
+    const existing = await this.get(input.kind, input.slug);
+    if (!existing || existing.revoked) return "missing";
+    if (existing.revision !== input.expectedRevision) return "conflict";
+    if (!this.db.batch) {
+      await this.audit(input.audit);
+      await this.putIdempotent({ key: input.reservationKey, response: "", status: 0 });
+      const result = await this.update(
+        input.kind,
+        input.slug,
+        input.expectedRevision,
+        input.body,
+        input.updatedAt,
+      );
+      if (result === "missing" || result === "conflict") return result;
+      await this.putIdempotent({
+        key: input.reservationKey,
+        response: input.response,
+        status: 200,
+      });
+      return result;
+    }
+    // ONE atomic D1 unit: audit, key reservation, conditional write, ack.
+    const results = await this.db.batch([
+      this.auditStatement(input.audit),
+      this.idempotentStatement({ key: input.reservationKey, response: "", status: 0 }),
+      this.db
+        .prepare(
+          "UPDATE documents SET revision = revision + 1, body = ?, updatedAt = ? WHERE kind = ? AND slug = ? AND revision = ? AND revoked = 0",
+        )
+        .bind(input.body, input.updatedAt, input.kind, input.slug, input.expectedRevision),
+      this.idempotentStatement({
+        key: input.reservationKey,
+        response: input.response,
+        status: 200,
+      }),
+    ]);
+    if ((results[2]?.meta?.changes ?? 0) === 0) return "conflict";
+    const updated = await this.get(input.kind, input.slug);
+    return updated ?? "missing";
   }
 
   async hit(bucket: string, windowMs: number, now: number): Promise<number> {

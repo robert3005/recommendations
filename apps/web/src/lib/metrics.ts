@@ -39,13 +39,17 @@ export function metricsSnapshot(): ReadonlyMap<string, number> {
  * no diagnostic value anyway.
  */
 export function redact(detail: string): string {
-  return detail
-    .replace(/#\S+/g, "#[redacted-fragment]")
-    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
-    .replace(/([?&][^=&\s]*token[^=&\s]*=)[^&\s"']+/gi, "$1[redacted]")
-    .replace(/("[^"]*token[^"]*"\s*:\s*")[^"]+(")/gi, "$1[redacted]$2")
-    .replace(/[A-Za-z0-9_-]{43,}/g, "[redacted]")
-    .replace(/-?\d{1,3}\.\d{4,}/g, "[coord]");
+  return (
+    detail
+      .replace(/#\S+/g, "#[redacted-fragment]")
+      .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+      .replace(/([?&][^=&\s]*token[^=&\s]*=)[^&\s"']+/gi, "$1[redacted]")
+      .replace(/("[^"]*token[^"]*"\s*:\s*")[^"]+(")/gi, "$1[redacted]$2")
+      .replace(/[A-Za-z0-9_-]{43,}/g, "[redacted]")
+      .replace(/-?\d{1,3}\.\d{4,}/g, "[coord]")
+      // A failing URL may percent-encode the decimal point — still a coordinate.
+      .replace(/-?\d{1,3}%2E\d{4,}/gi, "[coord]")
+  );
 }
 
 export function count(name: string, delta = 1): void {

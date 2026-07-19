@@ -128,6 +128,8 @@ managed or self-hosted adapters described in [Open Data Sources](./data-sources.
   This covers failures after the style loaded too: a tile-provider outage surfaces the same state,
   and a subsequent successful render clears it — the overlay recovers with the connection
   (2026-07-19).
+  Clearing requires positive evidence of recovery (successful data traffic) — a failed request
+  cycle merely going idle never clears it.
 - `prefers-reduced-motion` recenters instantly instead of animating the camera (2026-07-19).
 - Search, exact-resolution, nearby-candidate, and viewport-discovery failures each expose a bounded
   retry/error state appropriate to their surface.

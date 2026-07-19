@@ -101,12 +101,19 @@ export function parseSavedCsv(text: string, listName: string): ParsedList {
       repairedAddress = typeof extra === "string" && extra.trim() !== "" ? extra.trim() : undefined;
     }
     const coords = googleUrlCoords(repairedUrl);
+    // Our own Attribution column names the OSM source element — a typed
+    // anchor that survives a Google deep link occupying the URL column.
+    const anchor = row.attribution?.match(/\b(node|way|relation)\/(\d+)\b/);
+    const osmRef = anchor
+      ? { type: anchor[1] as "node" | "way" | "relation", id: anchor[2] as string }
+      : undefined;
     items.push({
       title,
       ...(note ? { note } : {}),
       ...(repairedUrl ? { url: repairedUrl } : {}),
       ...(repairedAddress ? { address: repairedAddress } : {}),
       ...(coords ? { coords } : {}),
+      ...(osmRef ? { osmRef } : {}),
     });
   }
   return { name: listName, items, unusable };
@@ -237,9 +244,12 @@ function styleColor(id: string, doc: Document): string | undefined {
   return undefined;
 }
 
-/** The marker colour a KML container's placemarks reference via styleUrl. */
+/**
+ * The marker colour a KML container's DIRECT placemarks reference via
+ * styleUrl — a nested folder's style belongs to that folder's own list.
+ */
 function containerColor(container: Element, doc: Document): string | undefined {
-  const styleUrl = container.querySelector("Placemark styleUrl")?.textContent?.trim();
+  const styleUrl = container.querySelector(":scope > Placemark > styleUrl")?.textContent?.trim();
   if (!styleUrl?.startsWith("#")) return undefined;
   return styleColor(styleUrl.slice(1), doc);
 }
@@ -277,7 +287,8 @@ export function parseKml(text: string, fallbackName: string): ParsedList[] {
   if (folders.length === 0) {
     const collection = kmlToGeoJson(doc) as { features?: GeoJsonFeature[] };
     const list = collectFeatures(collection.features ?? [], docName || fallbackName);
-    const rootStyle = doc.documentElement ? containerColor(doc.documentElement, doc) : undefined;
+    const rootContainer = doc.querySelector("kml > Document") ?? doc.documentElement;
+    const rootStyle = rootContainer ? containerColor(rootContainer, doc) : undefined;
     return [{ ...list, ...(rootStyle ? { color: rootStyle } : {}) }];
   }
   const lists: ParsedList[] = [];

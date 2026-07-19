@@ -89,26 +89,10 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async updatePlace(place: Place): Promise<void> {
-    // Not a creation path: places come to exist through addToList only.
-    const existing = live(await this.db.places.get(place.id));
-    if (!existing) throw new Error("place not found — updatePlace is not a creation path");
-    // One live PlaceId per exact OSM element: an upgrade that would fork an
-    // element already held by another place is refused for explicit review
-    // (book/src/place-identity.md).
-    if (place.currentOsmRef) {
-      const holder = await this.findPlaceByOsmRef(place.currentOsmRef);
-      if (holder && holder.id !== place.id) {
-        throw new Error(
-          "another place already holds this exact OSM element — refusing to fork its identity",
-        );
-      }
-    }
-    // Durable identity is immutable at this boundary: origin and the first
-    // observation never change, and completed link history only grows — a
-    // stale or tampered whole-object update cannot rewrite them.
-    // The write and its publication dirtying commit together: a changed place
-    // changes every hosted guide containing it (e.g. an owner-confirmed OSM
-    // relink), so those publications queue payload-less markers.
+    // The guard reads and the write run in ONE transaction so concurrent
+    // upgrades serialize — an exact OSM element can never fork across two
+    // racing updates. The write and its publication dirtying also commit
+    // together: a changed place changes every hosted guide containing it.
     await this.db.transaction(
       "rw",
       [
@@ -119,15 +103,46 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.publicationOutbox,
       ],
       async () => {
+        // Not a creation path: places come to exist through addToList only.
+        const existing = live(await this.db.places.get(place.id));
+        if (!existing) throw new Error("place not found — updatePlace is not a creation path");
+        // One live PlaceId per exact OSM element: an upgrade that would fork
+        // an element already held by another place is refused for explicit
+        // review (book/src/place-identity.md).
+        if (place.currentOsmRef) {
+          const holder = await this.findPlaceByOsmRef(place.currentOsmRef);
+          if (holder && holder.id !== place.id) {
+            throw new Error(
+              "another place already holds this exact OSM element — refusing to fork its identity",
+            );
+          }
+        }
+        // Durable identity is immutable at this boundary: origin and the
+        // first observation never change, and completed link history is
+        // strictly append-only — an update keeps its history only when the
+        // existing entries survive verbatim as its prefix.
+        const sameEntry = (
+          a: Place["osmRefHistory"][number] | undefined,
+          b: Place["osmRefHistory"][number] | undefined,
+        ): boolean =>
+          !!a &&
+          !!b &&
+          a.ref.type === b.ref.type &&
+          a.ref.id === b.ref.id &&
+          a.linkedAt === b.linkedAt &&
+          a.unlinkedAt === b.unlinkedAt &&
+          a.reason === b.reason;
+        const preservesPrefix =
+          place.osmRefHistory.length >= existing.osmRefHistory.length &&
+          existing.osmRefHistory.every((entry, index) =>
+            sameEntry(entry, place.osmRefHistory[index]),
+          );
         await this.db.places.put(
           toPlaceRow({
             ...place,
             origin: existing.origin,
             ...(existing.firstSeen ? { firstSeen: existing.firstSeen } : {}),
-            osmRefHistory:
-              place.osmRefHistory.length >= existing.osmRefHistory.length
-                ? place.osmRefHistory
-                : existing.osmRefHistory,
+            osmRefHistory: preservesPrefix ? place.osmRefHistory : existing.osmRefHistory,
           }),
         );
         for (const listId of await this.listIdsForPlace(place.id)) {
@@ -470,10 +485,22 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.publicationOutbox,
         this.db.listBlocks,
         this.db.lists,
+        this.db.places,
       ],
       async () => {
         const oldRow = await this.db.notes.get(note.id);
         const wasShareable = oldRow?.shareable === true;
+        // A retarget must land on a live aggregate — like creation, an update
+        // never leaves a note targeting a missing row.
+        if (oldRow && noteTargetKey(oldRow.target) !== noteTargetKey(note.target)) {
+          const targetLive =
+            note.target.kind === "place"
+              ? live(await this.db.places.get(note.target.placeId))
+              : live(await this.db.lists.get(note.target.listId));
+          if (!targetLive) {
+            throw new Error("note target not found — notes attach to a live place or list");
+          }
+        }
         // Retargeting invalidates every attachment made under the old target —
         // an attachment joins a block and note about the SAME place, so the edge
         // tombstones with the retarget rather than dangling inconsistently.
@@ -491,30 +518,9 @@ export class DexieRepository implements PlacemarksRepository {
         }
         if (!note.shareable) {
           // A note that stops being shareable queues removal of its public page
-          // (book/src/notes.md): the old revision stays up until revocation lands.
-          const publications = (await this.db.publications.toArray()).filter(
-            (p) =>
-              !p.deleted &&
-              p.mode === "hosted" &&
-              p.target.kind === "note" &&
-              p.target.id === note.id &&
-              (p.status === "published" || p.status === "queued" || p.status === "failed"),
-          );
-          for (const publication of publications) {
-            await this.db.publications.put({
-              ...publication,
-              status: "revoking",
-              updatedAt: note.updatedAt,
-            });
-            await this.db.publicationOutbox.put({
-              id: newId(),
-              publicationId: publication.id,
-              action: "revoke",
-              localRevision: publication.localRevision,
-              createdAt: note.updatedAt,
-              attempts: 0,
-            });
-          }
+          // (book/src/notes.md): the old revision stays up until revocation
+          // lands — and the revocation supersedes every pending page update.
+          await this.revokePublicationsFor({ kind: "note", id: note.id }, note.updatedAt);
         }
         await this.db.notes.put(toNoteRow(note));
         if (note.shareable) {
@@ -702,12 +708,13 @@ export class DexieRepository implements PlacemarksRepository {
         for (const block of blocks) {
           await this.tombstoneBlock(block, now);
         }
-        // Section notes belong to the list and die with it.
+        // Section notes belong to the list and die with it — including any
+        // standalone public pages they had (tombstoneNote queues revocation).
         const sectionNotes = (
           await this.db.notes.where("targetKey").equals(`list:${listId}`).toArray()
         ).filter((n) => !n.deleted);
         for (const note of sectionNotes) {
-          await this.db.notes.put(toNoteRow({ ...note, deleted: true, updatedAt: now }));
+          await this.tombstoneNote(note, now);
         }
         // Membership is existence: places whose only membership was here go too.
         for (const block of blocks.filter((b) => b.kind === "place")) {

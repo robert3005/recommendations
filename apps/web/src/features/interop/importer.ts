@@ -87,6 +87,7 @@ function factsFor(item: ParsedItem, coords: { lat: number; lng: number }): Manua
     lng: coords.lng,
     ...(item.address ? { address: item.address } : {}),
     ...(item.category ? { category: item.category } : {}),
+    ...(item.website ? { website: item.website } : {}),
     ...(item.phone ? { phone: item.phone } : {}),
     ...(item.openingHours ? { openingHours: item.openingHours } : {}),
   };

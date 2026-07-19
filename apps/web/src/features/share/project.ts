@@ -75,10 +75,18 @@ export function anchorForPlace(place: Place): SharedPlaceAnchor | undefined {
  * destination may survive in the payload.
  */
 export function withImagePlaceholders(body: string): string {
+  // Labels used by reference-style images — their definition lines carry the
+  // destination and must not survive in the payload.
+  const imageLabels = new Set<string>();
+  for (const match of body.matchAll(/!\[([^\]]*)\]\[([^\]]*)\]/g)) {
+    imageLabels.add((match[2] || match[1] || "").toLowerCase());
+  }
   return body
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "*[image omitted from shared page]*")
     .replace(/!\[[^\]]*\]\[[^\]]*\]/g, "*[image omitted from shared page]*")
-    .replace(/^\[[^\]]+\]:\s*asset:.*$/gm, "")
+    .replace(/^\[([^\]]+)\]:\s*(.*)$/gm, (line, label: string, destination: string) =>
+      imageLabels.has(label.toLowerCase()) || /^asset:/.test(destination.trim()) ? "" : line,
+    )
     .replace(/asset:[\w./-]+/g, "[image omitted]");
 }
 

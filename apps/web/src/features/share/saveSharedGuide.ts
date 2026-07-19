@@ -10,10 +10,11 @@ import {
   classifyCandidates,
   osmElementUrl,
   type PoiResolver,
+  plausiblySameElement,
   type ResolvedPoi,
   refKey,
 } from "@placemarks/domain";
-import type { SharedGuide, SharedPlaceAnchor } from "@placemarks/schemas";
+import type { SharedGuide, SharedPlaceAnchor, SharedPlaceEvidence } from "@placemarks/schemas";
 import type { ImportBatchRow, ImportItemRow } from "../../data/db";
 import type { DexieRepository } from "../../data/repo";
 import { newId } from "../../lib/id";
@@ -134,6 +135,21 @@ export async function saveSharedGuide(
     } catch (err) {
       if (err instanceof Error && err.message === DUPLICATE_MESSAGE) {
         result.duplicates += 1;
+        // An existing membership still receives the selected notes — the
+        // import's editorial content is not conditional on being first.
+        const existing =
+          anchor.kind === "osm"
+            ? ((await repo.findPlaceByOsmRef(anchor.currentOsmRef)) ??
+              (await uniqueLocalEvidenceMatch(repo, anchor)))
+            : await (async () => {
+                const probed = await repo.findImportTarget({
+                  name: anchor.name,
+                  lat: anchor.lat,
+                  lng: anchor.lng,
+                });
+                return probed === "ambiguous" ? undefined : probed;
+              })();
+        if (existing) await importNotes(repo, existing.id, block.notes, now);
       } else {
         throw err;
       }
@@ -173,13 +189,42 @@ async function uniqueLocalEvidenceMatch(
     candidatePlace.set(refKey(candidate.osmRef), place.id);
   }
   if (candidates.length === 0) return undefined;
-  const winners = new Set<string>();
-  for (const epoch of [anchor.lastVerified, anchor.firstSeen]) {
-    const classified = classifyCandidates(evidenceFromShared(epoch), candidates);
-    if (classified.kind === "auto") winners.add(refKey(classified.best.candidate.osmRef));
+  // Same rule as the viewer's recovery: the epochs must CONVERGE — a winner
+  // in one epoch is accepted only when the other epoch supports the same
+  // element (as winner or plausible candidate). One epoch alone, or a
+  // contradiction, stays pending.
+  const classifications = [anchor.lastVerified, anchor.firstSeen].map((epoch) =>
+    classifyCandidates(evidenceFromShared(epoch), candidates),
+  );
+  const winnerOf = (c: (typeof classifications)[number]): string | undefined =>
+    c.kind === "auto" ? refKey(c.best.candidate.osmRef) : undefined;
+  const supports = (c: (typeof classifications)[number], ref: string): boolean =>
+    c.kind === "auto"
+      ? refKey(c.best.candidate.osmRef) === ref
+      : c.kind === "review"
+        ? c.candidates.some((scored) => refKey(scored.candidate.osmRef) === ref)
+        : false;
+  const [latestC, firstC] = classifications;
+  const latest = latestC ? winnerOf(latestC) : undefined;
+  const first = firstC ? winnerOf(firstC) : undefined;
+  const candidateByRef = new Map(candidates.map((c) => [refKey(c.osmRef), c]));
+  const uncontradicted = (
+    other: (typeof classifications)[number] | undefined,
+    otherEpoch: SharedPlaceEvidence,
+    winnerRef: string,
+  ): boolean => {
+    if (other !== undefined && supports(other, winnerRef)) return true;
+    const winner = candidateByRef.get(winnerRef);
+    return winner !== undefined && plausiblySameElement(evidenceFromShared(otherEpoch), winner);
+  };
+  let converged: string | undefined;
+  if (latest && first) converged = latest === first ? latest : undefined;
+  else if (latest)
+    converged = uncontradicted(firstC, anchor.firstSeen, latest) ? latest : undefined;
+  else if (first) {
+    converged = uncontradicted(latestC, anchor.lastVerified, first) ? first : undefined;
   }
-  if (winners.size !== 1) return undefined;
-  const placeId = candidatePlace.get([...winners][0] ?? "");
+  const placeId = converged ? candidatePlace.get(converged) : undefined;
   return placeId ? { id: placeId } : undefined;
 }
 

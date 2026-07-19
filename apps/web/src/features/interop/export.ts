@@ -63,6 +63,12 @@ const osmDerived = (place: ExportPlaceView["place"]): boolean =>
 
 const hasOsmDerived = (views: ExportPlaceView[]): boolean => views.some((v) => osmDerived(v.place));
 
+/** The OSM element the place's facts descend from — current binding or history. */
+function sourceRefOf(place: ExportPlaceView["place"]): string | undefined {
+  const ref = place.currentOsmRef ?? place.osmRefHistory[place.osmRefHistory.length - 1]?.ref;
+  return ref ? `${ref.type}/${ref.id}` : undefined;
+}
+
 function xmlEscape(value: string): string {
   return (
     value
@@ -139,7 +145,9 @@ export function exportListCsv(_list: List, views: ExportPlaceView[]): string {
         formulaEscape(row.note ?? ""),
         urlFor(row),
         formulaEscape(row.facts.address ?? ""),
-        osmDerived(row.place) ? OSM_ATTRIBUTION_TEXT : "",
+        osmDerived(row.place)
+          ? `${OSM_ATTRIBUTION_TEXT}${sourceRefOf(row.place) ? ` — source ${sourceRefOf(row.place) ?? ""}` : ""}`
+          : "",
       ]),
     },
     { newline: "\n" },

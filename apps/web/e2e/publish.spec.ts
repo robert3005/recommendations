@@ -97,6 +97,11 @@ test("a shareable note publishes as a standalone read-only page", async ({ page 
   await editor.getByRole("button", { name: "Save note" }).click();
 
   await details.getByTestId("publish-note").click();
+  // The preflight disclosure shows the exact prose before anything leaves.
+  await expect(details.getByTestId("note-publish-preflight")).toContainText(
+    "Ask for the house blend.",
+  );
+  await details.getByTestId("confirm-publish-note").click();
   const pageLink = details.getByTestId("note-page-link");
   await expect(pageLink).toBeVisible();
   const noteUrl = await pageLink.getAttribute("href");

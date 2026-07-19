@@ -70,10 +70,11 @@ describe("Phase 4 first-seen plus last-verified recovery", () => {
       lastVerified,
     };
 
-    await expect(resolveSharedAnchor(resolver, anchor)).resolves.toMatchObject({
-      state: "recovered",
-      poi: { osmRef: { type: "way", id: "202" } },
-    });
+    const result = await resolveSharedAnchor(resolver, anchor);
+    // The first epoch supports this replacement, but the distant, renamed
+    // last-verified epoch does not. Searching both locations is necessary but
+    // not sufficient: both epochs must converge before relinking.
+    expect(result.state).not.toBe("recovered");
     expect(searchNearby).toHaveBeenCalledWith(
       expect.objectContaining({ lat: firstSeen.lat, lng: firstSeen.lng }),
     );
