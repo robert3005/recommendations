@@ -197,11 +197,15 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         return c.text("slug already taken", 409, MUTATION_HEADERS);
       };
       if (await storage.get(kind, slug)) return collision();
-      // Key reservation and audit precede the claim; the replayable success
-      // record lands last. An interrupted create leaves no public document and
-      // re-executes on retry — it never replays or strands a half-claim.
+      // Everything durable precedes the public claim: audit, then the key
+      // reservation, then the replayable result, then the document itself. An
+      // interrupted create leaves no public document; because the audit
+      // strictly precedes the reservation, a retry that finds the reservation
+      // knows the audit already landed and never duplicates it.
+      if (!replay) await storage.audit({ at, slug, kind, action: "create", revision: 1 });
       await storage.putIdempotent({ key: scopedKey, response: "", status: 0 });
-      await storage.audit({ at, slug, kind, action: "create", revision: 1 });
+      const response = JSON.stringify({ slug, revision: 1 });
+      await storage.putIdempotent({ key: scopedKey, response, status: 201 });
       const created = await storage.create({
         slug,
         kind,
@@ -213,8 +217,6 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         revoked: false,
       });
       if (!created) return collision();
-      const response = JSON.stringify({ slug, revision: 1 });
-      await storage.putIdempotent({ key: scopedKey, response, status: 201 });
       return c.body(response, 201, {
         ...MUTATION_HEADERS,
         "Content-Type": "application/json; charset=utf-8",
@@ -267,11 +269,6 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
           "Content-Type": "application/json; charset=utf-8",
         });
       }
-      if (!auth.ok) return c.text("mutation refused", auth.status, MUTATION_HEADERS);
-      const mutations = await storage.hit(`mutate:${tokenHash}`, 60_000, Date.now());
-      if (mutations > LIMITS.mutationsPerMinute) {
-        return c.text("rate limited", 429, MUTATION_HEADERS);
-      }
       const raw = await c.req.text();
       if (utf8Bytes(raw) > LIMITS.requestBytes)
         return c.text("payload too large", 413, MUTATION_HEADERS);
@@ -286,6 +283,35 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
       const serialized = JSON.stringify(document);
       if (utf8Bytes(serialized) > LIMITS.documentBytes) {
         return c.text("document too large", 413, MUTATION_HEADERS);
+      }
+      if (!auth.ok) {
+        // A pending reservation plus a document that already matches this
+        // exact request means our earlier attempt committed but its success
+        // record was lost — recover the result instead of failing the retry.
+        if (auth.status === 412 && replay) {
+          const expected = parseIfMatch(c.req.header("if-match"));
+          const doc = await storage.get(kind, c.req.param("slug"));
+          if (
+            expected !== undefined &&
+            doc &&
+            !doc.revoked &&
+            timingSafeEqualHex(doc.tokenHash, tokenHash) &&
+            doc.revision === expected + 1 &&
+            doc.body === serialized
+          ) {
+            const recovered = JSON.stringify({ slug: doc.slug, revision: doc.revision });
+            await storage.putIdempotent({ key: scopedKey, response: recovered, status: 200 });
+            return c.body(recovered, 200, {
+              ...MUTATION_HEADERS,
+              "Content-Type": "application/json; charset=utf-8",
+            });
+          }
+        }
+        return c.text("mutation refused", auth.status, MUTATION_HEADERS);
+      }
+      const mutations = await storage.hit(`mutate:${tokenHash}`, 60_000, Date.now());
+      if (mutations > LIMITS.mutationsPerMinute) {
+        return c.text("rate limited", 429, MUTATION_HEADERS);
       }
       const at = now();
       // Audit and the key reservation precede the commit: a revision must not

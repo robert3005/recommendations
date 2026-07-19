@@ -31,7 +31,7 @@ class CreateIdempotencyFailsOnceStorage extends MemoryStorage {
   private shouldFail = true;
 
   override async putIdempotent(record: IdempotencyRecord): Promise<void> {
-    if (record.key.includes(":post:") && this.shouldFail) {
+    if (record.key.includes(":post:") && record.status >= 200 && this.shouldFail) {
       this.shouldFail = false;
       throw new Error("simulated create-idempotency write failure");
     }

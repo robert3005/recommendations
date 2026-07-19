@@ -64,7 +64,7 @@ class UpdateIdempotencyFailsOnceStorage extends MemoryStorage {
   private shouldFail = true;
 
   override async putIdempotent(record: { key: string; response: string; status: number }) {
-    if (record.key.includes(":put:") && this.shouldFail) {
+    if (record.key.includes(":put:") && record.status >= 200 && this.shouldFail) {
       this.shouldFail = false;
       throw new Error("simulated idempotency write failure");
     }
