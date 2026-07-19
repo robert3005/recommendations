@@ -26,14 +26,15 @@ class FakeD1Statement {
   }
 
   async run(): Promise<{ meta: { changes: number } }> {
-    if (!this.sql.startsWith("INSERT OR IGNORE INTO idempotency")) {
-      throw new Error(`Unexpected write statement: ${this.sql}`);
-    }
     const [key, response, status] = this.values;
     if (typeof key !== "string" || typeof response !== "string" || typeof status !== "number") {
       throw new Error("Invalid idempotency binding");
     }
-    return { meta: { changes: this.db.insertOrIgnore({ key, response, status }) ? 1 : 0 } };
+    return {
+      meta: {
+        changes: this.db.executeIdempotencyWrite(this.sql, { key, response, status }) ? 1 : 0,
+      },
+    };
   }
 
   async first<T = unknown>(): Promise<T | null> {
@@ -53,10 +54,23 @@ class FakeD1 implements D1Like {
     return new FakeD1Statement(this, sql);
   }
 
-  insertOrIgnore(row: IdempotencyRow): boolean {
-    if (this.idempotency.has(row.key)) return false;
-    this.idempotency.set(row.key, row);
-    return true;
+  executeIdempotencyWrite(sql: string, row: IdempotencyRow): boolean {
+    const existing = this.idempotency.get(row.key);
+    if (sql.startsWith("INSERT OR IGNORE INTO idempotency")) {
+      if (existing) return false;
+      this.idempotency.set(row.key, row);
+      return true;
+    }
+    if (
+      sql.startsWith("INSERT INTO idempotency") &&
+      sql.includes("ON CONFLICT") &&
+      sql.includes("DO UPDATE")
+    ) {
+      if (existing && existing.status !== 0) return false;
+      this.idempotency.set(row.key, row);
+      return true;
+    }
+    throw new Error(`Unexpected write statement: ${sql}`);
   }
 
   find(key: string): IdempotencyRow | undefined {

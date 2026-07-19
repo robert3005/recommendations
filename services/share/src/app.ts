@@ -106,11 +106,15 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
       }
       await storage.audit({ at: now(), slug, kind, action: "read", revision: doc.revision });
       const etag = `"${doc.revision}"`;
+      // A stable purgeable surrogate key per publication: an update or revoke
+      // can purge every cached representation deterministically.
+      const surrogate = { "Surrogate-Key": `${kind}/${slug}` } as const;
       if (c.req.header("if-none-match") === etag) {
-        return c.body(null, 304, { ...PUBLIC_HEADERS, ETag: etag });
+        return c.body(null, 304, { ...PUBLIC_HEADERS, ...surrogate, ETag: etag });
       }
       return c.body(doc.body, 200, {
         ...PUBLIC_HEADERS,
+        ...surrogate,
         ETag: etag,
         "Content-Type": "application/json; charset=utf-8",
       });
@@ -122,11 +126,26 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
       const tokenHash = await sha256Hex(token);
       const idKey = c.req.header("idempotency-key");
       if (!idKey) return c.text("missing Idempotency-Key", 400, MUTATION_HEADERS);
-      // Idempotency keys are scoped to (operation, token) — a key can neither
-      // complete a different operation nor leak another owner's result.
-      const scopedKey = `${kind}:post:${tokenHash}:${idKey}`;
+
+      const raw = await c.req.text();
+      if (utf8Bytes(raw) > LIMITS.requestBytes)
+        return c.text("payload too large", 413, MUTATION_HEADERS);
+      let parsed: { desiredSlug: string; document: unknown };
+      try {
+        const body = schemas[kind].create.safeParse(JSON.parse(raw));
+        if (!body.success) return c.text("invalid document", 400, MUTATION_HEADERS);
+        parsed = body.data;
+      } catch {
+        return c.text("invalid JSON", 400, MUTATION_HEADERS);
+      }
+      const slug = parsed.desiredSlug;
+      // Idempotency keys are scoped to (operation, slug, token) — a key can
+      // neither complete a different operation, nor replay one slug's result
+      // as another's, nor leak another owner's result. A pending reservation
+      // (status 0) never replays.
+      const scopedKey = `${kind}:post:${slug}:${tokenHash}:${idKey}`;
       const replay = await storage.getIdempotent(scopedKey);
-      if (replay) {
+      if (replay && replay.status >= 200) {
         return c.body(replay.response, replay.status as 200, {
           ...MUTATION_HEADERS,
           "Content-Type": "application/json; charset=utf-8",
@@ -143,19 +162,6 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
       if (mutations > LIMITS.mutationsPerMinute || sourceCreates > LIMITS.mutationsPerMinute) {
         return c.text("rate limited", 429, MUTATION_HEADERS);
       }
-
-      const raw = await c.req.text();
-      if (utf8Bytes(raw) > LIMITS.requestBytes)
-        return c.text("payload too large", 413, MUTATION_HEADERS);
-      let parsed: { desiredSlug: string; document: unknown };
-      try {
-        const body = schemas[kind].create.safeParse(JSON.parse(raw));
-        if (!body.success) return c.text("invalid document", 400, MUTATION_HEADERS);
-        parsed = body.data;
-      } catch {
-        return c.text("invalid JSON", 400, MUTATION_HEADERS);
-      }
-      const slug = parsed.desiredSlug;
       if (RESERVED_SLUGS.has(slug)) return c.text("reserved slug", 409, MUTATION_HEADERS);
       if (kind === "note") {
         const docSlug = (parsed.document as { slug?: string }).slug;
@@ -178,6 +184,24 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
       }
 
       const at = now();
+      const collision = async () => {
+        // A concurrent identical retry replays the winner's response.
+        const winner = await storage.getIdempotent(scopedKey);
+        if (winner && winner.status >= 200) {
+          return c.body(winner.response, winner.status as 200, {
+            ...MUTATION_HEADERS,
+            "Content-Type": "application/json; charset=utf-8",
+          });
+        }
+        await storage.audit({ at, slug, kind, action: "denied" });
+        return c.text("slug already taken", 409, MUTATION_HEADERS);
+      };
+      if (await storage.get(kind, slug)) return collision();
+      // Key reservation and audit precede the claim; the replayable success
+      // record lands last. An interrupted create leaves no public document and
+      // re-executes on retry — it never replays or strands a half-claim.
+      await storage.putIdempotent({ key: scopedKey, response: "", status: 0 });
+      await storage.audit({ at, slug, kind, action: "create", revision: 1 });
       const created = await storage.create({
         slug,
         kind,
@@ -188,19 +212,7 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         updatedAt: at,
         revoked: false,
       });
-      if (!created) {
-        // A concurrent identical retry replays the winner's response.
-        const winner = await storage.getIdempotent(scopedKey);
-        if (winner) {
-          return c.body(winner.response, winner.status as 200, {
-            ...MUTATION_HEADERS,
-            "Content-Type": "application/json; charset=utf-8",
-          });
-        }
-        await storage.audit({ at, slug, kind, action: "denied" });
-        return c.text("slug already taken", 409, MUTATION_HEADERS);
-      }
-      await storage.audit({ at, slug, kind, action: "create", revision: 1 });
+      if (!created) return collision();
       const response = JSON.stringify({ slug, revision: 1 });
       await storage.putIdempotent({ key: scopedKey, response, status: 201 });
       return c.body(response, 201, {

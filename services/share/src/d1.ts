@@ -104,13 +104,23 @@ export class D1Storage implements ShareStorage {
       .prepare("SELECT * FROM idempotency WHERE key = ?")
       .bind(key)
       .first<IdempotencyRecord>();
-    return row ?? undefined;
+    if (row) return row;
+    // A reservation not yet promoted surfaces as pending — never as success.
+    const pending = await this.db
+      .prepare("SELECT * FROM idempotency WHERE key = ?")
+      .bind(`pending:${key}`)
+      .first<IdempotencyRecord>();
+    return pending ? { ...pending, key } : undefined;
   }
 
   async putIdempotent(record: IdempotencyRecord): Promise<void> {
+    // Records are immutable inserts. A pending reservation (status 0) lives
+    // under a state-prefixed key, so promoting it to the final replayable
+    // result is a fresh INSERT of the bare key — no UPDATE ever needed.
+    const key = record.status >= 200 ? record.key : `pending:${record.key}`;
     await this.db
       .prepare("INSERT OR IGNORE INTO idempotency (key, response, status) VALUES (?, ?, ?)")
-      .bind(record.key, record.response, record.status)
+      .bind(key, record.response, record.status)
       .run();
   }
 
