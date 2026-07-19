@@ -85,8 +85,10 @@ export function normalizePhone(raw: string | undefined): string | undefined {
 }
 
 export function assembleAddress(tags: Record<string, string>): string | undefined {
+  // "Street 12, City 1100-000": the city follows the street directly so the
+  // natural reading ("Rua Example 12, Lisboa") is a prefix of the full form.
   const line1 = [tags["addr:street"], tags["addr:housenumber"]].filter(Boolean).join(" ");
-  const line2 = [tags["addr:postcode"], tags["addr:city"]].filter(Boolean).join(" ");
+  const line2 = [tags["addr:city"], tags["addr:postcode"]].filter(Boolean).join(" ");
   const address = [line1, line2].filter((part) => part !== "").join(", ");
   return address === "" ? undefined : address;
 }

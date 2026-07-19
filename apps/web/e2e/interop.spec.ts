@@ -132,7 +132,7 @@ test("a CSV export round-trips through the importer", async ({ page }) => {
   const csvPath = await download.path();
   if (!csvPath) throw new Error("CSV download has no local path");
   const csv = await readFile(csvPath, "utf8");
-  expect(csv.split("\n")[0]).toBe("Title,Note,URL,Address");
+  expect(csv.split("\n")[0]).toBe("Title,Note,URL,Address,Attribution");
   expect(csv).toContain("Café Central");
   // The dropped pin keeps its original Google URL — provenance round-trips.
   expect(csv).toContain(PIN_URL);

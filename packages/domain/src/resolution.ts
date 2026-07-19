@@ -91,15 +91,24 @@ export function applyExactOutcome(
  * nothing plausible → missing, continuing to display lastVerified as explicitly stale.
  */
 export function applyRecovery(place: Place, candidates: ResolvedPoi[], now: string): Place {
-  const evidence = recoveryEvidence(place);
-  if (!evidence) {
+  // The latest observation first; the immutable first-seen evidence second —
+  // it is retained precisely because an in-place upstream edit may have
+  // stripped the stable identifiers from the latest observation.
+  const sources = [recoveryEvidence(place), place.firstSeen].filter(
+    (evidence): evidence is NonNullable<typeof evidence> => evidence !== undefined,
+  );
+  if (sources.length === 0) {
     return { ...place, resolutionState: "missing", lastResolutionAttemptAt: now, updatedAt: now };
   }
-  const classification = classifyCandidates(evidence, candidates);
-  if (classification.kind === "auto") {
-    return linkPlaceToOsm(place, classification.best.candidate, now, "resolver-match");
+  let sawReview = false;
+  for (const evidence of sources) {
+    const classification = classifyCandidates(evidence, candidates);
+    if (classification.kind === "auto") {
+      return linkPlaceToOsm(place, classification.best.candidate, now, "resolver-match");
+    }
+    if (classification.kind === "review") sawReview = true;
   }
-  if (classification.kind === "review") {
+  if (sawReview) {
     return {
       ...place,
       resolutionState: "needs-review",

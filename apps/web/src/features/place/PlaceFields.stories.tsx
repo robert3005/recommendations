@@ -14,7 +14,7 @@ export const LiveWithWebsite: Story = {
   args: {
     name: "Café Central",
     category: "cafe",
-    address: "Rua Example 12, 1100-000 Lisboa",
+    address: "Rua Example 12, Lisboa 1100-000",
     website: "https://cafecentral.pt/",
     phone: "+351 21 000 0000",
     openingHours: "Mo-Fr 08:00-18:00; Sa 09:00-14:00",

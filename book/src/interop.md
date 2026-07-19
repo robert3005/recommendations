@@ -71,7 +71,7 @@ pins; the map is the product). In order:
 1. **Literal coordinates** in the source (KML/GPX/GeoJSON geometry, dropped-pin URLs,
    `Saved Places.json` geometry that isn't `[0, 0]`). Done.
 2. **Cross-reference within the import**: the same place appearing in both a CSV (structure) and
-   `Saved Places.json` (geometry) is joined by its Google URL id.
+   `Saved Places.json` (geometry) is joined by its Google URL id — by id only, never by name.
 3. **Geocode** Title + Address through our configured geocoding adapter (Photon/Nominatim family —
    [data sources](./data-sources.md); public endpoints remain development-only). Candidates are
    scored with the existing evidence ladder from
@@ -151,7 +151,25 @@ Every list exports to the formats the ecosystem ingests. Fidelity varies and is 
   ecosystem.
 - **Attribution travels with exports.** Any export containing OSM-derived facts carries
   ODbL attribution metadata ([licensing](./data-sources.md#licensing-and-attribution)).
-  User-authored notes and user-imported facts are the user's own data.
+  User-authored notes and user-imported facts are the user's own data. *(2026-07-19: the CSV
+  gained a fifth `Attribution` column for this — the four Takeout columns stay first, so
+  Takeout-shaped parsers, ours included, still round-trip it. CSV cells are formula-escaped.)*
+
+### Implementation decisions (2026-07-19, recorded with the Phase 3 hardening round)
+
+- **KML folders become separate lists**, keeping their `Style` marker colours; a folderless
+  document stays one list.
+- **Coordinate-bearing rows opportunistically OSM-link** through a tight nearby search judged by
+  the conservative identity ladder — one unique high-confidence candidate links, anything else
+  imports unlinked. Auto-linking via the geocoder additionally requires a non-contradicting
+  address, and a failed exact-resolve never places a row at bare geocoder coordinates (it stays
+  in review — OSM-derived coordinates without evidence would dodge attribution).
+- **Source-list identity survives renames**: the first import binds the source name to the local
+  list; re-imports follow the binding, so "Google favourites" keeps flowing into the list the
+  user renamed "My edited Lisbon list".
+- **GeoJSON is the full-fidelity interchange**: it carries phone, hours, tags, notes, OSM refs
+  (which re-imports resolve exactly — never geocoded, never mislabeled as Google provenance),
+  and external URLs.
 
 ## Navigation handoff — deep links
 

@@ -4,7 +4,7 @@
  * checksums before any write; merge is per-id LWW that never silently discards
  * a conflicting note body (a conflict copy is created instead).
  */
-import { type Note, type OsmElementRef, refKey } from "@placemarks/domain";
+import { allRefKeys, type Note, type OsmElementRef, type Place, refKey } from "@placemarks/domain";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { z } from "zod";
 import type { DexieRepository } from "../../data/repo";
@@ -132,6 +132,145 @@ function coordinatesInRange(facts: CoordinateFacts): boolean {
   );
 }
 
+interface RefLike {
+  type?: unknown;
+  id?: unknown;
+}
+
+const validRef = (ref: RefLike | undefined): boolean =>
+  ref === undefined ||
+  ((ref.type === "node" || ref.type === "way" || ref.type === "relation") &&
+    typeof ref.id === "string" &&
+    /^\d+$/.test(ref.id));
+
+/**
+ * Graph invariants before any write (book/src/storage-sync.md): every live
+ * place has a live list membership (replace mode — merge may complete
+ * membership from existing data), OSM references are well-formed, and live
+ * media metadata has matching bytes in the archive.
+ */
+function validateGraph(
+  data: BackupData,
+  entries: Record<string, Uint8Array>,
+  mode: "replace" | "merge",
+): void {
+  // One non-empty id per row — bulk restore must never let a duplicate or an
+  // unaddressable row silently win.
+  for (const [table, rowsOf] of Object.entries(data)) {
+    const seen = new Set<string>();
+    for (const row of rowsOf as { id: string }[]) {
+      if (row.id.trim() === "") {
+        throw new Error(`${table} contains a row with an empty id — refusing to import`);
+      }
+      if (seen.has(row.id)) {
+        throw new Error(`duplicate ${table} id ${row.id} — refusing to import`);
+      }
+      seen.add(row.id);
+    }
+  }
+
+  for (const place of data.places) {
+    const row = place as {
+      id: string;
+      deleted?: boolean;
+      currentOsmRef?: RefLike;
+      osmRefHistory?: { ref?: RefLike }[];
+      firstSeen?: { ref?: RefLike };
+      lastVerified?: { ref?: RefLike };
+    };
+    const refs: (RefLike | undefined)[] = [
+      row.currentOsmRef,
+      row.firstSeen?.ref,
+      row.lastVerified?.ref,
+      ...(row.osmRefHistory ?? []).map((entry) => entry.ref),
+    ];
+    for (const ref of refs) {
+      if (!validRef(ref)) {
+        throw new Error(`place ${row.id} carries a malformed OSM reference — refusing to import`);
+      }
+    }
+  }
+
+  if (mode === "replace") {
+    const liveLists = new Set(
+      data.lists.filter((l) => !(l as { deleted?: boolean }).deleted).map((l) => l.id),
+    );
+    const livePlaces = new Set(
+      data.places.filter((p) => !(p as { deleted?: boolean }).deleted).map((p) => p.id),
+    );
+    const withMembership = new Set<string>();
+    for (const block of data.listBlocks) {
+      const row = block as unknown as {
+        id: string;
+        deleted?: boolean;
+        listId: string;
+        content?: { type?: string; placeId?: string };
+      };
+      if (row.deleted || row.content?.type !== "place" || !liveLists.has(row.listId)) continue;
+      const placeId = row.content.placeId ?? "";
+      if (!livePlaces.has(placeId)) {
+        throw new Error(`list block ${row.id} targets no live place — the backup graph is broken`);
+      }
+      withMembership.add(placeId);
+    }
+    for (const place of data.places) {
+      const row = place as { id: string; deleted?: boolean };
+      if (!row.deleted && !withMembership.has(row.id)) {
+        throw new Error(
+          `place ${row.id} has no live list membership — membership is existence; ` +
+            "a backup with orphan places violates the graph and is refused",
+        );
+      }
+    }
+  }
+
+  for (const asset of data.mediaAssets) {
+    const row = asset as { id: string; deleted?: boolean; localBlobKey: string };
+    if (!row.deleted && !entries[`media/${row.localBlobKey}`]) {
+      throw new Error(
+        `media asset ${row.id} declares bytes (media/${row.localBlobKey}) the archive does not contain`,
+      );
+    }
+  }
+}
+
+/**
+ * Merge safety: an incoming row reusing an existing PlaceId must actually be
+ * the same place — disjoint OSM identities under one id are a collision, not
+ * an update (book/src/place-identity.md).
+ */
+async function validateMergeIdentities(repo: DexieRepository, data: BackupData): Promise<void> {
+  const keysOf = (row: {
+    refKeys?: string[];
+    currentOsmRef?: { type: string; id: string };
+    osmRefHistory?: { ref: { type: string; id: string } }[];
+  }): string[] =>
+    row.refKeys ?? [
+      ...(row.currentOsmRef ? [`${row.currentOsmRef.type}/${row.currentOsmRef.id}`] : []),
+      ...(row.osmRefHistory ?? []).map((entry) => `${entry.ref.type}/${entry.ref.id}`),
+    ];
+  for (const place of data.places) {
+    const row = place as unknown as {
+      id: string;
+      deleted?: boolean;
+      refKeys?: string[];
+      currentOsmRef?: { type: string; id: string };
+      osmRefHistory?: { ref: { type: string; id: string } }[];
+    };
+    if (row.deleted) continue;
+    const existing = await repo.getPlace(row.id);
+    if (!existing || !existing.currentOsmRef || !row.currentOsmRef) continue;
+    const incomingKeys = new Set(keysOf(row));
+    const existingKeys = new Set(keysOf(existing as typeof row & { refKeys?: string[] }));
+    const overlap = [...incomingKeys].some((key) => existingKeys.has(key));
+    if (!overlap) {
+      throw new Error(
+        `incoming PlaceId ${row.id} collides with a different OSM identity — refusing to merge`,
+      );
+    }
+  }
+}
+
 /** Structural zod checks pass `.loose()` fields through; coordinates get their own gate. */
 function validateCoordinates(data: BackupData): void {
   for (const place of data.places) {
@@ -168,23 +307,24 @@ export async function importBackup(
   if (!expected || (await sha256Hex(dataBytes)) !== expected) {
     throw new Error("backup data failed its checksum — refusing to import");
   }
-  // Every media entry must be declared and match its declared checksum, and every
-  // declared entry must be present — before any write happens.
+  // Every declared checksum is verified and every entry (bar the manifest
+  // itself) must be declared — before any write happens.
   for (const [name, fileBytes] of Object.entries(entries)) {
-    if (!name.startsWith("media/")) continue;
-    const declared = manifest.checksums[name];
-    if (!declared) throw new Error(`backup contains undeclared media entry ${name}`);
-    if ((await sha256Hex(fileBytes)) !== declared) {
+    if (name === "manifest.json") continue;
+    if (!manifest.checksums[name]) {
+      throw new Error(`backup contains undeclared entry ${name}`);
+    }
+    if ((await sha256Hex(fileBytes)) !== manifest.checksums[name]) {
       throw new Error(`${name} failed its checksum — refusing to import`);
     }
   }
   for (const name of Object.keys(manifest.checksums)) {
-    if (name !== "data.json" && !entries[name]) {
-      throw new Error(`backup is missing declared entry ${name}`);
-    }
+    if (!entries[name]) throw new Error(`backup is missing declared entry ${name}`);
   }
   const data = dataSchema.parse(JSON.parse(strFromU8(dataBytes)));
   validateCoordinates(data);
+  validateGraph(data, entries, mode);
+  if (mode === "merge") await validateMergeIdentities(repo, data);
 
   const db = repo.db;
   const tables = [
@@ -206,8 +346,17 @@ export async function importBackup(
       for (const [, table] of tables) await table.clear();
       await db.mediaBlobs.clear();
       for (const [key, table] of tables) {
+        // Derived index fields are recomputed, never trusted: stale refKeys in
+        // an archive could fork the same exact OSM identity after restore.
+        const rows =
+          key === "places"
+            ? data[key].map((row) => ({
+                ...row,
+                refKeys: allRefKeys(row as unknown as Place),
+              }))
+            : data[key];
         // biome-ignore lint/suspicious/noExplicitAny: structural rows validated by zod
-        await (table as any).bulkPut(data[key] as any[]);
+        await (table as any).bulkPut(rows as any[]);
         imported += data[key].length;
       }
     } else {
@@ -317,12 +466,21 @@ export async function importBackup(
             | { id: string; updatedAt: string; deleted?: boolean; body?: string }
             | undefined;
           if (!existing) {
+            if (key === "places") {
+              (incoming as { refKeys?: string[] }).refKeys = allRefKeys(
+                incoming as unknown as Place,
+              );
+            }
             // biome-ignore lint/suspicious/noExplicitAny: structural rows validated by zod
             await (table as any).put(incoming);
             imported += 1;
             continue;
           }
           if (incoming.updatedAt <= existing.updatedAt) continue;
+          // Same derived-index rule as replace mode: recompute, never trust.
+          if (key === "places") {
+            (incoming as { refKeys?: string[] }).refKeys = allRefKeys(incoming as unknown as Place);
+          }
           // Never silently discard a conflicting note body.
           if (
             key === "notes" &&

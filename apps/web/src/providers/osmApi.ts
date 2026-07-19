@@ -70,7 +70,9 @@ export class OsmApiResolver {
     }
     const elements = body.elements ?? [];
     const target = elements.find((el) => el.type === ref.type && String(el.id) === ref.id);
-    if (!target) return { type: "gone" };
+    // A successful response without the requested element is malformed provider
+    // output — unavailability, never a definitive disappearance (only 404/410 are).
+    if (!target) return { type: "error" };
     const point = representativePoint(target, elements);
     if (!point) return { type: "error" };
     const poi: ResolvedPoi = resolvedPoiFromTags({

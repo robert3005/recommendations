@@ -42,6 +42,7 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
   const { ref, hint } = selection;
   const repo = useRepo();
   const selectPlace = useUiStore((s) => s.selectPlace);
+  const openPicker = useUiStore((s) => s.openPicker);
   const existingPlace = usePlaceForRef(ref);
   const lists = useLists();
   const resolveQuery = useQuery({
@@ -82,12 +83,36 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
   }
 
   if (outcome.type === "gone") {
+    // A confirmed deletion keeps its designed affordances (book/src/map-view.md):
+    // retry, nearby-candidate review, and the OSM portal (history survives deletion).
     return (
       <SheetShell label={label}>
         <PlaceFields {...(hint?.name ? { name: hint.name } : {})} source="live" />
         <p className="mt-2 text-sm text-red-700" data-testid="sheet-gone">
           This element no longer exists on OpenStreetMap.
         </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void resolveQuery.refetch()}
+            className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
+          >
+            Retry
+          </button>
+          {hint ? (
+            <button
+              type="button"
+              onClick={() => openPicker({ lat: hint.lat, lng: hint.lng })}
+              className="rounded border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700"
+              data-testid="find-candidates"
+            >
+              Find nearby candidates
+            </button>
+          ) : null}
+        </div>
+        <div className="mt-3">
+          <OsmLink osmRef={ref} />
+        </div>
       </SheetShell>
     );
   }

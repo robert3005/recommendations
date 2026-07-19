@@ -12,6 +12,7 @@ import {
   type Note,
   osmElementUrl,
   type Place,
+  type Tag,
 } from "@placemarks/domain";
 import Papa from "papaparse";
 import { DEFAULT_PIN_COLOR } from "../../lib/markers";
@@ -19,6 +20,7 @@ import { DEFAULT_PIN_COLOR } from "../../lib/markers";
 export interface ExportPlaceView {
   place: Place;
   notes: Note[];
+  tags?: Tag[];
 }
 
 const OSM_ATTRIBUTION_TEXT =
@@ -28,6 +30,7 @@ interface ExportRow {
   facts: DisplayFacts;
   place: Place;
   note?: string;
+  tags: string[];
 }
 
 function rows(views: ExportPlaceView[]): ExportRow[] {
@@ -39,7 +42,12 @@ function rows(views: ExportPlaceView[]): ExportRow[] {
       .map((n) => n.body.trim())
       .filter(Boolean)
       .join("\n\n");
-    out.push({ facts, place: view.place, ...(note ? { note } : {}) });
+    out.push({
+      facts,
+      place: view.place,
+      ...(note ? { note } : {}),
+      tags: (view.tags ?? []).map((t) => t.name),
+    });
   }
   return out;
 }
@@ -109,14 +117,18 @@ function formulaEscape(value: string): string {
 }
 
 export function exportListCsv(_list: List, views: ExportPlaceView[]): string {
+  // The Takeout columns stay first so the file round-trips through Takeout
+  // parsers (ours included); the extra Attribution column carries ODbL credit
+  // for rows whose facts are OSM-derived (book/src/interop.md).
   return `${Papa.unparse(
     {
-      fields: ["Title", "Note", "URL", "Address"],
+      fields: ["Title", "Note", "URL", "Address", "Attribution"],
       data: rows(views).map((row) => [
         formulaEscape(row.facts.name ?? "Unnamed place"),
         formulaEscape(row.note ?? ""),
         urlFor(row),
         formulaEscape(row.facts.address ?? ""),
+        row.place.lastVerified ? OSM_ATTRIBUTION_TEXT : "",
       ]),
     },
     { newline: "\n" },
@@ -136,6 +148,9 @@ export function exportListGeoJson(list: List, views: ExportPlaceView[]): string 
         ...(row.facts.category ? { category: row.facts.category } : {}),
         ...(row.facts.address ? { address: row.facts.address } : {}),
         ...(row.facts.website ? { website: row.facts.website } : {}),
+        ...(row.facts.phone ? { phone: row.facts.phone } : {}),
+        ...(row.facts.openingHours ? { openingHours: row.facts.openingHours } : {}),
+        ...(row.tags.length > 0 ? { tags: row.tags } : {}),
         ...(row.note ? { note: row.note } : {}),
         ...(row.place.currentOsmRef
           ? { osmRef: `${row.place.currentOsmRef.type}/${row.place.currentOsmRef.id}` }

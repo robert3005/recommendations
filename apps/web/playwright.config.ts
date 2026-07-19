@@ -47,6 +47,11 @@ export default defineConfig({
       timeout: 180_000,
       env: {
         VITE_MAP_STYLE_URL: "/test-style.json",
+        // The production build fails closed without explicit provider config;
+        // the offline test never touches these, they just must be explicit.
+        VITE_PHOTON_URL: "http://localhost:4319",
+        VITE_OSM_API_URL: "http://localhost:4319",
+        VITE_OVERPASS_URL: "http://localhost:4319",
       },
     },
   ],

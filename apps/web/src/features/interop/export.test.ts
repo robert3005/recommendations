@@ -105,12 +105,12 @@ Great bica, sit outside</description>
     );
   });
 
-  it("CSV keeps the Takeout shape and round-trips through our importer", () => {
+  it("CSV keeps the Takeout columns first and round-trips through our importer", () => {
     const csv = exportListCsv(list, views);
     expect(csv).toBe(
-      `Title,Note,URL,Address
-Café Central,"Great bica, sit outside",https://www.openstreetmap.org/node/101,"Rua Example 12, Lisboa"
-Dropped pin,,"https://www.google.com/maps/search/38.71,-9.15",
+      `Title,Note,URL,Address,Attribution
+Café Central,"Great bica, sit outside",https://www.openstreetmap.org/node/101,"Rua Example 12, Lisboa","Contains OSM-derived data © OpenStreetMap contributors, ODbL 1.0 (opendatacommons.org/licenses/odbl/1-0/)"
+Dropped pin,,"https://www.google.com/maps/search/38.71,-9.15",,
 `,
     );
     const reparsed = parseSavedCsv(csv, "Round trip");

@@ -3,6 +3,7 @@ import { SettingsPage } from "./features/backup/SettingsPage";
 import { ListPage } from "./features/lists/ListPage";
 import { ListsPage } from "./features/lists/ListsPage";
 import { MapPage } from "./features/map/MapPage";
+import { SnapshotViewerPage } from "./features/share/SnapshotViewerPage";
 
 function RootLayout() {
   return (
@@ -57,7 +58,20 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
-export const routeTree = rootRoute.addChildren([mapRoute, listsRoute, listRoute, settingsRoute]);
+// Public share viewers (book/src/sharing.md): snapshot links live in the fragment.
+const snapshotRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/l",
+  component: SnapshotViewerPage,
+});
+
+export const routeTree = rootRoute.addChildren([
+  mapRoute,
+  listsRoute,
+  listRoute,
+  settingsRoute,
+  snapshotRoute,
+]);
 
 export const router = createRouter({ routeTree });
 

@@ -155,6 +155,14 @@ interface SharedGuide {
 A live section block includes its own list note only when that note is shareable. A place note is
 included only through a live `BlockNoteAttachment`, and a personal tag only through a live
 `BlockTagSelection`. `Note.shareable` is a prerequisite, not sufficient publication state.
+
+> **First-release simplifications (2026-07-19, implemented with Phase 4).** Until the guide
+> editorial surface ships the attachment/selection UI: a place block carries **every shareable
+> note of its place** directly (`shareable` acts as the attachment), and **no tags are shared at
+> all** — more private than the eventual explicit `BlockTagSelection` model, never less. The
+> schema keeps both fields so documents stay forward-compatible. On import, unresolved OSM
+> anchors become **pending items in the interop review queue** (book/src/interop.md) rather than
+> a bespoke pending surface; the snapshot viewer route is `/l` inside the app shell.
 Disabling sharing or detaching content queues a new hosted revision; the previous public revision
 remains visible until that update succeeds.
 

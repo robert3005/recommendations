@@ -75,7 +75,7 @@ describe("assembleAddress", () => {
         "addr:postcode": "1100-000",
         "addr:city": "Lisboa",
       }),
-    ).toBe("Rua Example 12, 1100-000 Lisboa");
+    ).toBe("Rua Example 12, Lisboa 1100-000");
   });
   it("handles partial data", () => {
     expect(assembleAddress({ "addr:city": "Lisboa" })).toBe("Lisboa");

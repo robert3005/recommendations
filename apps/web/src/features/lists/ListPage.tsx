@@ -5,6 +5,7 @@
  * Every list exports as KML / Takeout-shaped CSV / GeoJSON / GPX.
  */
 import { displayFacts, type GuideBlockView, type Note } from "@placemarks/domain";
+import type { SharedGuide } from "@placemarks/schemas";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import { useGuide, useGuideBlocks } from "../../data/hooks";
@@ -20,6 +21,9 @@ import {
   exportListKml,
 } from "../interop/export";
 import { StateBadge } from "../place/StateBadge";
+import { type ProjectionStats, projectGuide } from "../share/project";
+import { SharePreview } from "../share/SharePreview";
+import { encodeSnapshot, SnapshotTooLargeError } from "../share/snapshot";
 import { MarkerSwatches } from "./MarkerSwatches";
 
 const EXPORTS = [
@@ -37,8 +41,42 @@ export function ListPage() {
   const blocks = useGuideBlocks(listId);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState<string>();
+  const [sharing, setSharing] = useState<{
+    guide: SharedGuide;
+    stats: ProjectionStats;
+    snapshotUrl?: string;
+    compressedBytes?: number;
+    tooLargeReason?: string;
+  }>();
+  const [copied, setCopied] = useState(false);
 
   if (!list) return <div className="p-4 text-stone-500">List not found.</div>;
+
+  const openShare = async () => {
+    const projection = await projectGuide(repo, list.id);
+    if (!projection) return;
+    try {
+      const { fragment, compressedBytes } = encodeSnapshot(projection.guide);
+      setSharing({
+        guide: projection.guide,
+        stats: projection.stats,
+        snapshotUrl: `${window.location.origin}/l#${fragment}`,
+        compressedBytes,
+      });
+    } catch (err) {
+      setSharing({
+        guide: projection.guide,
+        stats: projection.stats,
+        tooLargeReason:
+          err instanceof SnapshotTooLargeError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : String(err),
+      });
+    }
+    setCopied(false);
+  };
 
   const placeBlocks = (blocks ?? []).filter((v) => v.block.content.type === "place");
 
@@ -52,7 +90,8 @@ export function ListPage() {
       } catch {
         notes = [];
       }
-      views.push({ place: view.place, notes });
+      const placeView = await repo.getPlaceView(view.place.id);
+      views.push({ place: view.place, notes, tags: placeView?.tags ?? [] });
     }
     const safe = list.name.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "") || "list";
     downloadText(`${safe}.${writer.key}`, writer.mime, writer.write(list, views));
@@ -122,6 +161,14 @@ export function ListPage() {
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-stone-500">
+        <button
+          type="button"
+          className="rounded bg-stone-800 px-2.5 py-1 font-medium text-white"
+          data-testid="share-list"
+          onClick={() => void openShare()}
+        >
+          Share…
+        </button>
         Export:
         {EXPORTS.map((writer) => (
           <button
@@ -135,6 +182,26 @@ export function ListPage() {
           </button>
         ))}
       </div>
+
+      {sharing ? (
+        <SharePreview
+          title={list.name}
+          guide={sharing.guide}
+          stats={sharing.stats}
+          {...(sharing.snapshotUrl ? { snapshotUrl: sharing.snapshotUrl } : {})}
+          {...(sharing.compressedBytes !== undefined
+            ? { compressedBytes: sharing.compressedBytes }
+            : {})}
+          {...(sharing.tooLargeReason ? { tooLargeReason: sharing.tooLargeReason } : {})}
+          copied={copied}
+          onCopy={() => {
+            if (sharing.snapshotUrl) {
+              void navigator.clipboard.writeText(sharing.snapshotUrl).then(() => setCopied(true));
+            }
+          }}
+          onClose={() => setSharing(undefined)}
+        />
+      ) : null}
 
       <ul className="mt-4 space-y-2">
         {placeBlocks.map((view) => {

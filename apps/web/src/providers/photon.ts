@@ -33,9 +33,10 @@ function toSearchResult(feature: PhotonFeature): SearchResult | undefined {
   if (!props || !coords) return undefined;
   const type = props.osm_type ? OSM_TYPE_MAP[props.osm_type] : undefined;
   if (!type || props.osm_id === undefined || !props.name) return undefined;
+  // Same shape as the domain's assembleAddress: street first, then city+postcode.
   const address = [
     [props.street, props.housenumber].filter(Boolean).join(" "),
-    [props.postcode, props.city].filter(Boolean).join(" "),
+    [props.city, props.postcode].filter(Boolean).join(" "),
   ]
     .filter((part) => part !== "")
     .join(", ");

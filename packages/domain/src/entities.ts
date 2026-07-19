@@ -72,3 +72,38 @@ export interface BlockNoteAttachment extends BaseEntity {
 export function compareByRank<T extends { rank: string; id: string }>(a: T, b: T): number {
   return a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
+
+export type PublicationStatus =
+  | "draft"
+  | "queued"
+  | "publishing"
+  | "published"
+  | "failed"
+  | "revoking"
+  | "revoked";
+
+/**
+ * Private publication state (book/src/data-model.md §Publication state) —
+ * public content, local drafts, credentials, retries, and revocation are never
+ * confused on `List`/`Note` themselves. The editor bearer token lives in a
+ * separate credential record; only its id appears here.
+ */
+export interface Publication extends BaseEntity {
+  target: { kind: "list" | "note"; id: string };
+  mode: "snapshot" | "hosted";
+  slug?: string; // hosted mode; public and guessable
+  credentialId?: string;
+  status: PublicationStatus;
+  localRevision: string;
+  lastPublishedLocalRevision?: string;
+  publishedRevision?: number; // server revision / ETag value
+  lastPublishedHash?: string;
+  publishedAt?: string;
+  lastError?: string;
+}
+
+/** A device-held editor bearer token — never in a public URL or document. */
+export interface EditorCredential extends BaseEntity {
+  /** ≥256 random bits, base64url. Sent over TLS; the server stores only a hash. */
+  token: string;
+}

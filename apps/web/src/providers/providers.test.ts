@@ -13,7 +13,7 @@ describe("PhotonSearchProvider", () => {
       ref: { type: "node", id: "101" },
       name: "Café Central",
       category: "cafe",
-      address: "Rua Example 12, 1100-000 Lisboa",
+      address: "Rua Example 12, Lisboa 1100-000",
     });
     expect(results[1]?.ref).toEqual({ type: "way", id: "201" });
   });

@@ -173,6 +173,14 @@ export function MapPage() {
           Showing a capped set of places — zoom in for more
         </div>
       ) : null}
+      {discoverEnabled && discoverQuery.isError ? (
+        <output
+          className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-orange-700/90 px-3 py-1 text-xs text-white"
+          data-testid="discover-error"
+        >
+          Nearby places unavailable right now — your saved pins are unaffected
+        </output>
+      ) : null}
       {selection ? <PlaceSheet /> : null}
       {pickerAt ? (
         <CandidatePicker

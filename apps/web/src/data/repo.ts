@@ -88,6 +88,9 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async updatePlace(place: Place): Promise<void> {
+    // Not a creation path: places come to exist through addToList only.
+    const existing = live(await this.db.places.get(place.id));
+    if (!existing) throw new Error("place not found — updatePlace is not a creation path");
     await this.db.places.put(toPlaceRow(place));
   }
 

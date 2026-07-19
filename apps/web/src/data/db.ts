@@ -9,11 +9,13 @@
  */
 import type {
   BlockNoteAttachment,
+  EditorCredential,
   List,
   ListBlock,
   MediaAsset,
   Note,
   Place,
+  Publication,
   Tag,
   TagAssignment,
 } from "@placemarks/domain";
@@ -39,6 +41,24 @@ export interface ImportBatchRow {
   fileName: string;
   startedAt: string;
   status: "reviewing" | "done" | "abandoned";
+}
+
+/** Source-list identity: re-imports target the same local list even after a rename. */
+export interface ImportSourceRow {
+  sourceKey: string;
+  listId: string;
+}
+
+/** One durable publish/revoke job (book/src/sharing.md §Local publication record). */
+export interface PublicationJobRow {
+  id: string; // doubles as the Idempotency-Key
+  publicationId: string;
+  action: "publish" | "revoke";
+  /** The local revision this job projects — completing an older job never rolls forward state back. */
+  localRevision: string;
+  createdAt: string;
+  attempts: number;
+  lastError?: string;
 }
 
 export interface ImportItemRow {
@@ -74,6 +94,10 @@ export class PlacemarksDb extends Dexie {
   blockNoteAttachments!: EntityTable<BlockNoteAttachment, "id">;
   importBatches!: EntityTable<ImportBatchRow, "id">;
   importItems!: EntityTable<ImportItemRow, "id">;
+  importSources!: EntityTable<ImportSourceRow, "sourceKey">;
+  publications!: EntityTable<Publication, "id">;
+  credentials!: EntityTable<EditorCredential, "id">;
+  publicationOutbox!: EntityTable<PublicationJobRow, "id">;
 
   constructor(name = "placemarks") {
     super(name);
@@ -163,6 +187,15 @@ export class PlacemarksDb extends Dexie {
     this.version(5).stores({
       importBatches: "id, status, startedAt",
       importItems: "id, batchId, status",
+    });
+    // v6 (Phases 3/5): source-list identity across re-imports (a renamed local
+    // list stays canonical), and the publication machinery — publications,
+    // device-held editor credentials, and the durable publication outbox.
+    this.version(6).stores({
+      importSources: "sourceKey",
+      publications: "id, status, updatedAt",
+      credentials: "id",
+      publicationOutbox: "id, publicationId, createdAt",
     });
   }
 }

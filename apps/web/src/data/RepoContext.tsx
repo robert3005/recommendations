@@ -17,7 +17,7 @@ export function RepoProvider({
   children,
 }: {
   repo: PlacemarksRepository;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }) {
   return <RepoContext.Provider value={repo}>{children}</RepoContext.Provider>;
 }
