@@ -49,3 +49,25 @@ export interface MapStyleConfig {
   /** OSM attribution is a licensing requirement, not a preference. */
   attribution: "© OpenStreetMap contributors";
 }
+
+/**
+ * The map-style boundary (spec/src/architecture.md §External service
+ * adapters): the canvas consumes a typed style + attribution capability, not
+ * a raw URL constant — providers stay replaceable through contracts.
+ */
+export interface MapStyleProvider {
+  style(): MapStyleConfig;
+}
+
+/**
+ * Bearer-authorized publish/revoke of EXPLICIT publication jobs
+ * (spec/src/architecture.md): the publisher drains only the durable
+ * publication outbox — it never auto-publishes local edits, and a failed
+ * network effect never rolls back a committed local change.
+ */
+export interface SharePublisher {
+  /** Retry interrupted explicit jobs from the durable outbox (launch/reconnect). */
+  drainOutbox(): Promise<void>;
+  /** Queue and send revocation for a publication; retries reuse its job. */
+  revoke(publicationId: string): Promise<void>;
+}

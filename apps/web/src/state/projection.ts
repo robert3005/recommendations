@@ -37,11 +37,19 @@ export type CanvasProjection =
 interface ProjectionStore {
   projection: CanvasProjection;
   setProjection: (projection: CanvasProjection) => void;
+  /**
+   * The public viewer's map→article channel: the canvas hands a tapped
+   * shared-pin key back to whichever read-only viewer is mounted.
+   */
+  sharedSelectHandler: ((key: string) => void) | null;
+  setSharedSelectHandler: (handler: ((key: string) => void) | null) => void;
 }
 
 export const useProjectionStore = create<ProjectionStore>((set) => ({
   projection: { kind: "all" },
   setProjection: (projection) => set({ projection }),
+  sharedSelectHandler: null,
+  setSharedSelectHandler: (handler) => set({ sharedSelectHandler: handler }),
 }));
 
 /** Publish this route's projection while it is mounted. */

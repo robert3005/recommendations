@@ -19,6 +19,9 @@ import { useUiStore } from "../state/ui";
 const phase01 = vi.hoisted(() => ({ discover: vi.fn() }));
 
 vi.mock("../providers", () => ({
+  mapStyleProvider: {
+    style: () => ({ styleUrl: "/test-style.json", attribution: "© OpenStreetMap contributors" }),
+  },
   searchProvider: { search: vi.fn(async () => []) },
   poiResolver: {
     resolveExact: vi.fn(async (ref: { id: string }) =>

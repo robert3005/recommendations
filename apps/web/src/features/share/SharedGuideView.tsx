@@ -1,19 +1,22 @@
 /**
- * The public read-only guide viewer (spec/src/sharing.md §Public guide viewer):
- * paints immediately from copied evidence / manual facts, live-resolves OSM
- * anchors (evidence stays visibly timestamped when resolution fails), renders
- * the interleaved article with a synchronized map, and offers
- * "Add this guide to my library". No editing controls exist here.
+ * The public read-only viewer for shared lists and posts (spec/src/sharing.md
+ * §Public viewer): paints immediately from copied evidence / manual facts,
+ * live-resolves OSM anchors (evidence stays visibly timestamped when
+ * resolution fails), renders the interleaved article in the pane with the
+ * PERSISTENT canvas projecting its places — the app's one layout grammar,
+ * read-only chrome — and offers "Add these places to my library". No editing
+ * controls exist here.
  */
 import type { SharedGuide } from "@placemarks/schemas";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MAP_STYLE_URL } from "../../config";
 import { useDexieRepo } from "../../data/RepoContext";
-import { DEFAULT_PIN_COLOR, FALLBACK_MARKER } from "../../lib/markers";
+import { DEFAULT_PIN_COLOR } from "../../lib/markers";
 import { nowIso } from "../../lib/time";
-import { MapView, type PlacePinFeature } from "../../map/MapView";
 import { Markdown } from "../../markdown/Markdown";
 import { poiResolver } from "../../providers";
+import { usePaneStore } from "../../state/pane";
+import { useCanvasProjection, useProjectionStore } from "../../state/projection";
+import { useUiStore } from "../../state/ui";
 import { resolveAllAnchors, type SharedResolution } from "./resolveShared";
 import { type SaveSharedResult, saveSharedGuide } from "./saveSharedGuide";
 
@@ -103,13 +106,21 @@ export function SharedGuideView({
   // article entry; activating an entry selects and recentres its pin.
   const entryRefs = useRef(new Map<string, HTMLLIElement>());
   const [selectedBlockId, setSelectedBlockId] = useState<string>();
-  const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number; zoom?: number } | null>(
-    null,
-  );
   const selectFromMap = (blockId: string) => {
     setSelectedBlockId(blockId);
     entryRefs.current.get(blockId)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
+  const requestFlyTo = useUiStore((s) => s.requestFlyTo);
+  const setSharedSelectHandler = useProjectionStore((s) => s.setSharedSelectHandler);
+  const setPane = usePaneStore((s) => s.setPane);
+  // The article lands beside its map: the viewer opens at split, and canvas
+  // pin taps select article entries for as long as this viewer is mounted.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: registers once per mount; the handler closes over stable refs/setters
+  useEffect(() => {
+    setPane("split");
+    setSharedSelectHandler(selectFromMap);
+    return () => setSharedSelectHandler(null);
+  }, []);
   const shownCoords = (row: DisplayRow): { lat: number; lng: number } | undefined => {
     // A successful live resolve moves the pin — selection and recentring
     // follow the resolved coordinates, never stale copied ones.
@@ -123,7 +134,7 @@ export function SharedGuideView({
   const selectFromArticle = (row: DisplayRow) => {
     setSelectedBlockId(row.blockId);
     const coords = shownCoords(row);
-    if (coords) setFlyTarget({ ...coords, zoom: 16 });
+    if (coords) requestFlyTo({ ...coords, zoom: 16 });
   };
 
   useEffect(() => {
@@ -139,46 +150,27 @@ export function SharedGuideView({
     });
   }, [guide]);
 
-  const pins: PlacePinFeature[] = rows.flatMap((row) => {
-    if (row.kind !== "place" || row.lat === undefined || row.lng === undefined) return [];
-    const live = resolutions[row.blockId];
-    const poi = live?.state === "live" || live?.state === "recovered" ? live.poi : undefined;
+  // The shared places project onto the persistent canvas (the app's one
+  // layout grammar); a successful live resolve moves the pin — the projection
+  // follows resolved coordinates, never stale copied ones.
+  const pins = rows.flatMap((row) => {
+    const coords = row.kind === "place" ? shownCoords(row) : undefined;
+    if (!coords) return [];
     return [
       {
-        placeId: row.blockId,
+        key: row.blockId,
         name: row.name ?? "Place",
-        lat: poi?.lat ?? row.lat,
-        lng: poi?.lng ?? row.lng,
-        unlinked: row.manual === true,
-        color: DEFAULT_PIN_COLOR,
-        icon: FALLBACK_MARKER.icon,
-        multi: false,
-        dimmed: false,
+        lat: coords.lat,
+        lng: coords.lng,
+        ...(row.blockId === selectedBlockId ? { selected: true } : {}),
       },
     ];
   });
+  useCanvasProjection({ kind: "shared", pins });
 
   return (
-    <div className="flex h-full flex-col md:flex-row" data-testid="shared-guide">
-      <div className="h-64 shrink-0 md:h-auto md:w-1/2">
-        <MapView
-          styleUrl={MAP_STYLE_URL}
-          initialCenter={{
-            lat: pins[0]?.lat ?? 20,
-            lng: pins[0]?.lng ?? 0,
-          }}
-          initialZoom={pins.length > 0 ? 12 : 2}
-          placePins={pins}
-          poiPins={[]}
-          selectionPin={(() => {
-            const selected = rows.find((row) => row.blockId === selectedBlockId);
-            return selected ? (shownCoords(selected) ?? null) : null;
-          })()}
-          flyTo={flyTarget}
-          onSelectPlace={selectFromMap}
-        />
-      </div>
-      <article className="min-h-0 flex-1 overflow-y-auto p-4">
+    <div className="h-full" data-testid="shared-guide">
+      <article className="h-full min-h-0 overflow-y-auto p-4">
         <header className="flex items-start justify-between gap-3">
           <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-900">
             <span

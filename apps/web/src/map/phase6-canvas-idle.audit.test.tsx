@@ -47,6 +47,9 @@ vi.mock("./MapView", () => ({
 }));
 
 vi.mock("../providers", () => ({
+  mapStyleProvider: {
+    style: () => ({ styleUrl: "/test-style.json", attribution: "© OpenStreetMap contributors" }),
+  },
   searchProvider: { search: vi.fn(async () => []) },
   poiResolver: {
     resolveExact: vi.fn(async () => ({ type: "error" as const })),

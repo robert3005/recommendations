@@ -14,7 +14,7 @@ import { displayFacts, refKey } from "@placemarks/domain";
 import { useQuery } from "@tanstack/react-query";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useRef, useState } from "react";
-import { DISCOVER_MIN_ZOOM, MAP_STYLE_URL } from "../config";
+import { DISCOVER_MIN_ZOOM } from "../config";
 import { useLibraryPlaces, useListMembership, useLists, usePostBlocks } from "../data/hooks";
 import { useDexieRepo, useRepo } from "../data/RepoContext";
 import { resolveReviewItem } from "../features/interop/importer";
@@ -28,7 +28,7 @@ import { newId } from "../lib/id";
 import { DEFAULT_PIN_COLOR, FALLBACK_MARKER } from "../lib/markers";
 import { nowIso } from "../lib/time";
 import { initialViewport, persistViewport } from "../lib/viewport";
-import { poiResolver, searchProvider } from "../providers";
+import { mapStyleProvider, poiResolver, searchProvider } from "../providers";
 import { usePaneStore } from "../state/pane";
 import { useProjectionStore } from "../state/projection";
 import { useUiStore } from "../state/ui";
@@ -232,17 +232,23 @@ export function MapCanvas() {
         }))
       : [];
 
-  // The selection is marked on the map immediately, listed or not.
+  // The selection is marked on the map immediately, listed or not. In the
+  // public viewer the selected shared pin wears the ring.
   const selectionPin =
-    selection?.kind === "osm" && selection.hint
-      ? { lat: selection.hint.lat, lng: selection.hint.lng }
-      : selection?.kind === "place"
-        ? (() => {
-            const view = (libraryPlaces ?? []).find((v) => v.place.id === selection.placeId);
-            const facts = view ? displayFacts(view.place) : undefined;
-            return facts ? { lat: facts.lat, lng: facts.lng } : null;
-          })()
-        : null;
+    projection.kind === "shared"
+      ? (() => {
+          const selected = projection.pins.find((pin) => pin.selected);
+          return selected ? { lat: selected.lat, lng: selected.lng } : null;
+        })()
+      : selection?.kind === "osm" && selection.hint
+        ? { lat: selection.hint.lat, lng: selection.hint.lng }
+        : selection?.kind === "place"
+          ? (() => {
+              const view = (libraryPlaces ?? []).find((v) => v.place.id === selection.placeId);
+              const facts = view ? displayFacts(view.place) : undefined;
+              return facts ? { lat: facts.lat, lng: facts.lng } : null;
+            })()
+          : null;
 
   // One camera move per projection change — never before its pins exist.
   const fitTo = (() => {
@@ -302,7 +308,7 @@ export function MapCanvas() {
   return (
     <div className="relative h-full" data-testid="map-page" data-canvas-idle={idle ? "1" : "0"}>
       <MapView
-        styleUrl={MAP_STYLE_URL}
+        styleUrl={mapStyleProvider.style().styleUrl}
         initialCenter={{ lat: startViewport.lat, lng: startViewport.lng }}
         initialZoom={startViewport.zoom}
         placePins={shown.placePins}
@@ -316,6 +322,11 @@ export function MapCanvas() {
           selectOsm(pin.ref, { name: pin.name, lat: pin.lat, lng: pin.lng, category: pin.category })
         }
         onSelectMark={(mark) => {
+          // A shared-pin tap selects its article entry in the viewer pane.
+          if (projection.kind === "shared") {
+            useProjectionStore.getState().sharedSelectHandler?.(mark.key);
+            return;
+          }
           // A review candidate mark resolves the item to that candidate.
           if (projection.kind !== "review" || !reviewItem) return;
           const candidate = (reviewItem.candidates ?? []).find(

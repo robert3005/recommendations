@@ -36,10 +36,12 @@ void prepare().then(() => {
   // Durable publication outbox: interrupted jobs from earlier sessions retry
   // on launch (spec/src/sharing.md §Local publication record) — after the dev
   // mock layer is ready, so requests never race past it.
-  void import("./features/publish/publication").then(({ runPublicationOutbox }) =>
-    runPublicationOutbox(getDefaultRepo()).catch(() => {
-      // Offline is a designed state; the outbox retries next launch/enqueue.
-    }),
+  void import("./features/publish/publisher").then(({ createSharePublisher }) =>
+    createSharePublisher(getDefaultRepo())
+      .drainOutbox()
+      .catch(() => {
+        // Offline is a designed state; the outbox retries next launch/enqueue.
+      }),
   );
   // Background multi-device sync (spec/src/storage-sync.md): the transport
   // drains the mutation outbox on launch and on a slow heartbeat when a sync

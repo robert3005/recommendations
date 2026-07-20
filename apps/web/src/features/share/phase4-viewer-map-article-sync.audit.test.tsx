@@ -1,41 +1,20 @@
 /**
- * The public reader's map and non-map article are one synchronized view:
- * selecting a pin reaches its article entry, and a keyboard activation in the
- * article selects/recentres the same pin. The test accepts focus or any common
- * selected-state semantic and either MapView selection/fly-to signal.
+ * The public reader's map and non-map article are one synchronized view — on
+ * the app's SINGLETON canvas (spec/src/sharing.md §Public viewer reuses the
+ * pane-and-canvas grammar): a canvas pin tap reaches its article entry
+ * through the registered shared-select channel, and a keyboard activation in
+ * the article selects/recentres the same pin via the canvas projection. No
+ * edit controls exist in the viewer.
  */
 import type { SharedGuide } from "@placemarks/schemas";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ComponentProps } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
 import { DexieRepository } from "../../data/repo";
-import type { MapView } from "../../map/MapView";
+import { useProjectionStore } from "../../state/projection";
+import { useUiStore } from "../../state/ui";
 import { SharedGuideView } from "./SharedGuideView";
-
-type MapProps = ComponentProps<typeof MapView>;
-
-const mapHarness = vi.hoisted(() => ({ latest: undefined as MapProps | undefined }));
-
-vi.mock("../../map/MapView", () => ({
-  MapView: (props: MapProps) => {
-    mapHarness.latest = props;
-    return (
-      <div data-testid="public-map-harness">
-        {props.placePins.map((pin) => (
-          <button
-            key={pin.placeId}
-            type="button"
-            onClick={() => props.onSelectPlace?.(pin.placeId)}
-          >
-            Map pin {pin.name}
-          </button>
-        ))}
-      </div>
-    );
-  },
-}));
 
 vi.mock("../../providers", () => ({
   poiResolver: {
@@ -71,17 +50,6 @@ function placeEntry(name: string): HTMLElement {
   return entry;
 }
 
-function entryWasReachedOrHighlighted(entry: HTMLElement, scrolled: Set<Element>): boolean {
-  return (
-    entry === document.activeElement ||
-    entry.contains(document.activeElement) ||
-    [...scrolled].some((element) => element === entry || entry.contains(element)) ||
-    entry.getAttribute("aria-current") === "true" ||
-    entry.getAttribute("aria-selected") === "true" ||
-    entry.dataset.selected === "true"
-  );
-}
-
 function articleActivator(entry: HTMLElement): HTMLElement {
   if (entry.matches('button, a, [role="button"], [role="link"], [tabindex]:not([tabindex="-1"])')) {
     return entry;
@@ -91,12 +59,10 @@ function articleActivator(entry: HTMLElement): HTMLElement {
     entry) as HTMLElement;
 }
 
-function mapTargets(lat: number, lng: number): boolean {
-  const props = mapHarness.latest;
-  return [props?.selectionPin, props?.flyTo, props?.initialCenter].some(
-    (target) => target?.lat === lat && target.lng === lng,
-  );
-}
+beforeEach(() => {
+  useProjectionStore.setState({ projection: { kind: "all" }, sharedSelectHandler: null });
+  useUiStore.setState({ selection: null, flyTo: null });
+});
 
 describe("Phase 4 public map/article synchronization", () => {
   it("synchronizes selection in both directions without exposing edit controls", async () => {
@@ -117,20 +83,34 @@ describe("Phase 4 public map/article synchronization", () => {
         </RepoProvider>,
       );
 
+      // The viewer projected its places onto the singleton canvas…
+      const projected = useProjectionStore.getState().projection;
+      if (projected.kind !== "shared") throw new Error("viewer did not project onto the canvas");
+      expect(projected.pins.map((pin) => pin.name)).toEqual(["Alpha viewpoint", "Bravo viewpoint"]);
+      // …and registered the map→article channel a canvas pin tap uses.
+      const handler = useProjectionStore.getState().sharedSelectHandler;
+      expect(handler).toBeTruthy();
+
       const alphaEntry = placeEntry("Alpha viewpoint");
       scrolled.clear();
-      await user.click(screen.getByRole("button", { name: "Map pin Alpha viewpoint" }));
+      act(() => handler?.("alpha-block"));
       await waitFor(() =>
-        expect(entryWasReachedOrHighlighted(alphaEntry, scrolled)).toBe(true),
-      ).catch(() => undefined);
-      expect.soft(entryWasReachedOrHighlighted(alphaEntry, scrolled)).toBe(true);
+        expect(
+          [...scrolled].some((element) => element === alphaEntry || alphaEntry.contains(element)),
+        ).toBe(true),
+      );
 
+      // Article → map: activation flies the canvas and marks the pin selected.
       const bravoEntry = placeEntry("Bravo viewpoint");
       const activator = articleActivator(bravoEntry);
       activator.focus();
       await user.keyboard("{Enter}");
-      await waitFor(() => expect(mapTargets(38.72, -9.15)).toBe(true)).catch(() => undefined);
-      expect.soft(mapTargets(38.72, -9.15)).toBe(true);
+      await waitFor(() => {
+        expect(useUiStore.getState().flyTo).toMatchObject({ lat: 38.72, lng: -9.15 });
+        const current = useProjectionStore.getState().projection;
+        if (current.kind !== "shared") throw new Error("projection lost");
+        expect(current.pins.find((pin) => pin.key === "bravo-block")?.selected).toBe(true);
+      });
 
       expect(screen.queryByTestId("edit-list")).not.toBeInTheDocument();
       expect(screen.queryByTestId("publish-list")).not.toBeInTheDocument();

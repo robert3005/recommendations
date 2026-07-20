@@ -1,24 +1,20 @@
-/** A successful live OSM refresh drives both sides of the synchronized reader. */
+/**
+ * A successful live OSM refresh drives both sides of the synchronized reader
+ * — on the singleton canvas projection (spec/src/sharing.md §Public viewer):
+ * the projected pin moves to the RESOLVED coordinates, and selecting the
+ * article entry recentres there, never at stale copied coordinates.
+ */
 import type { SharedGuide, SharedPlaceEvidence } from "@placemarks/schemas";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { ComponentProps } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
 import { DexieRepository } from "../../data/repo";
-import type { MapView } from "../../map/MapView";
+import { useProjectionStore } from "../../state/projection";
+import { useUiStore } from "../../state/ui";
 import { SharedGuideView } from "./SharedGuideView";
 
-type MapProps = ComponentProps<typeof MapView>;
-const mapHarness = vi.hoisted(() => ({ latest: undefined as MapProps | undefined }));
 const LIVE = { lat: 38.735, lng: -9.115 };
-
-vi.mock("../../map/MapView", () => ({
-  MapView: (props: MapProps) => {
-    mapHarness.latest = props;
-    return <div data-testid="live-coordinate-map" />;
-  },
-}));
 
 vi.mock("../../providers", () => ({
   poiResolver: {
@@ -69,6 +65,16 @@ const guide: SharedGuide = {
   contentHash: "fixture",
 };
 
+function sharedPins(): { key: string; lat: number; lng: number; selected?: boolean }[] {
+  const projection = useProjectionStore.getState().projection;
+  return projection.kind === "shared" ? projection.pins : [];
+}
+
+beforeEach(() => {
+  useProjectionStore.setState({ projection: { kind: "all" }, sharedSelectHandler: null });
+  useUiStore.setState({ selection: null, flyTo: null });
+});
+
 describe("Phase 4 live-coordinate map/article synchronization", () => {
   it("recentres and selects at the resolved coordinates rather than stale copied coordinates", async () => {
     const repo = new DexieRepository(`phase4-live-coordinate-sync-${crypto.randomUUID()}`);
@@ -79,13 +85,14 @@ describe("Phase 4 live-coordinate map/article synchronization", () => {
         </RepoProvider>,
       );
 
-      await waitFor(() =>
-        expect(mapHarness.latest?.placePins[0]).toMatchObject({ lat: LIVE.lat, lng: LIVE.lng }),
-      );
+      await waitFor(() => expect(sharedPins()[0]).toMatchObject({ lat: LIVE.lat, lng: LIVE.lng }));
       await userEvent.click(screen.getByRole("button", { name: "Café Central" }));
 
-      await waitFor(() => expect(mapHarness.latest?.flyTo).toMatchObject(LIVE));
-      expect(mapHarness.latest?.selectionPin).toMatchObject(LIVE);
+      await waitFor(() => expect(useUiStore.getState().flyTo).toMatchObject(LIVE));
+      expect(sharedPins().find((pin) => pin.key === "cafe-block")).toMatchObject({
+        ...LIVE,
+        selected: true,
+      });
     } finally {
       repo.db.close();
     }
