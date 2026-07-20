@@ -1,15 +1,72 @@
-# Views — Lists Home & the Map
+# Views — the Content Pane & the Map Canvas
 
-**Lists are the home screen** (2026-07-19; supersedes "the map is the home screen"). The product
-is curated lists and posts about them, so launch opens on the curation, not on an empty map. The
-**map is the paired primary view** — one switch away, full-bleed, showing every library point at
-once with each point wearing its list's unique marker.
+> **One layout grammar (2026-07-19, late — supersedes both the original "map is the home screen"
+> and the same-day two-view Lists/Map framing).** After the pivot, almost every screen is the
+> same scene: *content about places next to a map showing them* — the lists home, a list, a
+> post being read or written, the import review queue, the public viewers. So the map stops
+> being a page. The app is a **content pane** (where routes render) beside a **single persistent
+> map canvas** (which never navigates — it re-projects whatever the pane shows). Lists remain
+> the home: the pane opens on them.
 
-## The Lists home
+## The grammar
+
+```text
+DESKTOP — every route renders pane + canvas          MOBILE — sheet over canvas
+┌───────────────────┬───────────────────────┐        ┌──────────────────┐
+│  CONTENT PANE     │   MAP CANVAS          │        │ ░░░ MAP ░░░░░░░ │
+│  home · list ·    │   always mounted;     │        │ ┌──────────────┐ │
+│  post · editor ·  │   projects the pane's │        │ │ CONTENT SHEET│ │
+│  review · ⚙      │   places; toggles     │        │ │ (same routes)│ │
+│  [⟨] collapse     │   ◉ ◆ ▲              │        │ │              │ │
+└───────────────────┴───────────────────────┘        └─┴──────────────┴─┘
+```
+
+- **Three pane states, both form factors.** Desktop: **collapsed** (full-bleed map — the old
+  "Map view" is this state), **split** (default), **expanded** (focused reading/writing).
+  Mobile: the same three as sheet detents — **peek**, **half**, **full**. Launch opens the pane
+  **expanded/full on the Lists home**; the map is one collapse or drag away, never a tab switch.
+- **The canvas projects the route.**
+
+  | Pane (route) | Canvas projection |
+  |---|---|
+  | `/` Lists home | every list's points, each wearing its list marker; list toggles |
+  | `/list/:id` (read or Edit mode) | that list's points; the rest of the library dimmed |
+  | `/post/:id` (reading) | the post's embeds; the camera follows the article as it scrolls |
+  | `/post/:id/edit` (block editor) | embeds solid; the rest of the post's list dimmed as candidates |
+  | Import review queue | the item under review plus its labelled candidates |
+  | `/l/:slug` · `/n/:slug` public viewers | the shared places, same grammar, read-only chrome |
+  | Settings | viewport unchanged |
+
+- **Selection is bidirectional.** Tap a pin → its card rises in the pane/sheet; select in the
+  pane → the canvas highlights and flies (respecting `prefers-reduced-motion`). The pane is
+  also the map's synchronized non-map equivalent for accessibility.
+- **One map instance.** The canvas is a singleton in the app shell, outside the route outlet:
+  no re-mount on navigation, the viewport survives route changes, and the typed routes carry
+  slug + viewport state ([tech stack](./tech-stack.md)).
+- **The canvas idles when fully hidden** (2026-07-19, late). At pane **expanded** / sheet
+  **full** — the full-scale reading or writing surface — the canvas stops working: the render
+  loop pauses, viewport-driven discovery stops and in-flight viewport requests are cancelled,
+  and projection changes (a route change, a post's scroll-following) are **deferred and
+  coalesced** instead of executed invisibly. Leaving full occlusion paints the retained scene
+  immediately and applies the one coalesced projection — a single camera move, fresh fetches
+  only then. A hidden map spends no GPU, battery, or tile quota.
+- Settings (backup/restore, sync, import, provider/privacy information, publication status) is
+  a pane route like any other.
+
+```text
+ pane    collapsed ⇄ split ⇄ expanded          (mobile: peek ⇄ half ⇄ full)
+ canvas  ACTIVE      ACTIVE   IDLE
+         full-bleed  beside   render paused · discovery stopped, in-flight
+         map         pane     cancelled · projections defer + coalesce
+                                └─ reveal ⇒ retained scene paints, one
+                                   coalesced camera move, fetches resume
+```
+
+## The Lists home (pane route `/`)
 
 ```text
 ┌─────────────────────────────────────────────┐
-│  Lists                          [Map] (☰)  │
+│  Lists                            [⟨] (☰)  │
 │                                             │
 │  ◉ Lisbon eats          12 places  ▸ post  │
 │    Cervejaria Ramiro · Prado · Taberna …    │
@@ -23,34 +80,17 @@ once with each point wearing its list's unique marker.
 
 Each row shows the list's **marker (icon + colour)**, name, place count, a link to its
 [posts](./posts.md) when any exist, and an **inline preview truncated to a fixed length** — the
-first place names in list order, cut at one line. Tapping a row opens the list page (read view,
-Edit mode, export, share, posts). The home also carries the entry points that feed lists: **New
-list** and **Import** ([Interop](./interop.md)).
+first place names in list order, cut at one line. Tapping a row navigates the pane to the list
+page (read view, Edit mode, export, share, posts) and the canvas to its points. The home also
+carries the entry points that feed lists: **New list** and **Import** ([Interop](./interop.md)).
 
-## The map
+## The canvas
 
-```text
-┌─────────────────────────────────────────────┐
-│  Search places, addresses…       [Lists] ☰ │
-│  ◉ Lisbon eats ◆ Porto weekend ▲ Hikes …   │
-│                                             │
-│                    MAP                      │
-│      all library pins · live POIs           │
-│                                             │
-│                                      ( ◎ )  │
-│  © OpenStreetMap contributors               │
-├─────────────────────────────────────────────┤
-│  bottom sheet: place / list detail          │
-└─────────────────────────────────────────────┘
-```
-
-Primary navigation leads to Lists (home), Map, and Settings. Place cards expose tags and notes;
-Settings owns backup/restore, sync, and provider/privacy information; publication status joins
-Settings where sharing lands. The **list toggles** row is the map's primary filter — each list's
-marker toggles its points on/off; all lists show by default. The category chips ([Eat] [Drink]
-[Shop] …, mapping the OSM taxonomy into the small top-level groups adopted from
-[prior art](./prior-art-step.md)) move behind the search affordance and filter **live-POI
-discovery**, which is secondary to the library on this map.
+Floating on the canvas: search, the **list toggles** row — the primary filter; each list's
+marker toggles its points on/off, all shown by default — and the locate control. The category
+chips ([Eat] [Drink] [Shop] …, mapping the OSM taxonomy into the small top-level groups adopted
+from [prior art](./prior-art-step.md)) sit behind the search affordance and filter **live-POI
+discovery**, which is secondary to the library.
 
 ## Core interactions
 
@@ -100,7 +140,9 @@ The mobile sheet / desktop panel shows (decisions of 2026-07-18):
 - Personal actions: **Add tag**, **Add note**, and **Add to list** — pick an existing list or
   create a new one inline right on the card. **There is no Save button** (2026-07-18: membership
   is existence): adding a place to a list is the only way it enters the library, and **Remove
-  place** takes it out of every list—which removes it entirely. Creating a list picks its
+  place** takes it out of every list—which removes it entirely, and is therefore **refused while
+  the place still carries your notes or a post embeds it** (bottom-up teardown, 2026-07-19 late:
+  the dialog names the blockers; delete those first). Creating a list picks its
   **marker** from a swatch row of icon + colour combinations (default: the next unused
   combination — 2026-07-19, upgraded from colour-only); lists are also created **directly on the
   Lists home** (2026-07-18, late — a list may exist before any place joins it).
@@ -145,6 +187,8 @@ surface returns; library places simply display their stored facts until then.
 ## Performance and provider etiquette
 
 - Prefer POIs already encoded in compatible vector tiles and hydrate only selected/library places.
+- The idled canvas ([grammar](#the-grammar)) issues no requests at all; a deferred projection
+  fetches once, on reveal.
 - Debounce and cancel viewport requests after map movement; align cache keys to reusable tiles.
 - Skip discovery below a configured minimum zoom and show a “zoom in” hint.
 - Cache with provider-approved TTLs; use stale-while-revalidate, negative caching, retry/backoff, and

@@ -126,7 +126,11 @@ silently would poison trust in the front door.
 ### Import queue model
 
 Review state is persisted so a half-reviewed import survives a reload; the queue is workflow
-state, not part of the durable place graph.
+state, not part of the durable place graph. Under the pane-and-canvas grammar
+([Views](./map-view.md#the-grammar), 2026-07-19 late) the queue is a pane route and the item
+under review projects its labelled candidates onto the main map canvas — retiring the bespoke
+"mini map beside the picker" from the hardening ruling above; manual placement happens on the
+canvas itself.
 
 ```ts
 interface ImportBatch {

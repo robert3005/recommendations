@@ -274,9 +274,10 @@ not include them.
 
 ## Public viewer
 
-The public route is read-only and needs no account. A shared post renders as an article beside a
-synchronized map, with its *"From the list"* link when one is carried; a shared list renders as
-the place sequence on the same viewer:
+The public route is read-only and needs no account. It reuses the app's pane-and-canvas grammar
+([Views](./map-view.md#the-grammar)) with read-only chrome: a shared post renders as an article
+in the pane with the canvas following it, plus its *"From the list"* link when one is carried; a
+shared list renders as the place sequence on the same shell:
 
 1. Decode the fragment or fetch the current hosted `SharedDocument` revision.
 2. Paint sections and place cards immediately from copied evidence or manual facts.
@@ -342,9 +343,11 @@ DELETE /s/lists/:slug
 - Replaying an already-completed `DELETE` with the same idempotency key returns success.
 - Idempotency keys are scoped to `(kind, operation, slug, token)` — a key can neither complete a
   different operation nor replay one slug's result as another's, and never leaks across tokens.
-- Update atomicity: the audit entry and a non-replayable key reservation precede the document
-  write; the replayable success record lands only after it. An interrupted update re-executes —
-  it never phantom-replays success for a write that may not have applied.
+- Update atomicity: the audit entry, a non-replayable key reservation, the conditional document
+  write, and the replayable success record commit together, and the write is **guarded inside
+  the unit** — a lost revision race (a conditional write that changed nothing) aborts the whole
+  unit rather than letting bookkeeping or a replayable success land for a write that did not
+  apply. An interrupted update re-executes — it never phantom-replays success.
 - Create atomicity mirrors it: the key reservation and audit precede the atomic slug claim, and
   the success record lands last — an interrupted `POST` leaves no public document and the same
   token + key completes the original create on retry.

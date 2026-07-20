@@ -8,24 +8,24 @@ read-only link that its creator can update safely, and **multi-device sync**. Ph
 were specified and implemented before the pivot; where they say "guide" they describe what is now
 a published list or post, and Phases 6–7 carry the pivot's migration.
 
-## Current implementation audit (2026-07-18)
+## Current implementation audit (2026-07-20; supersedes 2026-07-18)
 
-- **Phase 0 — partial.** The application shell, local repository, map, attribution, geolocation
-  fallback, PWA, and core test layers exist. Completion still requires the full provider contract
-  set (`MapStyleProvider`, `SharePublisher`, and `SyncTransport`), Storybook's Vitest browser addon
-  with automated axe checks, an enforced production-provider configuration, evidence for the
-  two-second performance budget, and a designed basemap-provider failure state.
-- **Phase 1 — functionally complete on the development/test path.** Search, exact POI inspection,
-  bounded discovery, the OSM portal handoff, and the missing-place/manual-pin choice satisfy the
-  phase acceptance flow. Production readiness remains gated by Phase 0's provider work.
-- **Phase 2 — partial.** Durable identity, membership-based existence, manual pins, lists, tags,
-  text notes, IndexedDB, and the conservative recovery state machine exist. Completion still
-  requires local `asset:` images to render, lossless migration of pre-membership libraries,
-  coordinate/id/size/graph validation before backup writes, checksums for binary media,
-  fail-closed export when referenced media bytes are unavailable, identity-aware backup merge,
-  replacement semantics when an optional note title is cleared, and an offline stored-data
-  acceptance flow. Backup merge must never fork two `PlaceId` values for the same exact current or
-  historical OSM reference.
+- **Phase 0 — complete.** The 2026-07-18 leftovers have landed: the full provider contract set
+  exists (`MapStyleProvider` and `SharePublisher` in `packages/domain/src/providers.ts` with
+  wired adapters, `SyncTransport` in `packages/domain/src/sync.ts`), Storybook stories run
+  continuous axe checks (serious/critical violations fail the suite), production provider
+  configuration fails closed at build time (malformed URLs and demo hosts included), the
+  two-second budget has a repeatable throttled acceptance check against the production build
+  (`e2e/performance-budget.offline.spec.ts`: 4× CPU + emulated 4G), and the basemap failure
+  state is designed and recovery-gated.
+- **Phase 1 — complete on the development/test path.** Production readiness is a provider
+  selection/contracting task, not a code gap.
+- **Phase 2 — complete.** The 2026-07-18 leftovers were closed by the hardening waves: local
+  `asset:` images render, pre-membership libraries migrate losslessly (Dexie v4),
+  coordinate/id/size/graph validation guards backup writes, binary media is checksummed,
+  export fails closed on unreadable media, backup merge is identity-aware and never forks one
+  exact OSM reference into two `PlaceId`s, cleared optional note titles are removed, and the
+  offline stored-data flow is an e2e acceptance test.
 
 This status records implementation evidence; it does not relax the requirements below. Update it
 only when the corresponding automated acceptance checks pass.
@@ -160,24 +160,52 @@ only the public link can read—but never modify—its latest successfully publi
 > tests/dev via MSW, D1 adapter + `schema.sql`/`wrangler.toml` for deployment). Deployment,
 > domain, and CDN wiring are operational tasks outside the codebase.
 
-## Phase 6 — Lists-first shell & the all-lists map (pivot, part 1)
+## Phase 6 — The canvas shell: lists-first pane & the persistent map (pivot, part 1)
 
-The 2026-07-19 pivot's UI half: the product opens on its curation
-([Views — Lists Home & the Map](./map-view.md)).
+The 2026-07-19 pivot's UI half: one layout grammar — a content pane beside a persistent map
+canvas ([Views](./map-view.md#the-grammar)) — opening on the curation.
 
-- Invert primary navigation: the **Lists home** is the start screen — each list with marker,
-  name, place count, posts link, and a fixed-length truncated inline preview; the map becomes the
-  paired primary view.
+- **The pane-and-canvas shell**: routes render into the content pane; the map becomes a
+  singleton canvas in the app shell outside the route outlet (no re-mount on navigation,
+  viewport survives route changes). Three pane states — collapsed / split / expanded — as sheet
+  detents (peek / half / full) on mobile. Existing pages (lists, list, place card, review,
+  settings) migrate into the pane.
+- **Canvas idling at full scale** (2026-07-19, late): while the pane/sheet fully occludes the
+  canvas, rendering pauses and viewport discovery stops; projection changes defer and coalesce,
+  applying as one camera move on reveal.
+- **Lists home** as the pane's `/` route and launch state (pane expanded/full) — each list with
+  marker, name, place count, posts link, and a fixed-length truncated inline preview.
+- **Route → projection wiring**: home projects all lists, a list its members (library dimmed),
+  the review queue its labelled candidates on the main canvas (retiring the bespoke mini map);
+  selection bidirectional.
 - **Unique per-list markers (icon + colour)**: assignment and uniqueness rules, migration of
   colour-only lists, KML style mapping on import/export, the multi-list stacked/badged variant,
   and the unlinked dot replacing the distinct orange manual-pin marker.
-- **List toggles** as the map's primary filter; category chips demoted to live-POI discovery.
-- **Add to a list from the map** polished as the core curation gesture, including a map that
-  stays interactive inside list Edit mode.
+- **List toggles** as the canvas's primary filter; category chips demoted to live-POI discovery.
+- **Add to a list from the map** polished as the core curation gesture — the canvas stays
+  interactive beside a list's Edit mode.
+- **Bottom-up teardown, list/place half** (2026-07-19 late): deleting a list requires it to be
+  empty; a place's existence-ending removal is refused while it carries live notes; Edit mode
+  gains **Remove all places** with an actionable blocker report. (The post-embed prerequisite
+  lands with Phase 7.)
 
-**Done when:** launch opens the Lists home (offline included); switching to the map shows every
-list's points wearing visibly distinct markers; toggling a list hides its points; and I can grow
-a list from the map without leaving it.
+**Done when:** launch opens the Lists home pane over the canvas (offline included); collapsing
+the pane is the all-lists map, every list's points wearing visibly distinct markers; toggling a
+list hides its points; navigating home → list → place never re-mounts the map or loses the
+viewport; reading or writing at full scale leaves the canvas verifiably idle — no frames, no
+tile or discovery traffic — until it is revealed again; I can grow a list from the map without
+leaving it; and deleting a noted place or a non-empty list is refused with the blockers named
+rather than cascading.
+
+> **Status (2026-07-20): implemented in code.** The shell is the pane beside the singleton
+> canvas (`src/router.tsx` + `src/map/MapCanvas.tsx`; detents in `src/state/pane.ts`, route
+> projections in `src/state/projection.ts`); idling is pinned by
+> `src/map/phase6-canvas-idle.audit.test.tsx` (no discovery traffic while occluded; deferred
+> projections coalesce into one camera move on reveal). Markers are unique (colour, icon)
+> pairs with a Latin-square auto-assignment (`packages/domain/src/markers.ts`), sprite-rendered
+> on the canvas, migrated from colour-only lists (Dexie v7), and round-tripped through KML
+> style ids (`placemarks-<icon>`). Bottom-up teardown (list/place half) is enforced in the
+> repository with actionable blocker reports surfaced on the list page and place card.
 
 ## Phase 7 — Posts: the editorial layer (pivot, part 2)
 
@@ -187,10 +215,13 @@ The pivot's data half: **the post is the guide — an editorialised list** ([Pos
   attachments, tag selections, list-targeted notes) onto posts; `Publication.target` gains
   `kind: "post"`; lists keep membership only.
 - Post **block editor**: prose sections in the full-screen Markdown editor, embeds picked from
-  the post's list or the map (add-to-list-then-embed for new places), embed tombstones with
-  visible gaps, the detached-post flow when a list is deleted.
-- Post **reading page**: interleaved article beside a synchronized map; list ↔ posts navigation
-  in both directions.
+  the post's list or the map (add-to-list-then-embed for new places).
+- **Bottom-up teardown, post half**: removing a place from a list is refused while a post about
+  that list embeds it; deleting a list additionally requires deleting its posts first; deleting
+  a post removes its blocks and section notes and touches nothing else.
+- Post **reading page** in the pane-and-canvas shell: the canvas follows the article as it
+  scrolls (instant under reduced motion); list ↔ posts navigation in both directions; the public
+  viewer reuses the same shell read-only.
 - Post **publishing**: snapshot and hosted links under `/s/posts`; the shared post names its list
   and carries the list's public slug when one exists; the preflight offers to publish the list
   alongside the post.
@@ -198,6 +229,16 @@ The pivot's data half: **the post is the guide — an editorialised list** ([Pos
 **Done when:** I can write a post about a list — two prose sections around three place embeds —
 read it beside the map, publish it, and a reader can open the associated list's public page from
 the post; documents published before the pivot keep serving unchanged under their slugs.
+
+> **Status (2026-07-20): implemented in code.** `Post`/`PostBlock`/`BlockTagSelection` with the
+> full cross-entity invariant set live in the repository; the Dexie v7 upgrade (shared with
+> pre-pivot backup restores via `src/data/pivot.ts`, DERIVED ids so re-running converges)
+> migrates the list-borne guide layer onto same-titled posts and retargets their publications,
+> which keep serving from `/s/lists` under their slugs (`Publication.channel`). The block
+> editor (`/post/:id/edit`, embed picker + "Embed in post" on the place card), the reading page
+> with the article-following canvas, and post publishing (snapshot + hosted `/s/posts`, the
+> "From the list" association, and the publish-the-list-alongside preflight) are in place;
+> teardown's post half is enforced with the rest.
 
 ## Phase 8 — Accounts & multi-device sync (promoted into v1, 2026-07-19)
 
@@ -216,6 +257,18 @@ Local storage with remote sync is the initial version, not an optional future
 **Done when:** two devices signed into one account converge — lists, posts, notes, tags, places —
 after concurrent offline edits without silent loss; a conflicting note edit yields a recoverable
 conflict copy; and with sync off the app behaves exactly as the local-first Phases 0–7 build.
+
+> **Status (2026-07-20): implemented in code**, exercised end-to-end by
+> `src/features/sync/sync.test.ts` against the real service app. Every repository write logs a
+> durable HLC-stamped mutation in the same transaction (Dexie v8 `mutationOutbox`); the engine
+> pushes idempotently, pulls the server-monotonic cursor, and applies changes through the
+> domain merge policy (`packages/domain/src/sync.ts`): per-row LWW, conflict copies for
+> concurrent Markdown edits, conservative append-only place-history merging with
+> `needs-review` on conflicting relinks, and teardown-race rescue into a conflict surface.
+> Accounts are email-code logins minting per-device bearers (hash-stored); the service is the
+> Hono app in `services/sync` behind a `SyncStorage` port (in-memory for tests/dev via MSW,
+> Postgres adapter + `schema.sql`/OPERATIONS.md for deployment). The sync status surface lives
+> in Settings. Deployment and mailer wiring are operational tasks outside the codebase.
 
 ## Phase 9 — Hardening & operations (post-v1; formerly Phase 6)
 

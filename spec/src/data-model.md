@@ -152,10 +152,11 @@ exists in the library **iff it belongs to at least one list**:
 - The only way a place comes to exist is being **added to a list** (from its card, from the
   manual pin dialog — which therefore requires choosing a list — or by an
   [import](./interop.md) materializing rows into their list).
-- Removing a place's **last** membership — by removing the block, or deleting the list that held
-  it — removes the place together with its tags and notes, in the same transaction. Live post
-  embeds of the place are tombstoned in that transaction too — an embed never sustains existence
-  ([Posts](./posts.md#where-embeds-come-from)).
+- Removing a place's **last** membership removes the place — but the removal is **refused while
+  the place carries live notes or live post embeds** (bottom-up teardown, 2026-07-19 late —
+  [Posts](./posts.md#where-embeds-come-from)): the owner deletes their notes and embeds first,
+  then the removal deletes the place with its tag assignments in one transaction. Authored
+  content never dies as a side effect.
 - Tag assignments and list blocks join directly on `PlaceId`. Reverse relationships are queries,
   not duplicated arrays.
 
@@ -333,8 +334,9 @@ interface BlockTagSelection {
 
 Post blocks order like list blocks. Attached notes and public tag selections are explicit,
 durable edges rather than ephemeral publish-UI choices. A place embed **references** a member of
-the post's list; it never sustains the place's existence
-([ruling](./posts.md#where-embeds-come-from)).
+the post's list; it never sustains the place's existence — instead a live embed **blocks** the
+place's removal from that list until the author removes the embed
+([bottom-up teardown](./posts.md#where-embeds-come-from)).
 
 Repository transactions enforce these cross-entity invariants:
 
@@ -404,21 +406,22 @@ List ──1:*── ListBlock ──place──▶ PlaceId ──▶ Place
       └──────────────── Publication (list | post | note)
 ```
 
-- Deleting a list tombstones its place blocks in one local transaction. Places whose **only**
-  membership it held are removed with their tags and notes (membership is existence); places
-  shared with other lists survive. Posts about the list survive **detached** with tombstoned
-  embeds after an explicit warning ([Posts](./posts.md#where-embeds-come-from)).
-- Deleting a post tombstones its blocks, section notes, attachments, and selections; it never
-  touches the list, its places, or place notes.
-- Removing a place takes it out of every list and tombstones its tag assignments, place blocks,
-  post embeds, and private place notes; it never changes OSM.
+- Deleting a list is **refused until it is empty and no live posts editorialise it**
+  (bottom-up teardown, 2026-07-19 late — [Posts](./posts.md#where-embeds-come-from)): places
+  leave first (Edit mode offers a bulk **Remove all places** that names any blockers), posts are
+  deleted first, and only then does the empty list delete. Nothing cascades through it.
+- Deleting a post tombstones its blocks, its own section notes, attachments, and selections; it
+  never touches the list, its places, or place notes.
+- Removing a place from a list is refused while a post about that list embeds it; the removal
+  that would delete the place outright is additionally refused while the place has live notes.
+  Once clear, removal tombstones its tag assignments and place blocks; it never changes OSM.
 - Removing or disabling already-published content marks the relevant publication dirty. The old
   public revision remains visible until the revocation/update succeeds.
 - Mutating a list name/marker/order, post title/prose/cover/section/order, attached place
   note/media, selected tag, or place OSM binding increments every affected publication's
   `localRevision` and queues/coalesces an immutable revision-bearing job in the same transaction.
-  A post's publications are also affected by mutations of its list's membership/order only insofar
-  as embeds are tombstoned; a shared post projects its own blocks, not the list's.
+  A shared post projects its own blocks, not the list's, so list membership/order changes touch
+  a post's publications only through the post's own embeds.
 - Place-link history is preserved as immutable completed intervals when an OSM element is replaced;
   notes, list membership, and post embeds stay attached to the same `PlaceId`.
 

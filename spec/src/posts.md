@@ -45,17 +45,27 @@ that exists: the editor offers to **add it to the list first** (`addToList` — 
 existence), then embeds it. This is also how a post is written from the map: tap a pin, add it to
 the list, embed it.
 
-**Embeds never sustain existence** (ruling, 2026-07-19). Removing a place from the list tombstones
-its embeds in that list's posts in the same transaction, and the post editor shows a visible gap
-where the embed was — never a silent reflow. The removal flow warns when live posts embed the
-place. Already-published revisions are unaffected until the author republishes: the public
-document carries its own copied evidence.
+**Bottom-up teardown** (ruling, 2026-07-19, late — supersedes the same-day embed-tombstone and
+detached-post rulings, and retires the implemented pre-pivot deletion cascades at Phases 6–7).
+Deletion never cascades through authored content; it is **refused until the owner has explicitly
+dismantled what hangs off the target**:
 
-Deleting a list does **not** silently delete its posts — an article should not vanish because the
-working list did. The deletion flow warns when live posts editorialise the list; a confirmed
-deletion tombstones the posts' place embeds (their places may be gone anyway under
-membership-is-existence) and flags each surviving post as **detached** — prose intact, editable,
-publishable again only after the author re-associates it with a list or deletes it.
+- Removing a place from a list is refused while a live post about that list embeds it — remove
+  the embed from the post first. The embed-references-a-member invariant holds by prerequisite,
+  not by a tombstone cascade that would leave gaps in an article.
+- Removing a place from its **last** list — the removal that deletes the place
+  ([membership is existence](./data-model.md#membership-is-existence-no-saves)) — is refused
+  while the place carries live notes: the owner deletes their own notes first. Tag assignments
+  and other pure edges cascade; written content never does.
+- Deleting a list is refused until it is **empty** and no live posts editorialise it — remove
+  the places (or bulk **Remove all places** in Edit mode, which names any blockers: places with
+  notes, places embedded in posts) and delete the posts first.
+- Deleting a post is itself the explicit act: its blocks, its own section notes, attachments,
+  and selections go with it; the list, its places, and place notes are untouched.
+
+Every refusal is actionable: the dialog names the blockers and links to them. Already-published
+revisions are unaffected by any of this until the author republishes — the public document
+carries its own copied evidence.
 
 ## Authoring
 
@@ -70,10 +80,15 @@ publishable again only after the author re-associates it with a list or deletes 
 
 ## Reading
 
-The post page is the reading experience formerly described as the guide layer: the interleaved
-article beside a synchronized map showing the post's embeds wearing its list's marker, with
-selection linked text ↔ pin in both directions. The public viewer
-([Sharing](./sharing.md#public-viewer)) is the read-only rendering of the same page.
+The post page renders in the app's one layout grammar
+([Views](./map-view.md#the-grammar)): the article in the content pane, the post's embeds on the
+persistent map canvas wearing its list's marker. **The map follows the article** — scrolling to
+a section or embed flies the camera to its places (instant recenter under
+`prefers-reduced-motion`), and selection links text ↔ pin in both directions. Expanding the pane
+gives distraction-free reading — the hidden canvas [idles](./map-view.md#the-grammar), the
+follow coalescing until reveal — and collapsing it gives the post's map. The public viewer
+([Sharing](./sharing.md#public-viewer)) is the read-only rendering of the same page in the same
+shell.
 
 ## Publishing
 

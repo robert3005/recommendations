@@ -6,7 +6,7 @@
 - [Prior Art — Step: Your World](./prior-art-step.md)
 - [Architecture Overview](./architecture.md)
 - [Open Data Sources](./data-sources.md)
-- [Views — Lists Home & the Map](./map-view.md)
+- [Views — the Content Pane & the Map Canvas](./map-view.md)
 - [Durable Place Identity](./place-identity.md)
 - [Places, Lists & Posts — Data Model](./data-model.md)
 - [Notes & Rich Content](./notes.md)

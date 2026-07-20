@@ -65,9 +65,11 @@ interface SyncTransport {
 }
 ```
 
-Creating a place by adding it to a list, deleting a list with its orphaned places and affected
-post embeds, or changing a post and queuing its publication are aggregate transactions. A failed
-network effect never rolls back a committed local edit.
+Creating a place by adding it to a list, the guarded removals of bottom-up teardown (a place's
+final removal with its tag assignments; an emptied list's deletion — the repository refuses a
+removal whose prerequisites aren't met, in the same transaction that checks them), or changing a
+post and queuing its publication are aggregate transactions. A failed network effect never rolls
+back a committed local edit.
 
 ## Offline behavior
 
@@ -189,6 +191,9 @@ durable mechanism and an idempotent delete job.
   entities, so concurrent changes do not replace an entire list or post array.
 - Concurrent Markdown edits preserve both bodies and create a recoverable conflict copy rather
   than silently applying last-writer-wins.
+- Bottom-up teardown prerequisites are checked on the device that deletes, but sync can still
+  interleave a removal with a concurrent remote note edit; the raced note surfaces as a
+  recoverable conflict copy for the owner to rescue, never a silent drop.
 - Relinking a `Place` merges append-only OSM history conservatively. Conflicting candidate choices
   become `needs-review`.
 

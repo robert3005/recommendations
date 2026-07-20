@@ -6,7 +6,8 @@
 ┌────────────────────────────────────────────────────────────────────┐
 │ Web client                                                         │
 │                                                                    │
-│  Lists home · map    List & post editors    Public read-only viewer│
+│  Content pane (home · list · post · review · ⚙ · public viewers)  │
+│  beside one persistent map canvas                                  │
 │          │                  │                         │             │
 │  ┌───────┴──────────────────┴─────────────────────────┴──────────┐ │
 │  │ Core domain                                                  │ │
@@ -31,9 +32,12 @@
 
 ### 1. UI
 
-React components own presentation and interaction: the Lists home, map, search, place detail,
-list Edit mode, the post editor, resolution review, publication status, and the public read-only
-viewer. Mobile uses sheets; wider screens use panels. Every map workflow has an equivalent list
+React components own presentation and interaction under one layout grammar (2026-07-19 —
+[Views](./map-view.md#the-grammar)): routes render into a **content pane** (Lists home, list,
+post reader/editor, review, settings, public viewers) beside a **persistent map canvas** — a
+singleton MapLibre instance in the app shell, outside the route outlet — that projects the
+pane's places. Desktop splits pane/canvas; mobile renders the pane as a detented sheet over the
+canvas. Selection is bidirectional, and the pane doubles as the map's equivalent non-map
 representation.
 
 ### 2. Core domain

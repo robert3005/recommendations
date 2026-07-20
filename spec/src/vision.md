@@ -20,26 +20,31 @@ flow centres on; **lists** are the curation primitive built on it — import pla
 into lists, add notes to places; **posts** — editorialised articles about lists, embedding items
 from those lists — are the product's voice ([Posts](./posts.md)); and the map binds every piece
 of writing to physical locations. The home screen is the **Lists view**, each list with a
-fixed-length inline preview; the paired view is the **all-lists map**, every point wearing its
-list's unique marker ([Views](./map-view.md)). The initial version is **local storage with
-remote sync**, and both **lists and posts share** as read-only links.
+fixed-length inline preview; one collapse away is the **all-lists map**, every point wearing its
+list's unique marker on a persistent canvas ([Views](./map-view.md)). The initial version is
+**local storage with remote sync**, and both **lists and posts share** as read-only links.
 
 ## What we're building (v1)
 
 A responsive web app with:
 
-- A **Lists home screen** (2026-07-19) — every list with its marker, name, place count, and a
-  **fixed-length, truncated inline preview** of its contents; tapping opens the list, one switch
-  opens the map.
-- The **all-lists map** as the paired view — every library point at once, each wearing its
-  **list's unique marker (icon + colour)**; lists toggle on/off as the map's primary filter.
-  Pan/zoom, current location, and search as before.
+- **One layout grammar** (2026-07-19, late): every route renders in a **content pane** beside a
+  **persistent map canvas** that projects the pane's places — desktop splits them, mobile floats
+  the pane as a detented sheet over the map ([Views](./map-view.md#the-grammar)).
+- A **Lists home** (2026-07-19) — launch opens the pane expanded on the lists: every list with
+  its marker, name, place count, and a **fixed-length, truncated inline preview**; tapping opens
+  the list, collapsing the pane is the map.
+- The **all-lists canvas** — every library point at once, each wearing its **list's unique
+  marker (icon + colour)**; lists toggle on/off as the primary filter. Pan/zoom, current
+  location, and search as before.
 - **Place lookup** — tap a pin or search to see a place's name, category, address, and (when
   available) **website**, hours, and phone, sourced from OSM.
 - **Durable places & tagging** — a place enters the library by being **added to a list** (there
   is no standalone save): an existing OSM POI resolves under an app-owned identity with bounded
   copied evidence, then carries free-form tags and personal notes. **Membership is existence** —
-  a place removed from its last list is gone.
+  a place removed from its last list is gone — and **teardown is bottom-up** (2026-07-19): that
+  removal is refused until you have deleted the place's notes and embeds yourself; a list
+  deletes only once emptied. Nothing you wrote ever disappears as a side effect.
 - **Lists first** (flow inverted 2026-07-18) — group places into named **lists**. A list
   is a name plus a **unique marker (icon + colour)** over an ordered set of places: created
   **directly on the Lists tab** (a list may exist before any place joins it — 2026-07-18, late)
