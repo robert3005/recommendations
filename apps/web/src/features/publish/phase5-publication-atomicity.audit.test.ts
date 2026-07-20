@@ -5,7 +5,7 @@
  * durable outbox job to commit as one aggregate transaction. Queue ordering is
  * per publication: a failure for one public page must not starve another page.
  */
-import type { Note, Publication } from "@placemarks/domain";
+import { markerAt, type Note, type Publication } from "@placemarks/domain";
 import { describe, expect, it, vi } from "vitest";
 import { DexieRepository } from "../../data/repo";
 import { revokePublication, runPublicationOutbox } from "./publication";
@@ -37,8 +37,19 @@ function hostedPublication(
   };
 }
 
-async function seedList(repo: DexieRepository, id: string, name: string): Promise<void> {
-  await repo.createList({ id, name, createdAt: NOW, updatedAt: NOW });
+async function seedList(
+  repo: DexieRepository,
+  id: string,
+  name: string,
+  markerIndex = 0,
+): Promise<void> {
+  await repo.createList({
+    id,
+    name,
+    marker: markerAt(markerIndex),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
 }
 
 describe("Phase 5 aggregate publication transactions", () => {
@@ -61,6 +72,7 @@ describe("Phase 5 aggregate publication transactions", () => {
         repo.updateList({
           id: "list-1",
           name: "Uncommitted title",
+          marker: markerAt(0),
           createdAt: NOW,
           updatedAt: LATER,
         }),
@@ -182,8 +194,8 @@ describe("Phase 5 publication fan-out for shareable notes", () => {
   it("queues every containing guide and the standalone note page after a body/title edit", async () => {
     const repo = new DexieRepository(`phase5-note-edit-fanout-${crypto.randomUUID()}`);
     try {
-      await seedList(repo, "list-1", "First guide");
-      await seedList(repo, "list-2", "Second guide");
+      await seedList(repo, "list-1", "First guide", 0);
+      await seedList(repo, "list-2", "Second guide", 1);
       const place = (
         await repo.addToList(
           "list-1",
@@ -287,6 +299,7 @@ describe("Phase 5 publish/revoke sequencing", () => {
       await repo.updateList({
         id: "list-1",
         name: "Private draft that must not block unpublish",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: LATER,
       });

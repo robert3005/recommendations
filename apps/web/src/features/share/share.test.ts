@@ -4,11 +4,11 @@
  * and resist decompression bombs; saving a shared guide dedups against the
  * local library and queues unresolved anchors for review.
  */
-import type { ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type ResolvedPoi } from "@placemarks/domain";
 import { deflateSync, strToU8 } from "fflate";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
-import { projectGuide } from "./project";
+import { projectList } from "./project";
 import { saveSharedGuide } from "./saveSharedGuide";
 import {
   decodeSnapshot,
@@ -37,7 +37,7 @@ async function seededRepo(): Promise<{ repo: DexieRepository; listId: string }> 
   await repo.createList({
     id: "list-1",
     name: "Lisbon weekend",
-    color: "#dc2626",
+    marker: markerAt(0),
     createdAt: NOW,
     updatedAt: NOW,
   });
@@ -74,7 +74,7 @@ describe("shared guide projection", () => {
   it("carries facts and shareable notes but never ids, tags, or private notes", async () => {
     const { repo, listId } = await seededRepo();
     try {
-      const projection = await projectGuide(repo, listId);
+      const projection = await projectList(repo, listId);
       if (!projection) throw new Error("projection missing");
       const { guide, stats } = projection;
 
@@ -105,7 +105,7 @@ describe("snapshot codec", () => {
   it("round-trips through the fragment", async () => {
     const { repo, listId } = await seededRepo();
     try {
-      const projection = await projectGuide(repo, listId);
+      const projection = await projectList(repo, listId);
       if (!projection) throw new Error("projection missing");
       const { fragment } = encodeSnapshot(projection.guide);
       expect(decodeSnapshot(fragment)).toEqual(projection.guide);
@@ -117,7 +117,7 @@ describe("snapshot codec", () => {
   it("refuses to generate an oversized link instead of truncating", async () => {
     const { repo, listId } = await seededRepo();
     try {
-      const projection = await projectGuide(repo, listId);
+      const projection = await projectList(repo, listId);
       if (!projection) throw new Error("projection missing");
       const huge = {
         ...projection.guide,
@@ -161,7 +161,7 @@ describe("save a shared guide", () => {
     const { repo, listId } = await seededRepo();
     const target = new DexieRepository(`share-target-${crypto.randomUUID()}`);
     try {
-      const projection = await projectGuide(repo, listId);
+      const projection = await projectList(repo, listId);
       if (!projection) throw new Error("projection missing");
       const guide = projection.guide;
 

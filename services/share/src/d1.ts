@@ -6,6 +6,7 @@
 import type {
   AuditEntry,
   CreateCommit,
+  DocumentKind,
   IdempotencyRecord,
   ShareStorage,
   StoredDocument,
@@ -32,7 +33,7 @@ export interface D1Like {
 export class D1Storage implements ShareStorage {
   constructor(private readonly db: D1Like) {}
 
-  async get(kind: "list" | "note", slug: string): Promise<StoredDocument | undefined> {
+  async get(kind: DocumentKind, slug: string): Promise<StoredDocument | undefined> {
     const row = await this.db
       .prepare("SELECT * FROM documents WHERE kind = ? AND slug = ?")
       .bind(kind, slug)
@@ -68,7 +69,7 @@ export class D1Storage implements ShareStorage {
   }
 
   async update(
-    kind: "list" | "note",
+    kind: DocumentKind,
     slug: string,
     expectedRevision: number,
     body: string,
@@ -88,7 +89,7 @@ export class D1Storage implements ShareStorage {
   }
 
   async revoke(
-    kind: "list" | "note",
+    kind: DocumentKind,
     slug: string,
     expectedRevision: number,
     updatedAt: string,
@@ -198,32 +199,45 @@ export class D1Storage implements ShareStorage {
     const existing = await this.get(input.kind, input.slug);
     if (!existing || existing.revoked) return "missing";
     if (existing.revision !== input.expectedRevision) return "conflict";
-    // Phase 1 — the conditional write alone, as its own atomic unit. A lost
-    // race (zero rows changed) must not commit audit, reservation, or a
-    // replayable success: a changes-0 UPDATE is still a "successful" SQL
-    // statement, so it cannot share a batch with the bookkeeping it gates.
-    const conditionalWrite = () =>
-      this.db
-        .prepare(
-          "UPDATE documents SET revision = revision + 1, body = ?, updatedAt = ? WHERE kind = ? AND slug = ? AND revision = ? AND revoked = 0",
-        )
-        .bind(input.body, input.updatedAt, input.kind, input.slug, input.expectedRevision);
-    const probe = await this.db.batch([conditionalWrite()]);
-    if ((probe[0]?.meta?.changes ?? 0) === 0) return "conflict";
-    // Phase 2 — audit, reservation, and the replayable ack as one unit. The
-    // trailing conditional statement re-binds the already-consumed pre-image
-    // revision: a guaranteed no-op that records which revision transition
-    // this bookkeeping belongs to.
-    await this.db.batch([
-      this.auditStatement(input.audit),
-      this.idempotentStatement({ key: input.reservationKey, response: "", status: 0 }),
-      conditionalWrite(),
-      this.idempotentStatement({
-        key: input.reservationKey,
-        response: input.response,
-        status: 200,
-      }),
-    ]);
+    // ONE atomic D1 unit (spec/src/sharing.md §Share service): the guarded
+    // conditional write, then audit, reservation, and — last — the replayable
+    // acknowledgement. A changes-0 UPDATE is still a "successful" SQL
+    // statement, so the revision guard directly after it turns a lost race
+    // into a STATEMENT FAILURE (NULL into the NOT NULL idempotency key),
+    // aborting and rolling back the whole batch: a lost or interrupted commit
+    // leaves nothing durable — no audit row, no reservation, and never a
+    // replayable success for a write that did not apply.
+    const conditionalWrite = this.db
+      .prepare(
+        "UPDATE documents SET revision = revision + 1, body = ?, updatedAt = ? WHERE kind = ? AND slug = ? AND revision = ? AND revoked = 0",
+      )
+      .bind(input.body, input.updatedAt, input.kind, input.slug, input.expectedRevision);
+    const revisionGuard = this.db.prepare(
+      "INSERT INTO idempotency (key, response, status) SELECT NULL, '', 0 WHERE changes() = 0",
+    );
+    try {
+      await this.db.batch([
+        conditionalWrite,
+        revisionGuard,
+        this.auditStatement(input.audit),
+        this.idempotentStatement({ key: input.reservationKey, response: "", status: 0 }),
+        this.idempotentStatement({
+          key: input.reservationKey,
+          response: input.response,
+          status: 200,
+        }),
+      ]);
+    } catch (err) {
+      // The guard's designed failure IS the lost race; anything else is a
+      // real storage failure and must surface for retry.
+      if (
+        err instanceof Error &&
+        /NOT NULL constraint failed: idempotency\.key/i.test(err.message)
+      ) {
+        return "conflict";
+      }
+      throw err;
+    }
     // The acknowledgement is THIS update's committed transition — a later
     // writer may already have advanced the document, and its state must
     // never masquerade as ours.

@@ -1,5 +1,5 @@
 /** Offline local dedup follows the same two-epoch recovery rule as the viewer. */
-import type { PoiResolver } from "@placemarks/domain";
+import { markerAt, type PoiResolver } from "@placemarks/domain";
 import type { SharedGuide, SharedPlaceEvidence } from "@placemarks/schemas";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -37,7 +37,13 @@ describe("Phase 4 offline two-epoch evidence deduplication", () => {
   it("keeps the shared place pending when only one evidence epoch matches locally", async () => {
     const repo = new DexieRepository(`phase4-local-two-epoch-${crypto.randomUUID()}`);
     try {
-      await repo.createList({ id: "existing", name: "Existing", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "existing",
+        name: "Existing",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       await repo.addToList(
         "existing",
         {

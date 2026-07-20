@@ -1,9 +1,17 @@
 /**
  * DexieRepository invariants (spec/src/data-model.md) on fake-indexeddb.
- * Core rule under test: membership is existence — a place persists only while
- * it belongs to at least one list.
+ * Core rules under test: membership is existence — a place persists only while
+ * it belongs to at least one list — and bottom-up teardown (2026-07-19): a
+ * removal is refused, with its blockers named, while authored content still
+ * hangs off the target; pure edges (tag assignments) cascade instead.
  */
-import { type List, linkPlaceToOsm, type ResolvedPoi } from "@placemarks/domain";
+import {
+  type List,
+  linkPlaceToOsm,
+  markerAt,
+  type ResolvedPoi,
+  TeardownRefusedError,
+} from "@placemarks/domain";
 import { beforeEach, describe, expect, it } from "vitest";
 import { DexieRepository } from "./repo";
 
@@ -12,9 +20,11 @@ const LATER = "2026-07-18T13:00:00.000Z";
 
 let repo: DexieRepository;
 let counter = 0;
+let markerIndex = 0;
 
 beforeEach(() => {
   counter += 1;
+  markerIndex = 0;
   repo = new DexieRepository(`test-db-${Date.now()}-${counter}`);
 });
 
@@ -32,8 +42,10 @@ function poi(overrides: Partial<ResolvedPoi> = {}): ResolvedPoi {
   };
 }
 
+/** Each fixture list wears a distinct marker — live markers are unique pairs. */
 function list(id: string, name = id): List {
-  return { id, name, createdAt: NOW, updatedAt: NOW };
+  markerIndex += 1;
+  return { id, name, marker: markerAt(markerIndex - 1), createdAt: NOW, updatedAt: NOW };
 }
 
 describe("membership is existence", () => {
@@ -96,7 +108,7 @@ describe("membership is existence", () => {
     expect(await repo.listIdsForPlace(view.place.id)).toEqual(["l1"]);
   });
 
-  it("removing the last membership removes the place with tags and notes", async () => {
+  it("refuses the last-membership removal while notes live, then removes the place with its tags", async () => {
     await repo.createList(list("l1"));
     const view = await repo.addToList("l1", { kind: "poi", poi: poi() }, NOW);
     await repo.assignTag(view.place.id, "coffee", NOW);
@@ -109,10 +121,22 @@ describe("membership is existence", () => {
       createdAt: NOW,
       updatedAt: NOW,
     });
-    const blocks = await repo.getGuideBlocks("l1");
+    const blocks = await repo.getListBlocks("l1");
     const blockId = blocks[0]?.block.id;
     if (!blockId) throw new Error("no block");
 
+    // Bottom-up teardown: written content never dies as a side effect — the
+    // removal that would end the place's existence names the blocking note.
+    const refusal = await repo.removeBlock(blockId, LATER).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(refusal).toBeInstanceOf(TeardownRefusedError);
+    expect((refusal as TeardownRefusedError).blockers.notes).toEqual([
+      { placeId: view.place.id, noteId: "n1" },
+    ]);
+
+    await repo.deleteNote("n1", LATER);
     await repo.removeBlock(blockId, LATER);
 
     expect(await repo.getPlaceView(view.place.id)).toBeUndefined();
@@ -125,13 +149,13 @@ describe("membership is existence", () => {
     await repo.createList(list("l2"));
     const view = await repo.addToList("l1", { kind: "poi", poi: poi() }, NOW);
     await repo.addToList("l2", { kind: "existing", placeId: view.place.id }, NOW);
-    const l1Blocks = await repo.getGuideBlocks("l1");
+    const l1Blocks = await repo.getListBlocks("l1");
     await repo.removeBlock(l1Blocks[0]?.block.id ?? "", LATER);
     expect(await repo.getPlaceView(view.place.id)).toBeDefined();
     expect(await repo.listIdsForPlace(view.place.id)).toEqual(["l2"]);
   });
 
-  it("removePlace removes it from every list along with tags and notes", async () => {
+  it("removePlace removes it from every list along with its tags", async () => {
     await repo.createList(list("l1"));
     await repo.createList(list("l2"));
     const view = await repo.addToList("l1", { kind: "poi", poi: poi() }, NOW);
@@ -141,11 +165,11 @@ describe("membership is existence", () => {
     await repo.removePlace(view.place.id, LATER);
 
     expect(await repo.getPlaceView(view.place.id)).toBeUndefined();
-    expect(await repo.getGuideBlocks("l1")).toHaveLength(0);
-    expect(await repo.getGuideBlocks("l2")).toHaveLength(0);
+    expect(await repo.getListBlocks("l1")).toHaveLength(0);
+    expect(await repo.getListBlocks("l2")).toHaveLength(0);
   });
 
-  it("deleting a list removes places whose only membership it held — and keeps shared ones", async () => {
+  it("refuses to delete a populated list; removeAllPlaces empties it, keeping shared places", async () => {
     await repo.createList(list("l1"));
     await repo.createList(list("l2"));
     const only = await repo.addToList("l1", { kind: "poi", poi: poi() }, NOW);
@@ -156,8 +180,21 @@ describe("membership is existence", () => {
     );
     await repo.addToList("l2", { kind: "existing", placeId: shared.place.id }, NOW);
 
+    // Bottom-up teardown: deleteList never cascades — the refusal names the
+    // members still standing (spec/src/data-model.md §Relationships).
+    const refusal = await repo.deleteList("l1", LATER).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(refusal).toBeInstanceOf(TeardownRefusedError);
+    expect([...(refusal as TeardownRefusedError).blockers.members].sort()).toEqual(
+      [only.place.id, shared.place.id].sort(),
+    );
+
+    await repo.removeAllPlaces("l1", LATER);
     await repo.deleteList("l1", LATER);
 
+    expect(await repo.getList("l1")).toBeUndefined();
     expect(await repo.getPlaceView(only.place.id)).toBeUndefined();
     expect(await repo.getPlaceView(shared.place.id)).toBeDefined();
     expect(await repo.listIdsForPlace(shared.place.id)).toEqual(["l2"]);
@@ -201,7 +238,7 @@ describe("tags", () => {
 });
 
 describe("blocks and ordering", () => {
-  it("keeps blocks ordered and moves them", async () => {
+  it("keeps list blocks ordered and moves them", async () => {
     await repo.createList(list("l1"));
     const a = await repo.addToList("l1", { kind: "poi", poi: poi() }, NOW);
     await repo.addToList(
@@ -209,26 +246,37 @@ describe("blocks and ordering", () => {
       { kind: "poi", poi: poi({ osmRef: { type: "node", id: "102" }, name: "Other" }) },
       NOW,
     );
-    let blocks = await repo.getGuideBlocks("l1");
-    expect(blocks.map((v) => v.place?.id)).toEqual([a.place.id, blocks[1]?.place?.id]);
+    let blocks = await repo.getListBlocks("l1");
+    expect(blocks.map((v) => v.place.id)).toEqual([a.place.id, blocks[1]?.place.id]);
     const second = blocks[1]?.block.id;
     if (!second) throw new Error("no block");
     await repo.moveBlock(second, blocks[0]?.block.id ?? null, LATER);
-    blocks = await repo.getGuideBlocks("l1");
-    expect(blocks[1]?.place?.id).toBe(a.place.id);
+    blocks = await repo.getListBlocks("l1");
+    expect(blocks[1]?.place.id).toBe(a.place.id);
   });
 
-  it("section notes are created and die with their blocks", async () => {
+  it("post section notes are created and die with their blocks (sections live on posts since 2026-07-19)", async () => {
     await repo.createList(list("l1"));
-    const section = await repo.addSectionBlock("l1", "Intro text", NOW, "Intro");
-    expect((await repo.getGuideBlocks("l1"))[0]?.sectionNote?.body).toBe("Intro text");
-    await repo.removeBlock(section.id, LATER);
-    expect(await repo.getGuideBlocks("l1")).toHaveLength(0);
+    await repo.createPost({
+      id: "p1",
+      title: "Guide",
+      listId: "l1",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const section = await repo.addPostSection("p1", "Intro text", NOW, "Intro");
+    expect((await repo.getPostBlocks("p1"))[0]?.sectionNote?.body).toBe("Intro text");
+    await repo.removePostBlock(section.id, LATER);
+    expect(await repo.getPostBlocks("p1")).toHaveLength(0);
+    // The section's post-owned note died with its block.
+    expect(
+      (await repo.db.notes.toArray()).filter((n) => !n.deleted && n.target.kind === "post"),
+    ).toHaveLength(0);
   });
 });
 
 describe("note attachments", () => {
-  it("attaches only notes about the block's place", async () => {
+  it("attaches only notes about the embed's place to a post place block", async () => {
     await repo.createList(list("l1"));
     const a = await repo.addToList("l1", { kind: "poi", poi: poi() }, NOW);
     const b = await repo.addToList(
@@ -236,6 +284,15 @@ describe("note attachments", () => {
       { kind: "poi", poi: poi({ osmRef: { type: "node", id: "102" } }) },
       NOW,
     );
+    await repo.createPost({
+      id: "p1",
+      title: "Guide",
+      listId: "l1",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const blockA = (await repo.embedPlaceInPost("p1", a.place.id, NOW)).id;
+    const blockB = (await repo.embedPlaceInPost("p1", b.place.id, NOW)).id;
     await repo.createNote({
       id: "n1",
       target: { kind: "place", placeId: a.place.id },
@@ -245,14 +302,10 @@ describe("note attachments", () => {
       createdAt: NOW,
       updatedAt: NOW,
     });
-    const blocks = await repo.getGuideBlocks("l1");
-    const blockA = blocks.find((v) => v.place?.id === a.place.id)?.block.id;
-    const blockB = blocks.find((v) => v.place?.id === b.place.id)?.block.id;
-    if (!blockA || !blockB) throw new Error("blocks missing");
-    await repo.attachNoteToBlock(blockA, "n1", NOW);
-    await expect(repo.attachNoteToBlock(blockB, "n1", NOW)).rejects.toThrow(/different place/);
+    await repo.attachNoteToPostBlock(blockA, "n1", NOW);
+    await expect(repo.attachNoteToPostBlock(blockB, "n1", NOW)).rejects.toThrow(/different place/);
     await repo.deleteNote("n1", LATER);
-    expect((await repo.getGuideBlocks("l1"))[0]?.attachments).toHaveLength(0);
+    expect((await repo.getPostBlocks("p1"))[0]?.attachments).toHaveLength(0);
   });
 });
 

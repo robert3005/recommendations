@@ -1,5 +1,5 @@
 /** GeoJSON is the full-fidelity Phase 3 interchange, including list identity. */
-import type { List, Place } from "@placemarks/domain";
+import { type List, markerAt, type Place } from "@placemarks/domain";
 import { strToU8 } from "fflate";
 import { describe, expect, it } from "vitest";
 import { exportListGeoJson } from "./export";
@@ -12,6 +12,7 @@ describe("Phase 3 GeoJSON list-name fidelity", () => {
     const list: List = {
       id: "list",
       name: "Cafés & caminhadas 🌊",
+      marker: markerAt(0),
       createdAt: NOW,
       updatedAt: NOW,
     };

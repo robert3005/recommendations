@@ -1,5 +1,5 @@
 /** A failed revocation retries DELETE; it must never queue a publication update. */
-import type { Publication } from "@placemarks/domain";
+import { markerAt, type Publication } from "@placemarks/domain";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
@@ -47,6 +47,7 @@ describe("Phase 5 failed-revocation retry", () => {
       await repo.createList({
         id: "list-1",
         name: "Public guide",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });

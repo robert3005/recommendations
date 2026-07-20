@@ -1,4 +1,5 @@
 /** The creator UI offers publishing again after revocation, under a fresh slug claim. */
+import { markerAt } from "@placemarks/domain";
 import { createShareApp, MemoryStorage } from "@placemarks/share-service";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -15,7 +16,13 @@ describe("Phase 5 publishing after revocation", () => {
     const fetcher: typeof fetch = async (input, init) =>
       app.request(new URL(String(input), "https://share.test").toString(), init);
     try {
-      await repo.createList({ id: "list-1", name: "Republish me", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Republish me",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       await repo.addToList(
         "list-1",
         { kind: "manual", facts: { name: "A place", lat: 38.71, lng: -9.14 } },

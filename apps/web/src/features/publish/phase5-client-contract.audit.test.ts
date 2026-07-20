@@ -1,5 +1,5 @@
 /** Focused regressions for the Phase 5 client publication contract. */
-import type { Note, ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type Note, type ResolvedPoi } from "@placemarks/domain";
 import { createShareApp, MemoryStorage } from "@placemarks/share-service";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -91,10 +91,29 @@ async function seededList(repo: DexieRepository): Promise<void> {
   await repo.createList({
     id: "list-1",
     name: "Lisbon Weekend",
+    marker: markerAt(0),
     createdAt: NOW,
     updatedAt: NOW,
   });
   await repo.addToList("list-1", { kind: "poi", poi: poi() }, NOW);
+}
+
+/** Post-targeted note fixtures: a note now anchors to a place or a post. */
+async function seededPost(repo: DexieRepository, postTitle: string): Promise<void> {
+  await repo.createList({
+    id: "list-1",
+    name: "Notes",
+    marker: markerAt(0),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+  await repo.createPost({
+    id: "post-1",
+    title: postTitle,
+    listId: "list-1",
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
 }
 
 function serviceFetcher(storage = new MemoryStorage()): {
@@ -337,7 +356,7 @@ describe("Phase 5 durable publication jobs", () => {
         ),
       ).rejects.toThrow(/quota/i);
 
-      await expect(repo.getGuideBlocks("list-1")).resolves.toHaveLength(1);
+      await expect(repo.getListBlocks("list-1")).resolves.toHaveLength(1);
       expect(await publicationForList(repo, "list-1")).toEqual(before);
       await expect(repo.db.publicationOutbox.count()).resolves.toBe(0);
     } finally {
@@ -412,6 +431,7 @@ describe("Phase 5 durable publication jobs", () => {
       await repo.createList({
         id: "healthy-list",
         name: "Healthy guide",
+        marker: markerAt(0),
         createdAt: LATER,
         updatedAt: LATER,
       });
@@ -523,15 +543,10 @@ describe("Phase 5 standalone note publication", () => {
       });
       expect(claimed.status).toBe(201);
 
-      await repo.createList({
-        id: "list-1",
-        name: "Notes",
-        createdAt: NOW,
-        updatedAt: NOW,
-      });
+      await seededPost(repo, "Notes post");
       const note: Note = {
         id: "note-1",
-        target: { kind: "list", listId: "list-1" },
+        target: { kind: "post", postId: "post-1" },
         title: "Field notes",
         body: "A different note.",
         mediaIds: [],
@@ -541,7 +556,7 @@ describe("Phase 5 standalone note publication", () => {
       };
       await repo.createNote(note);
 
-      const publication = await publishNote(repo, note, "Notes", NOW, service.fetcher);
+      const publication = await publishNote(repo, note, "Notes post", NOW, service.fetcher);
       if (!publication?.slug) throw new Error("note publication missing");
       const stored = await service.storage.get("note", publication.slug);
       if (!stored) throw new Error("collision-fallback note missing");
@@ -559,7 +574,7 @@ describe("Phase 5 standalone note publication", () => {
     try {
       const note: Note = {
         id: "note-1",
-        target: { kind: "list", listId: "list-1" },
+        target: { kind: "post", postId: "post-1" },
         title: "Private later",
         body: "This starts public.",
         mediaIds: [],
@@ -567,14 +582,9 @@ describe("Phase 5 standalone note publication", () => {
         createdAt: NOW,
         updatedAt: NOW,
       };
-      await repo.createList({
-        id: "list-1",
-        name: "Notes",
-        createdAt: NOW,
-        updatedAt: NOW,
-      });
+      await seededPost(repo, "Notes post");
       await repo.createNote(note);
-      await publishNote(repo, note, "Notes", NOW, service.fetcher);
+      await publishNote(repo, note, "Notes post", NOW, service.fetcher);
 
       await repo.updateNote({ ...note, shareable: false, updatedAt: LATER });
 
@@ -677,7 +687,7 @@ describe("Phase 5 standalone note publication", () => {
     const repo = new DexieRepository(`phase5-note-update-ui-${crypto.randomUUID()}`);
     const note: Note = {
       id: "note-1",
-      target: { kind: "list", listId: "list-1" },
+      target: { kind: "post", postId: "post-1" },
       title: "Edited field notes",
       body: "The creator changed this after publishing.",
       mediaIds: [],
@@ -688,12 +698,7 @@ describe("Phase 5 standalone note publication", () => {
     let view: ReturnType<typeof render> | undefined;
 
     try {
-      await repo.createList({
-        id: "list-1",
-        name: "Notes",
-        createdAt: NOW,
-        updatedAt: NOW,
-      });
+      await seededPost(repo, "Notes post");
       await repo.createNote(note);
       await repo.db.publications.put({
         id: "publication-1",
@@ -728,7 +733,7 @@ describe("Phase 5 standalone note publication", () => {
     const repo = new DexieRepository(`phase5-note-failed-ui-${crypto.randomUUID()}`);
     const note: Note = {
       id: "note-1",
-      target: { kind: "list", listId: "list-1" },
+      target: { kind: "post", postId: "post-1" },
       title: "Field notes",
       body: "A local edit failed to publish.",
       mediaIds: [],
@@ -739,12 +744,7 @@ describe("Phase 5 standalone note publication", () => {
     let view: ReturnType<typeof render> | undefined;
 
     try {
-      await repo.createList({
-        id: "list-1",
-        name: "Notes",
-        createdAt: NOW,
-        updatedAt: NOW,
-      });
+      await seededPost(repo, "Notes post");
       await repo.createNote(note);
       await repo.db.publications.put({
         id: "publication-1",

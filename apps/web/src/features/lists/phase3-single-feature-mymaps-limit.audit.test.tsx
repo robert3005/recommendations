@@ -1,6 +1,6 @@
 /** A single large feature cannot be split between KML files; the My Maps
  * handoff must refuse it rather than emit a file above the documented limit. */
-import type { GuideBlockView, List, Note, Place } from "@placemarks/domain";
+import { type List, type ListBlockView, markerAt, type Note, type Place } from "@placemarks/domain";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ListPage } from "./ListPage";
@@ -10,6 +10,7 @@ const MY_MAPS_FILE_LIMIT = 5 * 1024 * 1024;
 const list: List = {
   id: "one-oversized-feature",
   name: "One enormous note",
+  marker: markerAt(0),
   createdAt: NOW,
   updatedAt: NOW,
 };
@@ -22,7 +23,7 @@ const place: Place = {
   createdAt: NOW,
   updatedAt: NOW,
 };
-const blocks: GuideBlockView[] = [
+const blocks: ListBlockView[] = [
   {
     block: {
       id: "block-1",
@@ -47,8 +48,9 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../data/hooks", () => ({
-  useGuide: () => list,
-  useGuideBlocks: () => blocks,
+  useList: () => list,
+  useListBlocks: () => blocks,
+  useLists: () => [list],
 }));
 
 vi.mock("../../data/RepoContext", () => ({

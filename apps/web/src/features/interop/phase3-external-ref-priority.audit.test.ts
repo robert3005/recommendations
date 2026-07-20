@@ -1,5 +1,5 @@
 /** Google external-ref identity and handoff take precedence over generic web provenance. */
-import type { PoiResolver, SearchProvider } from "@placemarks/domain";
+import { markerAt, type PoiResolver, type SearchProvider } from "@placemarks/domain";
 import { strToU8 } from "fflate";
 import Papa from "papaparse";
 import { describe, expect, it, vi } from "vitest";
@@ -25,7 +25,13 @@ describe("Phase 3 Google external-ref priority", () => {
   it("deduplicates by a Google id even when a generic web ref is listed first", async () => {
     const repo = new DexieRepository(`phase3-secondary-google-ref-${crypto.randomUUID()}`);
     try {
-      await repo.createList({ id: "list", name: "portable", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list",
+        name: "portable",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const existing = await repo.addToList(
         "list",
         {
@@ -66,7 +72,13 @@ describe("Phase 3 Google external-ref priority", () => {
   it("puts the retained Google listing in CSV's URL column before a generic web ref", async () => {
     const repo = new DexieRepository(`phase3-csv-google-ref-${crypto.randomUUID()}`);
     try {
-      await repo.createList({ id: "list", name: "portable", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list",
+        name: "portable",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const created = await repo.addToList(
         "list",
         {

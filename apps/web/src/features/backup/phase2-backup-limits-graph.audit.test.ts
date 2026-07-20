@@ -1,4 +1,4 @@
-import type { ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type ResolvedPoi } from "@placemarks/domain";
 import { strFromU8, strToU8, unzipSync, Zip, ZipPassThrough, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -141,13 +141,24 @@ async function archiveWithDuplicateNamedEntries(backup: Blob): Promise<Blob> {
   return new Blob([zipped.slice().buffer as ArrayBuffer], { type: "application/zip" });
 }
 
+// Live list markers are unique (colour, icon) pairs — a global counter keeps
+// every fixture list distinct even across merged libraries.
+let markerCounter = 0;
+const nextMarker = () => markerAt(markerCounter++);
+
 async function seedSimple(
   repo: DexieRepository,
   listId: string,
   osmId: string,
   at = NOW,
 ): Promise<string> {
-  await repo.createList({ id: listId, name: listId, createdAt: at, updatedAt: at });
+  await repo.createList({
+    id: listId,
+    name: listId,
+    marker: nextMarker(),
+    createdAt: at,
+    updatedAt: at,
+  });
   return (await repo.addToList(listId, { kind: "poi", poi: poi(osmId, at) }, at)).place.id;
 }
 
@@ -163,13 +174,29 @@ async function seedRich(repo: DexieRepository): Promise<void> {
     createdAt: NOW,
     updatedAt: NOW,
   });
-  const placeBlock = (await repo.getGuideBlocks("list-a")).find(
-    ({ block }) => block.content.type === "place",
-  );
-  if (!placeBlock) throw new Error("place-block fixture missing");
-  await repo.attachNoteToBlock(placeBlock.block.id, "place-note", NOW);
-  await repo.addSectionBlock("list-a", "Section body", NOW);
+  // The editorial layer lives on posts (2026-07-19 pivot): a section, a place
+  // embed carrying an attached shareable note, and a published tag selection.
+  await repo.createPost({
+    id: "post-a",
+    title: "list-a",
+    listId: "list-a",
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+  await repo.addPostSection("post-a", "Section body", NOW);
+  const embed = await repo.embedPlaceInPost("post-a", placeA, NOW);
+  await repo.attachNoteToPostBlock(embed.id, "place-note", NOW);
+  const coffee = (await repo.listTags()).find((tag) => tag.name === "coffee");
+  if (!coffee) throw new Error("tag fixture missing");
+  await repo.selectTagForPostBlock(embed.id, coffee.id, NOW);
   await seedSimple(repo, "list-b", "202");
+  await repo.createPost({
+    id: "post-b",
+    title: "list-b",
+    listId: "list-b",
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
 }
 
 function rowWith(data: MutableBackupData, table: string, predicate: (row: MutableRow) => boolean) {
@@ -346,12 +373,12 @@ const graphCases: Array<{
     },
   },
   {
-    name: "a section note owned by a different live list",
+    name: "a section post block whose note is owned by a different live post",
     mutate(data) {
-      const section = rowWith(data, "listBlocks", (row) => row.kind === "section");
+      const section = rowWith(data, "postBlocks", (row) => row.kind === "section");
       const note = rowWith(data, "notes", (row) => row.id === section.refId);
-      note.target = { kind: "list", listId: "list-b" };
-      note.targetKey = "list:list-b";
+      note.target = { kind: "post", postId: "post-b" };
+      note.targetKey = "post:post-b";
     },
   },
   {
@@ -554,6 +581,7 @@ describe("Phase 2 backup merge final-state and identity audit", () => {
       await source.createList({
         id: "source-list",
         name: "source-list",
+        marker: nextMarker(),
         createdAt: LATER,
         updatedAt: LATER,
       });

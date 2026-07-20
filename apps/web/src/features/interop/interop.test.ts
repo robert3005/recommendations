@@ -4,6 +4,7 @@
  * (auto-link / review / placed-unlinked), idempotent re-import, and the
  * every-row-accounted-for report.
  */
+import { markerAt } from "@placemarks/domain";
 import { strToU8, zipSync } from "fflate";
 import { beforeEach, describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -192,8 +193,20 @@ describe("import dedup in the repository", () => {
         fid: "0x1f9a2b:0xdeadbeef",
         importedAt: NOW,
       };
-      await repo.createList({ id: "a", name: "A", createdAt: NOW, updatedAt: NOW });
-      await repo.createList({ id: "b", name: "B", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "a",
+        name: "A",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await repo.createList({
+        id: "b",
+        name: "B",
+        marker: markerAt(1),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const first = await repo.addToList(
         "a",
         {
@@ -224,13 +237,25 @@ describe("import dedup in the repository", () => {
   it("name+proximity dedups against an existing place; distance alone never does", async () => {
     const repo = new DexieRepository(`interop-nearby-${crypto.randomUUID()}`);
     try {
-      await repo.createList({ id: "a", name: "A", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "a",
+        name: "A",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const first = await repo.addToList(
         "a",
         { kind: "manual", facts: { name: "Picnic bench", lat: 38.7, lng: -9.14 } },
         NOW,
       );
-      await repo.createList({ id: "b", name: "B", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "b",
+        name: "B",
+        marker: markerAt(1),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const same = await repo.addToList(
         "b",
         { kind: "import", facts: { name: "picnic bench", lat: 38.7003, lng: -9.1401 } },

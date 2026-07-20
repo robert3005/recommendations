@@ -1,4 +1,4 @@
-import type { GuideBlockView, List, Note, Place } from "@placemarks/domain";
+import { type List, type ListBlockView, markerAt, type Note, type Place } from "@placemarks/domain";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ListPage } from "./ListPage";
@@ -8,11 +8,12 @@ const MY_MAPS_FILE_LIMIT = 5 * 1024 * 1024;
 const list: List = {
   id: "large-notes-list",
   name: "Large notes trip",
+  marker: markerAt(0),
   createdAt: NOW,
   updatedAt: NOW,
 };
 
-const blocks: GuideBlockView[] = Array.from({ length: 100 }, (_, index) => {
+const blocks: ListBlockView[] = Array.from({ length: 100 }, (_, index) => {
   const place: Place = {
     id: `place-${index.toString()}`,
     origin: "manual",
@@ -43,8 +44,9 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../data/hooks", () => ({
-  useGuide: () => list,
-  useGuideBlocks: () => blocks,
+  useList: () => list,
+  useListBlocks: () => blocks,
+  useLists: () => [list],
 }));
 
 vi.mock("../../data/RepoContext", () => ({

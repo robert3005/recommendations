@@ -1,4 +1,5 @@
 /** Phase 6 recovery: every non-empty local library needs periodic backup reminders. */
+import { markerAt } from "@placemarks/domain";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
@@ -16,17 +17,27 @@ describe("Phase 6 backup reminder coverage", () => {
     globalThis.localStorage?.clear();
   });
 
-  it("reminds for an unbacked-up guide with notes but no place blocks", async () => {
+  it("reminds for an unbacked-up post draft with notes but no place blocks", async () => {
     const repo = new DexieRepository(`phase6-reminder-${crypto.randomUUID()}`);
     repos.push(repo);
     await repo.createList({
-      id: "draft-guide",
-      name: "Draft guide",
+      id: "draft-list",
+      name: "Draft list",
+      marker: markerAt(0),
       createdAt: "2026-07-19T12:00:00.000Z",
       updatedAt: "2026-07-19T12:00:00.000Z",
     });
-    await repo.addSectionBlock(
-      "draft-guide",
+    // Sections live on posts (2026-07-19 pivot); the section note is local data
+    // worth reminding about even before the first place block exists.
+    await repo.createPost({
+      id: "draft-post",
+      title: "Draft post",
+      listId: "draft-list",
+      createdAt: "2026-07-19T12:00:30.000Z",
+      updatedAt: "2026-07-19T12:00:30.000Z",
+    });
+    await repo.addPostSection(
+      "draft-post",
       "A section note that exists only on this device.",
       "2026-07-19T12:01:00.000Z",
     );

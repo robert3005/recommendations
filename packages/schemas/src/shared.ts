@@ -72,9 +72,23 @@ export const sharedBlockSchema = z.discriminatedUnion("type", [
 
 export const sharedGuideSchema = z.object({
   v: z.literal(1),
+  /**
+   * Which projection this document is (spec/src/sharing.md §One block
+   * document, two projections). Absent in pre-pivot documents, which read as
+   * posts whose sections happen to live on a list.
+   */
+  kind: z.enum(["list", "post"]).optional(),
   slug: z.string().max(120).optional(), // hosted mode only
   title: z.string().min(1).max(300),
   description: z.string().max(2000).optional(),
+  /**
+   * Posts only: the list this post editorialises — its title always, and its
+   * public slug when the list itself has a hosted publication
+   * (spec/src/posts.md §Publishing).
+   */
+  list: z
+    .object({ title: z.string().min(1).max(300), slug: z.string().max(120).optional() })
+    .optional(),
   cover: z.object({ hostedMediaId: z.string().max(120) }).optional(),
   blocks: z.array(sharedBlockSchema).max(500),
   contentHash: z.string().max(80),
@@ -83,7 +97,9 @@ export const sharedGuideSchema = z.object({
 
 export const sharedNoteContextSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("place"), place: sharedPlaceAnchorSchema }),
+  // Pre-pivot note pages carry { kind: "list" }; new ones target posts.
   z.object({ kind: z.literal("list"), listTitle: z.string().max(300) }),
+  z.object({ kind: z.literal("post"), postTitle: z.string().max(300) }),
 ]);
 
 export const sharedNoteSchema = z.object({

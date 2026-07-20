@@ -2,6 +2,7 @@
 import {
   createOsmPlace,
   type List,
+  markerAt,
   type PoiResolver,
   type ResolvedPoi,
   type SearchProvider,
@@ -92,6 +93,7 @@ describe("Phase 3 ODbL attribution continuity", () => {
     const sourceList: List = {
       id: "source-list",
       name: "OSM source",
+      marker: markerAt(0),
       createdAt: NOW,
       updatedAt: NOW,
     };

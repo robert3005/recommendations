@@ -1,5 +1,5 @@
 /** A pending note-page DELETE must never be presented as a first-publish action. */
-import type { Note, Publication } from "@placemarks/domain";
+import { markerAt, type Note, type Publication } from "@placemarks/domain";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
@@ -15,7 +15,7 @@ describe("Phase 5 note-page revoking UI precedence", () => {
     const repo = new DexieRepository(`phase5-note-revoking-ui-${crypto.randomUUID()}`);
     const note: Note = {
       id: "note-1",
-      target: { kind: "list", listId: "list-1" },
+      target: { kind: "post", postId: "post-1" },
       title: "Public note",
       body: "The last published revision remains readable until DELETE succeeds.",
       mediaIds: [],
@@ -38,7 +38,20 @@ describe("Phase 5 note-page revoking UI precedence", () => {
     };
 
     try {
-      await repo.createList({ id: "list-1", name: "Notes", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Notes",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await repo.createPost({
+        id: "post-1",
+        title: "Notes post",
+        listId: "list-1",
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       await repo.createNote(note);
       await repo.db.publications.put(publication);
       await repo.db.publicationOutbox.put({

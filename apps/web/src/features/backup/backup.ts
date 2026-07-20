@@ -4,13 +4,27 @@
  * checksums before any write; merge is per-id LWW that never silently discards
  * a conflicting note body (a conflict copy is created instead).
  */
-import { allRefKeys, type Note, type OsmElementRef, type Place } from "@placemarks/domain";
+import {
+  allRefKeys,
+  markerKey,
+  type Note,
+  type OsmElementRef,
+  type Place,
+} from "@placemarks/domain";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { z } from "zod";
+import {
+  type PivotAttachmentRow,
+  type PivotBlockRow,
+  type PivotListRow,
+  type PivotNoteRow,
+  pivotGuideLayer,
+} from "../../data/pivot";
 import type { DexieRepository } from "../../data/repo";
 import { newId } from "../../lib/id";
 
-export const BACKUP_SCHEMA_VERSION = 2;
+/** v3 (2026-07-19 pivot): lists carry markers; posts and their edges join the archive. */
+export const BACKUP_SCHEMA_VERSION = 3;
 
 const entityBase = {
   id: z.string(),
@@ -21,7 +35,9 @@ const entityBase = {
 
 const manifestSchema = z.object({
   app: z.literal("placemarks"),
-  schemaVersion: z.literal(BACKUP_SCHEMA_VERSION),
+  // Pre-pivot (v2) archives restore losslessly: the guide layer they carry is
+  // pivoted onto posts on import (spec/src/posts.md §Migration).
+  schemaVersion: z.union([z.literal(2), z.literal(BACKUP_SCHEMA_VERSION)]),
   exportedAt: z.string(),
   checksums: z.record(z.string(), z.string()),
   counts: z.record(z.string(), z.number()),
@@ -42,12 +58,92 @@ const dataSchema = z.object({
   mediaAssets: z.array(z.object({ ...entityBase, localBlobKey: z.string() }).loose()),
   lists: z.array(z.object({ ...entityBase, name: z.string() }).loose()),
   listBlocks: z.array(z.object({ ...entityBase, listId: z.string(), rank: z.string() }).loose()),
+  // Absent in v2 archives; defaulted so one schema serves both versions.
+  posts: z
+    .array(z.object({ ...entityBase, title: z.string(), listId: z.string() }).loose())
+    .default([]),
+  postBlocks: z
+    .array(z.object({ ...entityBase, postId: z.string(), rank: z.string() }).loose())
+    .default([]),
   blockNoteAttachments: z.array(
     z.object({ ...entityBase, blockId: z.string(), noteId: z.string() }).loose(),
   ),
+  blockTagSelections: z
+    .array(z.object({ ...entityBase, blockId: z.string(), tagId: z.string() }).loose())
+    .default([]),
 });
 
 export type BackupData = z.infer<typeof dataSchema>;
+
+/**
+ * Restore a pre-pivot (v2) archive into the post-pivot model: lists gain
+ * markers, the guide layer moves onto posts, list notes retarget, attachments
+ * follow. Derived pivot ids make this converge with a library that migrated
+ * locally — no duplicate posts on merge.
+ */
+function pivotBackupData(data: BackupData, now: string): void {
+  const changes = pivotGuideLayer({
+    lists: data.lists as unknown as PivotListRow[],
+    listBlocks: data.listBlocks as unknown as PivotBlockRow[],
+    notes: data.notes as unknown as PivotNoteRow[],
+    blockNoteAttachments: data.blockNoteAttachments as unknown as PivotAttachmentRow[],
+  });
+  for (const list of data.lists as unknown as (PivotListRow & Record<string, unknown>)[]) {
+    const marker = changes.markers.get(list.id);
+    if (marker) {
+      list.marker = marker;
+      delete list.color;
+      delete list.icon;
+    }
+  }
+  for (const post of changes.posts) {
+    data.posts.push({ ...post, createdAt: now, updatedAt: now });
+  }
+  for (const block of changes.postBlocks) {
+    data.postBlocks.push({
+      id: block.id,
+      postId: block.postId,
+      rank: block.rank,
+      kind: block.kind,
+      refId: block.refId,
+      content:
+        block.kind === "section"
+          ? { type: "section", noteId: block.refId }
+          : { type: "place", placeId: block.refId },
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  const tombstoned = new Set(changes.tombstoneListBlockIds);
+  for (const block of data.listBlocks as unknown as (PivotBlockRow & {
+    updatedAt: string;
+  })[]) {
+    if (tombstoned.has(block.id)) {
+      block.deleted = true;
+      block.updatedAt = now;
+    }
+  }
+  for (const note of data.notes as unknown as (PivotNoteRow & {
+    target?: unknown;
+    updatedAt: string;
+  })[]) {
+    const postId = changes.retargetNotes.get(note.id);
+    if (postId) {
+      note.target = { kind: "post", postId };
+      note.targetKey = `post:${postId}`;
+      note.updatedAt = now;
+    }
+  }
+  for (const attachment of data.blockNoteAttachments as unknown as (PivotAttachmentRow & {
+    updatedAt: string;
+  })[]) {
+    const blockId = changes.moveAttachments.get(attachment.id);
+    if (blockId) {
+      attachment.blockId = blockId;
+      attachment.updatedAt = now;
+    }
+  }
+}
 
 /** Blob → bytes with a FileReader fallback (jsdom Blobs may lack arrayBuffer()). */
 async function blobBytes(blob: Blob): Promise<Uint8Array> {
@@ -75,7 +171,10 @@ export async function exportBackup(repo: DexieRepository, exportedAt: string): P
     mediaAssets: await db.mediaAssets.toArray(),
     lists: await db.lists.toArray(),
     listBlocks: await db.listBlocks.toArray(),
+    posts: await db.posts.toArray(),
+    postBlocks: await db.postBlocks.toArray(),
     blockNoteAttachments: await db.blockNoteAttachments.toArray(),
+    blockTagSelections: await db.blockTagSelections.toArray(),
   } as unknown as BackupData;
   const dataBytes = strToU8(JSON.stringify(data));
 
@@ -203,7 +302,24 @@ function validateGraph(
         throw new Error(`place ${row.id} carries a malformed OSM reference — refusing to import`);
       }
     }
+    // History entries are completed (or current) intervals: every entry
+    // states when its link began. An "unlinked" moment with no beginning is
+    // not a valid interval shape.
+    for (const entry of (row.osmRefHistory ?? []) as { linkedAt?: unknown }[]) {
+      if (typeof entry.linkedAt !== "string" || entry.linkedAt === "") {
+        throw new Error(
+          `place ${row.id} carries a history interval with no linkedAt — refusing to import`,
+        );
+      }
+    }
     if (row.deleted) continue;
+    // Linkage only ever gains OSM identity: an OSM-origin place always keeps
+    // a current binding — evidence without one is a malformed identity.
+    if ((place as { origin?: string }).origin === "osm" && !row.currentOsmRef) {
+      throw new Error(
+        `place ${row.id} claims OSM origin but has no current binding — refusing to import`,
+      );
+    }
     // A linked place without its copied evidence cannot render offline or
     // recover a moved element — the shape is invalid, not merely incomplete.
     if (row.currentOsmRef && (!row.firstSeen || !row.lastVerified)) {
@@ -288,17 +404,45 @@ function validateGraph(
       }
       assignmentPairs.add(pair);
     }
+    // Live markers are unique (colour, icon) pairs (spec/src/data-model.md).
+    const markerKeys = new Set<string>();
+    for (const list of data.lists) {
+      const row = list as {
+        id: string;
+        deleted?: boolean;
+        marker?: { color?: unknown; icon?: unknown };
+      };
+      if (row.deleted) continue;
+      if (typeof row.marker?.color !== "string" || typeof row.marker.icon !== "string") {
+        throw new Error(`list ${row.id} carries no marker — refusing to import`);
+      }
+      const key = markerKey({ color: row.marker.color, icon: row.marker.icon });
+      if (markerKeys.has(key)) {
+        throw new Error(`two live lists share the marker ${key} — markers are unique; refused`);
+      }
+      markerKeys.add(key);
+    }
+    // Posts editorialise live lists; their block sequence joins live rows.
+    const livePosts = new Map<string, string>(); // postId → listId
+    for (const post of data.posts) {
+      const row = post as unknown as { id: string; deleted?: boolean; listId: string };
+      if (row.deleted) continue;
+      if (!liveLists.has(row.listId)) {
+        throw new Error(`post ${row.id} editorialises no live list — graph refused`);
+      }
+      livePosts.set(row.id, row.listId);
+    }
     // Every live note must target a live row — attached or not.
     for (const note of data.notes) {
       const row = note as {
         id: string;
         deleted?: boolean;
-        target?: { kind?: string; listId?: string; placeId?: string };
+        target?: { kind?: string; postId?: string; placeId?: string };
       };
       if (row.deleted) continue;
       const targetLive =
-        row.target?.kind === "list"
-          ? liveLists.has(row.target.listId ?? "")
+        row.target?.kind === "post"
+          ? livePosts.has(row.target.postId ?? "")
           : row.target?.kind === "place"
             ? livePlaces.has(row.target.placeId ?? "")
             : false;
@@ -309,47 +453,91 @@ function validateGraph(
     const notesById = new Map(
       data.notes.map((n) => [
         n.id,
-        n as { deleted?: boolean; target?: { kind?: string; listId?: string; placeId?: string } },
+        n as {
+          deleted?: boolean;
+          target?: { kind?: string; postId?: string; placeId?: string };
+        },
       ]),
     );
     const blockPairs = new Set<string>();
-    const blocksById = new Map<
-      string,
-      { listId: string; content?: { type?: string; placeId?: string; noteId?: string } }
-    >();
+    const membershipByList = new Map<string, Set<string>>();
     for (const block of data.listBlocks) {
       const row = block as unknown as {
         id: string;
         deleted?: boolean;
         listId: string;
-        content?: { type?: string; placeId?: string; noteId?: string };
+        content?: { type?: string; placeId?: string };
       };
       if (row.deleted) continue;
-      blocksById.set(row.id, row);
       if (!liveLists.has(row.listId)) {
         throw new Error(`list block ${row.id} belongs to no live list — graph refused`);
       }
-      if (row.content?.type === "place" && row.content.placeId) {
-        const pair = `${row.listId}::${row.content.placeId}`;
-        if (blockPairs.has(pair)) {
-          throw new Error(
-            `place appears twice in one list (${row.listId}) — a place may appear at most once per list`,
-          );
-        }
-        blockPairs.add(pair);
+      // Lists carry membership only (2026-07-19): a live section block on a
+      // list is pre-pivot residue the pivot should have moved.
+      if (row.content?.type !== "place" || !row.content.placeId) {
+        throw new Error(`list block ${row.id} is not a place membership — graph refused`);
       }
+      const pair = `${row.listId}::${row.content.placeId}`;
+      if (blockPairs.has(pair)) {
+        throw new Error(
+          `place appears twice in one list (${row.listId}) — a place may appear at most once per list`,
+        );
+      }
+      blockPairs.add(pair);
+      const members = membershipByList.get(row.listId) ?? new Set<string>();
+      members.add(row.content.placeId);
+      membershipByList.set(row.listId, members);
+    }
+    // Post blocks: sections join their own post's notes; embeds reference live
+    // members of the post's list, at most once per post.
+    const embedPairs = new Set<string>();
+    const postBlocksById = new Map<
+      string,
+      { postId: string; content?: { type?: string; placeId?: string; noteId?: string } }
+    >();
+    for (const block of data.postBlocks) {
+      const row = block as unknown as {
+        id: string;
+        deleted?: boolean;
+        postId: string;
+        content?: { type?: string; placeId?: string; noteId?: string };
+      };
+      if (row.deleted) continue;
+      const listId = livePosts.get(row.postId);
+      if (!listId) {
+        throw new Error(`post block ${row.id} belongs to no live post — graph refused`);
+      }
+      postBlocksById.set(row.id, row);
       if (row.content?.type === "section" && row.content.noteId) {
         const note = notesById.get(row.content.noteId);
         if (
           !note ||
           note.deleted ||
-          note.target?.kind !== "list" ||
-          note.target.listId !== row.listId
+          note.target?.kind !== "post" ||
+          note.target.postId !== row.postId
         ) {
           throw new Error(
-            `section block ${row.id} and its note disagree about the owning list — graph refused`,
+            `section block ${row.id} and its note disagree about the owning post — graph refused`,
           );
         }
+      } else if (row.content?.type === "place" && row.content.placeId) {
+        if (!livePlaces.has(row.content.placeId)) {
+          throw new Error(`post block ${row.id} embeds no live place — graph refused`);
+        }
+        if (!membershipByList.get(listId)?.has(row.content.placeId)) {
+          throw new Error(
+            `post block ${row.id} embeds a place that is not a member of the post's list — graph refused`,
+          );
+        }
+        const pair = `${row.postId}::${row.content.placeId}`;
+        if (embedPairs.has(pair)) {
+          throw new Error(
+            `place embedded twice in one post (${row.postId}) — at most once per post; refused`,
+          );
+        }
+        embedPairs.add(pair);
+      } else {
+        throw new Error(`post block ${row.id} has no valid content — graph refused`);
       }
     }
     const attachmentPairs = new Set<string>();
@@ -361,7 +549,7 @@ function validateGraph(
         throw new Error(`duplicate live attachment for block ${row.blockId} — graph refused`);
       }
       attachmentPairs.add(pair);
-      const block = blocksById.get(row.blockId);
+      const block = postBlocksById.get(row.blockId);
       const note = notesById.get(row.noteId);
       if (
         block?.content?.type !== "place" ||
@@ -374,10 +562,39 @@ function validateGraph(
           `attachment ${row.id} joins a note to a block about a different place — graph refused`,
         );
       }
-      // Attachment implies guide membership: only shareable notes qualify.
+      // Attachment implies publication membership: only shareable notes qualify.
       if ((note as { shareable?: boolean }).shareable !== true) {
         throw new Error(
-          `attachment ${row.id} joins a private (non-shareable) note to a guide — graph refused`,
+          `attachment ${row.id} joins a private (non-shareable) note to a post — graph refused`,
+        );
+      }
+    }
+    // Tag selections: a post place block, and a tag actually assigned to that
+    // block's place; one live selection per (block, tag).
+    const selectionPairs = new Set<string>();
+    for (const selection of data.blockTagSelections) {
+      const row = selection as unknown as {
+        id: string;
+        deleted?: boolean;
+        blockId: string;
+        tagId: string;
+      };
+      if (row.deleted) continue;
+      const pair = `${row.blockId}::${row.tagId}`;
+      if (selectionPairs.has(pair)) {
+        throw new Error(`duplicate live tag selection for block ${row.blockId} — graph refused`);
+      }
+      selectionPairs.add(pair);
+      const block = postBlocksById.get(row.blockId);
+      if (block?.content?.type !== "place") {
+        throw new Error(`tag selection ${row.id} names no live post place block — graph refused`);
+      }
+      if (!liveTags.has(row.tagId)) {
+        throw new Error(`tag selection ${row.id} references a missing tag — graph refused`);
+      }
+      if (!assignmentPairs.has(`${block.content.placeId ?? ""}::${row.tagId}`)) {
+        throw new Error(
+          `tag selection ${row.id} selects a tag not assigned to the embed's place — graph refused`,
         );
       }
     }
@@ -466,6 +683,20 @@ async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData):
   );
   const liveLists = new Set<string>();
   for (const list of listById.values()) if (!list.deleted) liveLists.add(list.id);
+  // Live markers stay unique (colour, icon) pairs in the merged final state.
+  const finalMarkers = new Set<string>();
+  for (const list of listById.values()) {
+    if (list.deleted) continue;
+    const marker = (list as { marker?: { color?: unknown; icon?: unknown } }).marker;
+    if (typeof marker?.color !== "string" || typeof marker.icon !== "string") {
+      throw new Error(`merging would leave list ${list.id} without a marker — refusing`);
+    }
+    const key = markerKey({ color: marker.color, icon: marker.icon });
+    if (finalMarkers.has(key)) {
+      throw new Error(`merging would leave two live lists sharing the marker ${key} — refusing`);
+    }
+    finalMarkers.add(key);
+  }
 
   type BlockLike = Aged & { listId: string; content?: { type?: string; placeId?: string } };
   const blockById = lww(
@@ -530,10 +761,25 @@ async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData):
     }
   }
 
+  // Posts editorialise live lists in the final state.
+  type PostLike = Aged & { listId: string };
+  const postById = lww(
+    (await repo.db.posts.toArray()) as unknown as PostLike[],
+    data.posts as unknown as PostLike[],
+  );
+  const livePostList = new Map<string, string>();
+  for (const post of postById.values()) {
+    if (post.deleted) continue;
+    if (!liveLists.has(post.listId)) {
+      throw new Error(`merging would leave post ${post.id} without a live list — refusing`);
+    }
+    livePostList.set(post.id, post.listId);
+  }
+
   // Every live note must target a live row in the final state.
   type NoteLike = Aged & {
     shareable?: boolean;
-    target?: { kind?: string; placeId?: string; listId?: string };
+    target?: { kind?: string; placeId?: string; postId?: string };
   };
   const noteById = lww(
     (await repo.db.notes.toArray()) as unknown as NoteLike[],
@@ -544,13 +790,59 @@ async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData):
     const targetLive =
       note.target?.kind === "place"
         ? livePlaces.get(note.target.placeId ?? "") === true
-        : note.target?.kind === "list"
-          ? liveLists.has(note.target.listId ?? "")
+        : note.target?.kind === "post"
+          ? livePostList.has(note.target.postId ?? "")
           : false;
     if (!targetLive) {
       throw new Error(`merging would leave note ${note.id} targeting no live row — refusing`);
     }
   }
+
+  // Final membership per list — post embeds must reference members.
+  const membershipByList = new Map<string, Set<string>>();
+  for (const block of blockById.values()) {
+    if (block.deleted || block.content?.type !== "place") continue;
+    if (!liveLists.has(block.listId) || !block.content.placeId) continue;
+    const members = membershipByList.get(block.listId) ?? new Set<string>();
+    members.add(block.content.placeId);
+    membershipByList.set(block.listId, members);
+  }
+  type PostBlockLike = Aged & {
+    postId: string;
+    content?: { type?: string; placeId?: string; noteId?: string };
+  };
+  const postBlockById = lww(
+    (await repo.db.postBlocks.toArray()) as unknown as PostBlockLike[],
+    data.postBlocks as unknown as PostBlockLike[],
+  );
+  for (const block of postBlockById.values()) {
+    if (block.deleted) continue;
+    const listId = livePostList.get(block.postId);
+    if (!listId) {
+      throw new Error(`merging would leave post block ${block.id} without a live post — refusing`);
+    }
+    if (block.content?.type === "place") {
+      const placeId = block.content.placeId ?? "";
+      if (livePlaces.get(placeId) !== true || !membershipByList.get(listId)?.has(placeId)) {
+        throw new Error(
+          `merging would leave post block ${block.id} embedding a non-member place — refusing`,
+        );
+      }
+    } else if (block.content?.type === "section") {
+      const note = noteById.get(block.content.noteId ?? "");
+      if (
+        !note ||
+        note.deleted ||
+        note.target?.kind !== "post" ||
+        note.target.postId !== block.postId
+      ) {
+        throw new Error(
+          `merging would leave section block ${block.id} disagreeing with its note — refusing`,
+        );
+      }
+    }
+  }
+
   type AttachmentLike = {
     id: string;
     deleted?: boolean;
@@ -568,7 +860,7 @@ async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData):
   }
   for (const attachment of attachmentById.values()) {
     if (attachment.deleted) continue;
-    const block = blockById.get(attachment.blockId);
+    const block = postBlockById.get(attachment.blockId);
     const note = noteById.get(attachment.noteId);
     const blockPlace =
       block && !block.deleted && block.content?.type === "place"
@@ -584,6 +876,31 @@ async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData):
     ) {
       throw new Error(
         `merging would leave attachment ${attachment.id} joining a note to a block about a different place — refusing`,
+      );
+    }
+  }
+
+  // Tag selections survive only on live post place blocks whose place still
+  // carries the selected tag's live assignment.
+  const finalAssignmentPairs = new Set<string>();
+  for (const edge of assignments.values()) {
+    if (!edge.deleted) finalAssignmentPairs.add(`${edge.placeId}::${edge.tagId}`);
+  }
+  type SelectionLike = Aged & { blockId: string; tagId: string };
+  const selectionById = lww(
+    (await repo.db.blockTagSelections.toArray()) as unknown as SelectionLike[],
+    data.blockTagSelections as unknown as SelectionLike[],
+  );
+  for (const selection of selectionById.values()) {
+    if (selection.deleted) continue;
+    const block = postBlockById.get(selection.blockId);
+    const blockPlace =
+      block && !block.deleted && block.content?.type === "place"
+        ? block.content.placeId
+        : undefined;
+    if (!blockPlace || !finalAssignmentPairs.has(`${blockPlace}::${selection.tagId}`)) {
+      throw new Error(
+        `merging would leave tag selection ${selection.id} without its assignment — refusing`,
       );
     }
   }
@@ -720,12 +1037,15 @@ export async function importBackup(
     if (!entries[name]) throw new Error(`backup is missing declared entry ${name}`);
   }
   const data = dataSchema.parse(JSON.parse(strFromU8(dataBytes)));
-  // Manifest counts must exactly describe the payload they attest to.
+  // Manifest counts must exactly describe the payload they attest to (tables
+  // a v2 archive predates count as zero).
   for (const [table, tableRows] of Object.entries(data)) {
-    if (manifest.counts[table] !== (tableRows as unknown[]).length) {
+    if ((manifest.counts[table] ?? 0) !== (tableRows as unknown[]).length) {
       throw new Error(`manifest count for ${table} does not match data.json — refusing to import`);
     }
   }
+  // A pre-pivot archive restores into the post-pivot model losslessly.
+  if (manifest.schemaVersion === 2) pivotBackupData(data, now);
   validateCoordinates(data);
   validateGraph(data, entries, mode);
   if (mode === "merge") {
@@ -742,7 +1062,10 @@ export async function importBackup(
     ["mediaAssets", db.mediaAssets],
     ["lists", db.lists],
     ["listBlocks", db.listBlocks],
+    ["posts", db.posts],
+    ["postBlocks", db.postBlocks],
     ["blockNoteAttachments", db.blockNoteAttachments],
+    ["blockTagSelections", db.blockTagSelections],
   ] as const;
 
   let imported = 0;
@@ -848,7 +1171,7 @@ export async function importBackup(
           const target = remap.get(assignment.placeId);
           if (target) assignment.placeId = target;
         }
-        for (const block of data.listBlocks) {
+        for (const block of [...data.listBlocks, ...data.postBlocks]) {
           const row = block as unknown as {
             kind?: string;
             refId?: string;
@@ -900,6 +1223,28 @@ export async function importBackup(
               }
             }
           }
+          if (key === "postBlocks") {
+            const row = incoming as unknown as {
+              id: string;
+              postId: string;
+              kind?: string;
+              refId?: string;
+              deleted?: boolean;
+            };
+            if (!row.deleted && row.kind === "place" && row.refId) {
+              const siblings = await db.postBlocks.where("postId").equals(row.postId).toArray();
+              const clash = siblings.find(
+                (b) => !b.deleted && b.kind === "place" && b.refId === row.refId && b.id !== row.id,
+              );
+              if (clash) {
+                // The embed already exists (possibly via identity remapping) —
+                // the incoming duplicate is skipped and its dependents follow
+                // the retained block instead of dangling.
+                skippedBlockTargets.set(row.id, clash.id);
+                continue;
+              }
+            }
+          }
           if (key === "tagAssignments") {
             const row = incoming as unknown as {
               id: string;
@@ -913,6 +1258,28 @@ export async function importBackup(
                 .equals([row.placeId, row.tagId])
                 .toArray();
               const clash = pairs.find((a) => !a.deleted && a.id !== row.id);
+              if (clash) continue;
+            }
+          }
+          if (key === "blockTagSelections") {
+            const row = incoming as unknown as {
+              id: string;
+              blockId: string;
+              tagId: string;
+              deleted?: boolean;
+            };
+            // Follow a skipped duplicate embed onto its retained block.
+            const retainedBlock = skippedBlockTargets.get(row.blockId);
+            if (retainedBlock) row.blockId = retainedBlock;
+            if (!row.deleted) {
+              const edges = await db.blockTagSelections.toArray();
+              const clash = edges.find(
+                (edge) =>
+                  !edge.deleted &&
+                  edge.blockId === row.blockId &&
+                  edge.tagId === row.tagId &&
+                  edge.id !== row.id,
+              );
               if (clash) continue;
             }
           }
@@ -955,7 +1322,29 @@ export async function importBackup(
             imported += 1;
             continue;
           }
-          if (incoming.updatedAt <= existing.updatedAt) continue;
+          if (incoming.updatedAt <= existing.updatedAt) {
+            // A conflicting note body is NEVER silently discarded — even when
+            // the incoming side loses last-write-wins, its body survives as a
+            // recoverable conflict copy (spec/src/storage-sync.md).
+            if (
+              key === "notes" &&
+              !existing.deleted &&
+              !incoming.deleted &&
+              existing.body !== undefined &&
+              (incoming as { body?: string }).body !== undefined &&
+              (incoming as { body?: string }).body !== existing.body
+            ) {
+              const copy: Note & { targetKey: string } = {
+                ...(incoming as unknown as Note & { targetKey: string }),
+                id: newId(),
+                title: `(conflict copy) ${(incoming as { title?: string }).title ?? ""}`.trim(),
+                updatedAt: now,
+              };
+              await db.notes.put(copy);
+              conflictCopies += 1;
+            }
+            continue;
+          }
           // Same derived-index rule as replace mode: recompute, never trust.
           if (key === "places") {
             (incoming as { refKeys?: string[] }).refKeys = allRefKeys(incoming as unknown as Place);

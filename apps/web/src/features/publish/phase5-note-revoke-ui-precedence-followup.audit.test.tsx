@@ -1,5 +1,5 @@
 /** A failed note-page revocation must not expose an action that publishes again. */
-import type { Note, Publication } from "@placemarks/domain";
+import { markerAt, type Note, type Publication } from "@placemarks/domain";
 import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
@@ -14,7 +14,7 @@ describe("Phase 5 note-page revocation UI precedence", () => {
     const repo = new DexieRepository(`phase5-note-revoke-ui-${crypto.randomUUID()}`);
     const note: Note = {
       id: "note-1",
-      target: { kind: "list", listId: "list-1" },
+      target: { kind: "post", postId: "post-1" },
       title: "Public note",
       body: "This page is waiting to be removed.",
       mediaIds: [],
@@ -38,7 +38,20 @@ describe("Phase 5 note-page revocation UI precedence", () => {
     };
 
     try {
-      await repo.createList({ id: "list-1", name: "Notes", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Notes",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await repo.createPost({
+        id: "post-1",
+        title: "Notes post",
+        listId: "list-1",
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       await repo.createNote(note);
       await repo.db.publications.put(publication);
       await repo.db.publicationOutbox.put({

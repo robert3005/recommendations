@@ -4,13 +4,13 @@
  * also be created on the Lists tab. Used by both the unsaved place sheet (where
  * adding implies saving) and the saved-place sheet.
  */
-import type { List } from "@placemarks/domain";
+import type { List, ListMarker } from "@placemarks/domain";
 import { useState } from "react";
 import { NewListForm } from "../lists/NewListForm";
 
 export type AddToListTarget =
   | { kind: "existing"; list: List }
-  | { kind: "new"; name: string; color: string };
+  | { kind: "new"; name: string; marker: ListMarker };
 
 export interface AddToListProps {
   lists: List[] | undefined;
@@ -28,9 +28,9 @@ export function AddToList({ lists, memberListIds, onPick }: AddToListProps) {
         submitLabel="Create & add"
         submitTestId="create-list-and-add"
         radioName="list-marker"
-        onCreate={(name, color) => {
+        onCreate={(name, marker) => {
           setCreating(false);
-          onPick({ kind: "new", name, color });
+          onPick({ kind: "new", name, marker });
         }}
         onCancel={() => setCreating(false)}
       />

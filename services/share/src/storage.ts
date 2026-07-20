@@ -5,9 +5,12 @@
  * and mirrors the same semantics.
  */
 
+/** The three public collections: /s/lists, /s/posts, /s/notes. */
+export type DocumentKind = "list" | "note" | "post";
+
 export interface StoredDocument {
   slug: string;
-  kind: "list" | "note";
+  kind: DocumentKind;
   /** Monotonic per-slug revision; doubles as the ETag value. */
   revision: number;
   /** SHA-256 hex of the editor bearer token — never the token itself. */
@@ -23,7 +26,7 @@ export interface StoredDocument {
 export interface AuditEntry {
   at: string;
   slug: string;
-  kind: "list" | "note";
+  kind: DocumentKind;
   action: "create" | "update" | "revoke" | "denied" | "read";
   revision?: number;
 }
@@ -48,7 +51,7 @@ export interface CreateCommit {
 export interface UpdateCommit {
   audit: AuditEntry;
   reservationKey: string;
-  kind: "list" | "note";
+  kind: DocumentKind;
   slug: string;
   expectedRevision: number;
   body: string;
@@ -58,7 +61,7 @@ export interface UpdateCommit {
 }
 
 export interface ShareStorage {
-  get(kind: "list" | "note", slug: string): Promise<StoredDocument | undefined>;
+  get(kind: DocumentKind, slug: string): Promise<StoredDocument | undefined>;
   /** Atomic claim: fails (returns false) when the slug exists — live or tombstoned. */
   create(doc: StoredDocument): Promise<boolean>;
   /**
@@ -71,7 +74,7 @@ export interface ShareStorage {
   updateCommit(input: UpdateCommit): Promise<StoredDocument | "conflict" | "missing">;
   /** Conditional update: applies only when the stored revision matches; returns the new doc. */
   update(
-    kind: "list" | "note",
+    kind: DocumentKind,
     slug: string,
     expectedRevision: number,
     body: string,
@@ -79,7 +82,7 @@ export interface ShareStorage {
   ): Promise<StoredDocument | "conflict" | "missing">;
   /** Conditional revoke → tombstone. */
   revoke(
-    kind: "list" | "note",
+    kind: DocumentKind,
     slug: string,
     expectedRevision: number,
     updatedAt: string,
@@ -101,7 +104,7 @@ export class MemoryStorage implements ShareStorage {
     return `${kind}:${slug}`;
   }
 
-  async get(kind: "list" | "note", slug: string): Promise<StoredDocument | undefined> {
+  async get(kind: DocumentKind, slug: string): Promise<StoredDocument | undefined> {
     return this.docs.get(this.key(kind, slug));
   }
 
@@ -115,13 +118,29 @@ export class MemoryStorage implements ShareStorage {
   /**
    * Commit atomicity via per-write compensation: a failed or losing commit
    * undoes exactly the writes IT made — never a blind snapshot rewind that
-   * could erase a concurrent winner's committed state.
+   * could erase a concurrent winner's committed state. Identity-aware: an
+   * identical retry sharing the reservation key restores only while the
+   * stored record is still ITS OWN write, so a loser's rollback can never
+   * erase the winner's committed acknowledgement under the same key.
    */
-  private reservationRestorer(reservationKey: string): () => void {
-    const record = this.idempotency.get(reservationKey);
-    return () => {
-      if (record) this.idempotency.set(reservationKey, record);
-      else this.idempotency.delete(reservationKey);
+  private reservationRestorer(reservationKey: string): {
+    put: (record: IdempotencyRecord) => Promise<void>;
+    restore: () => void;
+  } {
+    const prior = this.idempotency.get(reservationKey);
+    let mine: IdempotencyRecord | undefined;
+    return {
+      put: async (record: IdempotencyRecord) => {
+        mine = record;
+        await this.putIdempotent(record);
+      },
+      restore: () => {
+        // Someone else's record (a concurrent winner's ack) now holds the
+        // key — this attempt's compensation must leave it standing.
+        if (mine !== undefined && this.idempotency.get(reservationKey) !== mine) return;
+        if (prior) this.idempotency.set(reservationKey, prior);
+        else this.idempotency.delete(reservationKey);
+      },
     };
   }
 
@@ -134,18 +153,18 @@ export class MemoryStorage implements ShareStorage {
 
   async createCommit(input: CreateCommit): Promise<"created" | "collision"> {
     const docKey = this.key(input.document.kind, input.document.slug);
-    const restoreReservation = this.reservationRestorer(input.reservationKey);
+    const reservation = this.reservationRestorer(input.reservationKey);
     const addedAudits: AuditEntry[] = [];
     let wroteDocument = false;
     const rollback = () => {
       if (wroteDocument && this.docs.get(docKey) === input.document) this.docs.delete(docKey);
-      restoreReservation();
+      reservation.restore();
       this.removeAudits(addedAudits);
     };
     try {
       await this.audit(input.audit);
       addedAudits.push(input.audit);
-      await this.putIdempotent({ key: input.reservationKey, response: "", status: 0 });
+      await reservation.put({ key: input.reservationKey, response: "", status: 0 });
       const created = await this.create(input.document);
       if (!created) {
         // The claim was lost — this attempt contributes nothing durable.
@@ -153,7 +172,7 @@ export class MemoryStorage implements ShareStorage {
         return "collision";
       }
       wroteDocument = true;
-      await this.putIdempotent({
+      await reservation.put({
         key: input.reservationKey,
         response: input.response,
         status: 201,
@@ -167,7 +186,7 @@ export class MemoryStorage implements ShareStorage {
 
   async updateCommit(input: UpdateCommit): Promise<StoredDocument | "conflict" | "missing"> {
     const docKey = this.key(input.kind, input.slug);
-    const restoreReservation = this.reservationRestorer(input.reservationKey);
+    const reservation = this.reservationRestorer(input.reservationKey);
     const addedAudits: AuditEntry[] = [];
     let preUpdate: StoredDocument | undefined;
     let updated: StoredDocument | undefined;
@@ -178,13 +197,13 @@ export class MemoryStorage implements ShareStorage {
         if (preUpdate) this.docs.set(docKey, preUpdate);
         else this.docs.delete(docKey);
       }
-      restoreReservation();
+      reservation.restore();
       this.removeAudits(addedAudits);
     };
     try {
       await this.audit(input.audit);
       addedAudits.push(input.audit);
-      await this.putIdempotent({ key: input.reservationKey, response: "", status: 0 });
+      await reservation.put({ key: input.reservationKey, response: "", status: 0 });
       preUpdate = this.docs.get(docKey);
       const result = await this.update(
         input.kind,
@@ -198,7 +217,7 @@ export class MemoryStorage implements ShareStorage {
         return result;
       }
       updated = result;
-      await this.putIdempotent({
+      await reservation.put({
         key: input.reservationKey,
         response: input.response,
         status: 200,
@@ -211,7 +230,7 @@ export class MemoryStorage implements ShareStorage {
   }
 
   async update(
-    kind: "list" | "note",
+    kind: DocumentKind,
     slug: string,
     expectedRevision: number,
     body: string,
@@ -226,7 +245,7 @@ export class MemoryStorage implements ShareStorage {
   }
 
   async revoke(
-    kind: "list" | "note",
+    kind: DocumentKind,
     slug: string,
     expectedRevision: number,
     updatedAt: string,

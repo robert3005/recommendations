@@ -5,7 +5,7 @@
  * the queued→publishing→published / revoking→revoked state machine against the
  * real service protocol.
  */
-import type { ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type ResolvedPoi } from "@placemarks/domain";
 import { createShareApp, MemoryStorage } from "@placemarks/share-service";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -32,7 +32,13 @@ function poi(): ResolvedPoi {
 
 async function seeded(): Promise<DexieRepository> {
   const repo = new DexieRepository(`publish-${crypto.randomUUID()}`);
-  await repo.createList({ id: "list-1", name: "Lisbon Weekend", createdAt: NOW, updatedAt: NOW });
+  await repo.createList({
+    id: "list-1",
+    name: "Lisbon Weekend",
+    marker: markerAt(0),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
   await repo.addToList("list-1", { kind: "poi", poi: poi() }, NOW);
   return repo;
 }

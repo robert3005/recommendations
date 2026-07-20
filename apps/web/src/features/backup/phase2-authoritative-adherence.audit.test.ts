@@ -1,4 +1,4 @@
-import { linkPlaceToOsm, type ResolvedPoi } from "@placemarks/domain";
+import { linkPlaceToOsm, markerAt, type ResolvedPoi } from "@placemarks/domain";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -70,13 +70,24 @@ async function rewriteArchive(backup: Blob, mutate: (data: BackupJson) => void):
   return new Blob([zipped.slice().buffer as ArrayBuffer], { type: "application/zip" });
 }
 
+// Live list markers are unique (colour, icon) pairs — a global counter keeps
+// every fixture list distinct even across merged libraries.
+let markerCounter = 0;
+const nextMarker = () => markerAt(markerCounter++);
+
 async function seedOsmPlace(
   repo: DexieRepository,
   listId: string,
   observation: ResolvedPoi = poi(),
   at = observation.resolvedAt,
 ): Promise<string> {
-  await repo.createList({ id: listId, name: listId, createdAt: at, updatedAt: at });
+  await repo.createList({
+    id: listId,
+    name: listId,
+    marker: nextMarker(),
+    createdAt: at,
+    updatedAt: at,
+  });
   return (await repo.addToList(listId, { kind: "poi", poi: observation }, at)).place.id;
 }
 
@@ -105,6 +116,7 @@ describe("Phase 2 authoritative place identity", () => {
       await repo.createList({
         id: "manual-list",
         name: "manual-list",
+        marker: nextMarker(),
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -140,6 +152,7 @@ describe("Phase 2 authoritative place identity", () => {
       await repo.createList({
         id: "second-list",
         name: "second-list",
+        marker: nextMarker(),
         createdAt: LATER,
         updatedAt: LATER,
       });

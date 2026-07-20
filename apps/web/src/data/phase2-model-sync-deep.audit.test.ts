@@ -3,7 +3,7 @@
  * spec/src/place-identity.md. These exercise repository paths that are not
  * covered by the backup-shape or exact-ref collision audits.
  */
-import { linkPlaceToOsm, type Note, type ResolvedPoi } from "@placemarks/domain";
+import { linkPlaceToOsm, markerAt, type Note, type ResolvedPoi } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "./repo";
 
@@ -13,6 +13,9 @@ const LATER = "2026-07-19T11:00:00.000Z";
 function freshRepo(label: string): DexieRepository {
   return new DexieRepository(`${label}-${crypto.randomUUID()}`);
 }
+
+// Live list markers are unique pairs — each fixture list takes the next one.
+let markerCounter = 0;
 
 function poi(id: string, name = `Place ${id}`, at = NOW): ResolvedPoi {
   return {
@@ -27,7 +30,14 @@ function poi(id: string, name = `Place ${id}`, at = NOW): ResolvedPoi {
 }
 
 async function createList(repo: DexieRepository, id: string): Promise<void> {
-  await repo.createList({ id, name: id, createdAt: NOW, updatedAt: NOW });
+  markerCounter += 1;
+  await repo.createList({
+    id,
+    name: id,
+    marker: markerAt(markerCounter - 1),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
 }
 
 describe("Phase 2 immutable durable identity at the repository boundary", () => {
@@ -113,8 +123,15 @@ describe("Phase 2 live note-edge invariants", () => {
           NOW,
         )
       ).place;
-      const block = (await repo.getGuideBlocks("list-1"))[0]?.block;
-      if (!block) throw new Error("place block fixture is missing");
+      // Attachments join POST place blocks since the 2026-07-19 pivot.
+      await repo.createPost({
+        id: "post-1",
+        title: "Guide",
+        listId: "list-1",
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      const block = await repo.embedPlaceInPost("post-1", place.id, NOW);
       const note: Note = {
         id: "private-note",
         target: { kind: "place", placeId: place.id },
@@ -126,7 +143,7 @@ describe("Phase 2 live note-edge invariants", () => {
       };
       await repo.createNote(note);
 
-      await repo.attachNoteToBlock(block.id, note.id, LATER).catch(() => undefined);
+      await repo.attachNoteToPostBlock(block.id, note.id, LATER).catch(() => undefined);
 
       expect(
         (await repo.db.blockNoteAttachments.toArray()).filter((edge) => !edge.deleted),
@@ -154,10 +171,15 @@ describe("Phase 2 live note-edge invariants", () => {
           NOW,
         )
       ).place;
-      const firstBlock = (await repo.getGuideBlocks("list-1")).find(
-        ({ block }) => block.content.type === "place" && block.content.placeId === first.id,
-      )?.block;
-      if (!firstBlock) throw new Error("first place block fixture is missing");
+      // Attachments join POST place blocks since the 2026-07-19 pivot.
+      await repo.createPost({
+        id: "post-1",
+        title: "Guide",
+        listId: "list-1",
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      const firstBlock = await repo.embedPlaceInPost("post-1", first.id, NOW);
       const note: Note = {
         id: "attached-note",
         target: { kind: "place", placeId: first.id },
@@ -168,7 +190,7 @@ describe("Phase 2 live note-edge invariants", () => {
         updatedAt: NOW,
       };
       await repo.createNote(note);
-      await repo.attachNoteToBlock(firstBlock.id, note.id, NOW);
+      await repo.attachNoteToPostBlock(firstBlock.id, note.id, NOW);
 
       await repo
         .updateNote({

@@ -99,8 +99,13 @@ export function exportListKml(list: List, views: ExportPlaceView[]): string {
   if (hasOsmDerived(views)) {
     lines.push(`    <description>${xmlEscape(OSM_ATTRIBUTION_TEXT)}</description>`);
   }
+  // The style id carries the marker icon (`placemarks-<icon>`) so our own
+  // exports round-trip the full (colour, icon) marker; foreign consumers just
+  // see a normal coloured style (spec/src/roadmap.md Phase 6).
   lines.push(
-    `    <Style id="marker"><IconStyle><color>${kmlColor(list.color)}</color></IconStyle></Style>`,
+    `    <Style id="placemarks-${list.marker.icon}"><IconStyle><color>${kmlColor(
+      list.marker.color,
+    )}</color></IconStyle></Style>`,
   );
   for (const row of rows(views)) {
     const description = [row.facts.address, row.note].filter(Boolean).join("\n\n");
@@ -108,7 +113,7 @@ export function exportListKml(list: List, views: ExportPlaceView[]): string {
       `    <Placemark>`,
       `      <name>${xmlEscape(row.facts.name ?? "Unnamed place")}</name>`,
       ...(description ? [`      <description>${xmlEscape(description)}</description>`] : []),
-      `      <styleUrl>#marker</styleUrl>`,
+      `      <styleUrl>#placemarks-${list.marker.icon}</styleUrl>`,
       `      <Point><coordinates>${row.facts.lng},${row.facts.lat}</coordinates></Point>`,
       `    </Placemark>`,
     );

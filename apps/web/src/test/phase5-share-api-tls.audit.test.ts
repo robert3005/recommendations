@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { markerAt } from "@placemarks/domain";
 import { expect, test, vi } from "vitest";
 import { DexieRepository } from "../data/repo";
 
@@ -49,6 +50,7 @@ test("Bearer credentials cannot be sent to a non-TLS share-service URL", async (
       await repo.createList({
         id: "list-1",
         name: "Private token",
+        marker: markerAt(0),
         createdAt: now,
         updatedAt: now,
       });

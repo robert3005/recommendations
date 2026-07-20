@@ -2,7 +2,7 @@
  * GeoJSON is the Phase 3 full-fidelity interchange format
  * (spec/src/interop.md). A field emitted by our writer must survive its parser.
  */
-import { createOsmPlace, type List, type ResolvedPoi } from "@placemarks/domain";
+import { createOsmPlace, type List, markerAt, type ResolvedPoi } from "@placemarks/domain";
 import { strToU8 } from "fflate";
 import { describe, expect, it } from "vitest";
 import { exportListGeoJson } from "./export";
@@ -12,7 +12,13 @@ describe("Phase 3 GeoJSON website fidelity", () => {
   it("retains an exported place website when the GeoJSON is imported again", async () => {
     const website = "https://cafe.example/menu";
     const now = "2026-07-19T12:00:00.000Z";
-    const list: List = { id: "list-1", name: "Round trip", createdAt: now, updatedAt: now };
+    const list: List = {
+      id: "list-1",
+      name: "Round trip",
+      marker: markerAt(0),
+      createdAt: now,
+      updatedAt: now,
+    };
     const poi: ResolvedPoi = {
       osmRef: { type: "node", id: "101" },
       name: "Café Central",

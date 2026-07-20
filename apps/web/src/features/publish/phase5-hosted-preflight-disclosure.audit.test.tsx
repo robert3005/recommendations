@@ -1,5 +1,5 @@
 /** Hosted creation must stop for an exact disclosure before any bytes leave the device. */
-import type { Note } from "@placemarks/domain";
+import { markerAt, type Note } from "@placemarks/domain";
 import { render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
@@ -21,6 +21,7 @@ describe("Phase 5 hosted-publication preflight", () => {
       await repo.createList({
         id: "list-1",
         name: "Private hosted guide",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });

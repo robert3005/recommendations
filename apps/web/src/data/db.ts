@@ -9,12 +9,15 @@
  */
 import type {
   BlockNoteAttachment,
+  BlockTagSelection,
   EditorCredential,
   List,
   ListBlock,
   MediaAsset,
   Note,
   Place,
+  Post,
+  PostBlock,
   Publication,
   Tag,
   TagAssignment,
@@ -22,10 +25,27 @@ import type {
 import { rankAfter } from "@placemarks/domain";
 import Dexie, { type EntityTable } from "dexie";
 import { newId } from "../lib/id";
+import {
+  type PivotAttachmentRow,
+  type PivotBlockRow,
+  type PivotListRow,
+  type PivotNoteRow,
+  type PivotPublicationRow,
+  pivotGuideLayer,
+} from "./pivot";
 
 export type PlaceRow = Place & { refKeys: string[] };
 export type NoteRow = Note & { targetKey: string };
-export type ListBlockRow = ListBlock & { kind: "section" | "place"; refId: string };
+/**
+ * List blocks carry membership only since the 2026-07-19 pivot; tombstoned
+ * pre-pivot section rows remain in the table, so the row type still names them.
+ */
+export type ListBlockRow = Omit<ListBlock, "content"> & {
+  kind: "section" | "place";
+  refId: string;
+  content: { type: "place"; placeId: string } | { type: "section"; noteId: string };
+};
+export type PostBlockRow = PostBlock & { kind: "section" | "place"; refId: string };
 export interface MediaBlobRow {
   id: string;
   blob: Blob;
@@ -109,7 +129,10 @@ export class PlacemarksDb extends Dexie {
   mediaBlobs!: EntityTable<MediaBlobRow, "id">;
   lists!: EntityTable<List, "id">;
   listBlocks!: EntityTable<ListBlockRow, "id">;
+  posts!: EntityTable<Post, "id">;
+  postBlocks!: EntityTable<PostBlockRow, "id">;
   blockNoteAttachments!: EntityTable<BlockNoteAttachment, "id">;
+  blockTagSelections!: EntityTable<BlockTagSelection, "id">;
   importBatches!: EntityTable<ImportBatchRow, "id">;
   importItems!: EntityTable<ImportItemRow, "id">;
   importSources!: EntityTable<ImportSourceRow, "sourceKey">;
@@ -215,5 +238,79 @@ export class PlacemarksDb extends Dexie {
       credentials: "id",
       publicationOutbox: "id, publicationId, createdAt",
     });
+    // v7 (2026-07-19 lists-and-posts pivot, spec/src/posts.md §Migration from
+    // the guide layer):
+    //  - every list gets a unique (colour, icon) marker; legacy colour-only
+    //    lists keep their colour and gain an icon;
+    //  - a list carrying editorial content (section blocks, note attachments,
+    //    or list-targeted notes) gets a same-titled post created from it; the
+    //    list keeps only its place blocks;
+    //  - list-targeted notes retarget to the created post; attachments move to
+    //    the post's blocks; a publication of such a list follows the editorial
+    //    content to the post but keeps serving from /s/lists under its slug.
+    this.version(7)
+      .stores({
+        posts: "id, listId, updatedAt",
+        postBlocks: "id, postId, kind, refId, updatedAt",
+        blockTagSelections: "id, blockId, tagId, [blockId+tagId], updatedAt",
+      })
+      .upgrade(async (tx) => {
+        const now = new Date().toISOString();
+        const changes = pivotGuideLayer({
+          lists: (await tx.table("lists").toArray()) as PivotListRow[],
+          listBlocks: (await tx.table("listBlocks").toArray()) as PivotBlockRow[],
+          notes: (await tx.table("notes").toArray()) as PivotNoteRow[],
+          blockNoteAttachments: (await tx
+            .table("blockNoteAttachments")
+            .toArray()) as PivotAttachmentRow[],
+          publications: (await tx.table("publications").toArray()) as PivotPublicationRow[],
+        });
+        for (const [listId, marker] of changes.markers) {
+          await tx.table("lists").update(listId, {
+            marker,
+            color: undefined,
+            icon: undefined,
+          });
+        }
+        for (const post of changes.posts) {
+          await tx.table("posts").put({ ...post, createdAt: now, updatedAt: now });
+        }
+        for (const block of changes.postBlocks) {
+          await tx.table("postBlocks").put({
+            ...block,
+            content:
+              block.kind === "section"
+                ? { type: "section", noteId: block.refId }
+                : { type: "place", placeId: block.refId },
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+        for (const blockId of changes.tombstoneListBlockIds) {
+          await tx.table("listBlocks").update(blockId, { deleted: true, updatedAt: now });
+        }
+        for (const [noteId, postId] of changes.retargetNotes) {
+          await tx.table("notes").update(noteId, {
+            target: { kind: "post", postId },
+            targetKey: `post:${postId}`,
+            updatedAt: now,
+          });
+        }
+        for (const [attachmentId, blockId] of changes.moveAttachments) {
+          await tx.table("blockNoteAttachments").update(attachmentId, {
+            blockId,
+            updatedAt: now,
+          });
+        }
+        // The publication follows the editorial content to the post; its
+        // hosted slug keeps serving the same document from /s/lists.
+        for (const [publicationId, postId] of changes.retargetPublications) {
+          await tx.table("publications").update(publicationId, {
+            target: { kind: "post", id: postId },
+            channel: "lists",
+            updatedAt: now,
+          });
+        }
+      });
   }
 }

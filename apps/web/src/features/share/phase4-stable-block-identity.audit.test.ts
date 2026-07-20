@@ -1,13 +1,14 @@
 /** A shared block keeps its opaque publication identity when guide order changes. */
+import { markerAt } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
-import { projectGuide } from "./project";
+import { projectList } from "./project";
 
 const NOW = "2026-07-19T12:00:00.000Z";
 const LATER = "2026-07-19T12:01:00.000Z";
 
 function idsByManualName(
-  guide: NonNullable<Awaited<ReturnType<typeof projectGuide>>>["guide"],
+  guide: NonNullable<Awaited<ReturnType<typeof projectList>>>["guide"],
 ): Map<string, string> {
   return new Map(
     guide.blocks.flatMap((block) =>
@@ -25,6 +26,7 @@ describe("Phase 4 stable publication block ids", () => {
       await repo.createList({
         id: "list-1",
         name: "Stable blocks",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -39,12 +41,12 @@ describe("Phase 4 stable publication block ids", () => {
         NOW,
       );
 
-      const before = await projectGuide(repo, "list-1");
+      const before = await projectList(repo, "list-1");
       if (!before) throw new Error("initial projection missing");
       const beforeIds = idsByManualName(before.guide);
-      const localBlocks = await repo.getGuideBlocks("list-1");
-      const alpha = localBlocks.find((view) => view.place?.manual?.name === "Alpha")?.block.id;
-      const bravo = localBlocks.find((view) => view.place?.manual?.name === "Bravo")?.block.id;
+      const localBlocks = await repo.getListBlocks("list-1");
+      const alpha = localBlocks.find((view) => view.place.manual?.name === "Alpha")?.block.id;
+      const bravo = localBlocks.find((view) => view.place.manual?.name === "Bravo")?.block.id;
       if (!alpha || !bravo) throw new Error("local block fixture missing");
 
       // Stability cannot be implemented by leaking the owner's private
@@ -53,7 +55,7 @@ describe("Phase 4 stable publication block ids", () => {
       expect([...beforeIds.values()]).not.toContain(bravo);
 
       await repo.moveBlock(bravo, alpha, LATER);
-      const after = await projectGuide(repo, "list-1");
+      const after = await projectList(repo, "list-1");
       if (!after) throw new Error("updated projection missing");
       const afterIds = idsByManualName(after.guide);
 

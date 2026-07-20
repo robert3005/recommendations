@@ -1,4 +1,4 @@
-import type { PlacemarksRepository, ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type PlacemarksRepository, type ResolvedPoi } from "@placemarks/domain";
 import type { Meta, StoryObj } from "@storybook/react";
 import { useEffect, useState } from "react";
 import { expect, userEvent, waitFor, within } from "storybook/test";
@@ -30,7 +30,13 @@ function Seeded({ seed }: { seed: (repo: PlacemarksRepository) => Promise<string
 }
 
 async function seedListedCafe(repo: PlacemarksRepository): Promise<string> {
-  await repo.createList({ id: "l0", name: "Seeds", createdAt: NOW, updatedAt: NOW });
+  await repo.createList({
+    id: "l0",
+    name: "Seeds",
+    marker: markerAt(0),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
   const view = await repo.addToList("l0", { kind: "poi", poi: cafePoi }, NOW);
   return view.place.id;
 }
@@ -95,7 +101,13 @@ export const ManualUnlinkedPin: Story = {
   render: () => (
     <Seeded
       seed={async (repo) => {
-        await repo.createList({ id: "l0", name: "Seeds", createdAt: NOW, updatedAt: NOW });
+        await repo.createList({
+          id: "l0",
+          name: "Seeds",
+          marker: markerAt(0),
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
         const view = await repo.addToList(
           "l0",
           { kind: "manual", facts: { name: "Our picnic bench", lat: 38.72, lng: -9.15 } },
@@ -120,7 +132,13 @@ export const AddToAnotherList: Story = {
     <Seeded
       seed={async (repo) => {
         const placeId = await seedListedCafe(repo);
-        await repo.createList({ id: "l1", name: "Weekend", createdAt: NOW, updatedAt: NOW });
+        await repo.createList({
+          id: "l1",
+          name: "Weekend",
+          marker: markerAt(1),
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
         return placeId;
       }}
     />

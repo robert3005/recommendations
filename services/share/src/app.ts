@@ -100,11 +100,20 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
 
   const schemas = {
     list: { create: createGuideRequestSchema, put: putGuideRequestSchema, doc: sharedGuideSchema },
+    // Posts share the list document schema — one block document, two
+    // projections (spec/src/sharing.md); /s/posts is the post projection's
+    // home while pre-pivot guide documents keep serving from /s/lists.
+    post: { create: createGuideRequestSchema, put: putGuideRequestSchema, doc: sharedGuideSchema },
     note: { create: createNoteRequestSchema, put: putNoteRequestSchema, doc: sharedNoteSchema },
   } as const;
 
-  for (const collection of ["lists", "notes"] as const) {
-    const kind = collection === "lists" ? ("list" as const) : ("note" as const);
+  for (const collection of ["lists", "posts", "notes"] as const) {
+    const kind =
+      collection === "lists"
+        ? ("list" as const)
+        : collection === "posts"
+          ? ("post" as const)
+          : ("note" as const);
 
     app.get(`/s/${collection}/:slug`, async (c) => {
       const slug = c.req.param("slug");

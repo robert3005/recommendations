@@ -1,4 +1,4 @@
-import type { PoiResolver, ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type PoiResolver, type ResolvedPoi } from "@placemarks/domain";
 import type { SharedGuide, SharedPlaceAnchor, SharedPlaceEvidence } from "@placemarks/schemas";
 import { render, screen } from "@testing-library/react";
 import { deflateSync, strToU8 } from "fflate";
@@ -203,6 +203,7 @@ describe("Phase 4 manual-anchor import", () => {
       await repo.createList({
         id: "existing-list",
         name: "Existing",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });

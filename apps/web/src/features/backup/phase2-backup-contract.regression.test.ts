@@ -1,4 +1,4 @@
-import type { ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type ResolvedPoi } from "@placemarks/domain";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -62,12 +62,24 @@ async function rewriteArchive(
 }
 
 async function seedSource(repo: DexieRepository): Promise<void> {
-  await repo.createList({ id: "source-list", name: "Source", createdAt: NOW, updatedAt: NOW });
+  await repo.createList({
+    id: "source-list",
+    name: "Source",
+    marker: markerAt(0),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
   await repo.addToList("source-list", { kind: "poi", poi: poi() }, NOW);
 }
 
 async function seedTarget(repo: DexieRepository): Promise<void> {
-  await repo.createList({ id: "target-list", name: "Keep me", createdAt: NOW, updatedAt: NOW });
+  await repo.createList({
+    id: "target-list",
+    name: "Keep me",
+    marker: markerAt(1),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
   await repo.addToList(
     "target-list",
     { kind: "manual", facts: { name: "Existing pin", lat: 51.5, lng: -0.1 } },
@@ -158,6 +170,7 @@ describe("Phase 2 validated backup restore contract", () => {
       await source.createList({
         id: "source-list",
         name: "Source",
+        marker: markerAt(0),
         createdAt: LATER,
         updatedAt: LATER,
       });
@@ -172,6 +185,7 @@ describe("Phase 2 validated backup restore contract", () => {
       await target.createList({
         id: "target-list",
         name: "Target",
+        marker: markerAt(1),
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -353,6 +367,7 @@ describe("Phase 2 validated backup restore contract", () => {
       await target.createList({
         id: "second-list",
         name: "Second",
+        marker: markerAt(1),
         createdAt: LATER,
         updatedAt: LATER,
       });

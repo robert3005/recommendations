@@ -5,7 +5,7 @@
  * current implementation. Keep them focused: each case protects source data,
  * identity, or the every-row-accounted-for/idempotency contract.
  */
-import type { ResolvedPoi, SearchResult } from "@placemarks/domain";
+import { markerAt, type ResolvedPoi, type SearchResult } from "@placemarks/domain";
 import { strToU8, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -132,7 +132,13 @@ describe("Phase 3 import identity regressions", () => {
   it("merges source URL and note when import dedup finds an existing membership", async () => {
     const repo = new DexieRepository(`import-metadata-${crypto.randomUUID()}`);
     try {
-      await repo.createList({ id: "trip", name: "Trip", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "trip",
+        name: "Trip",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const existing = await repo.addToList(
         "trip",
         {

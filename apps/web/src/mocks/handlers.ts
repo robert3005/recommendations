@@ -91,7 +91,7 @@ class PersistentMemoryStorage extends MemoryStorage {
 const shareApp = createShareApp({ storage: new PersistentMemoryStorage() });
 
 export const handlers = [
-  http.all(/\/s\/(lists|notes)(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
+  http.all(/\/s\/(lists|posts|notes)(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
   http.get(`${PHOTON_URL}/api`, ({ request }) => {
     const q = new URL(request.url).searchParams.get("q") ?? "";
     if (q.toLowerCase().includes("migrado")) return HttpResponse.json(photonMigradoResponse);

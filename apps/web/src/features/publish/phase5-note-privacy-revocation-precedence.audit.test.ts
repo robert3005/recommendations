@@ -1,5 +1,5 @@
 /** Making a published note private supersedes every pending page update. */
-import type { Note, Publication } from "@placemarks/domain";
+import { markerAt, type Note, type Publication } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
 
@@ -11,7 +11,7 @@ describe("Phase 5 note-page revocation precedence", () => {
     const repo = new DexieRepository(`phase5-note-private-precedence-${crypto.randomUUID()}`);
     const note: Note = {
       id: "note-1",
-      target: { kind: "list", listId: "list-1" },
+      target: { kind: "post", postId: "post-1" },
       body: "This text must come down.",
       mediaIds: [],
       shareable: true,
@@ -34,7 +34,20 @@ describe("Phase 5 note-page revocation precedence", () => {
     };
 
     try {
-      await repo.createList({ id: "list-1", name: "Notes", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Notes",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await repo.createPost({
+        id: "post-1",
+        title: "Notes post",
+        listId: "list-1",
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       await repo.createNote(note);
       await repo.db.publications.put(publication);
       await repo.db.publicationOutbox.put({
@@ -65,8 +78,20 @@ describe("Phase 5 note-page revocation precedence", () => {
   it("dirties the old containing guide when retargeting and privacy happen together", async () => {
     const repo = new DexieRepository(`phase5-note-private-retarget-${crypto.randomUUID()}`);
     try {
-      await repo.createList({ id: "list-a", name: "Old guide", createdAt: NOW, updatedAt: NOW });
-      await repo.createList({ id: "list-b", name: "New guide", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-a",
+        name: "Old guide",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await repo.createList({
+        id: "list-b",
+        name: "New guide",
+        marker: markerAt(1),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const oldPlace = (
         await repo.addToList(
           "list-a",
@@ -81,9 +106,9 @@ describe("Phase 5 note-page revocation precedence", () => {
           NOW,
         )
       ).place;
-      const oldBlock = (await repo.getGuideBlocks("list-a"))[0]?.block;
-      if (!oldBlock) throw new Error("old membership block fixture missing");
 
+      // A shareable place note rides along in the list projection (no explicit
+      // edge since the 2026-07-19 pivot) — so the old list's page shows it.
       const note: Note = {
         id: "retargeted-note",
         target: { kind: "place", placeId: oldPlace.id },
@@ -94,7 +119,6 @@ describe("Phase 5 note-page revocation precedence", () => {
         updatedAt: NOW,
       };
       await repo.createNote(note);
-      await repo.attachNoteToBlock(oldBlock.id, note.id, NOW);
 
       const guidePublication: Publication = {
         id: "old-guide-publication",

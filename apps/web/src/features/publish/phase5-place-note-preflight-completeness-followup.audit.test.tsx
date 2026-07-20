@@ -1,5 +1,5 @@
 /** A place-note preflight must disclose the complete public anchor and image transformation. */
-import type { Note, ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type Note, type ResolvedPoi } from "@placemarks/domain";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -34,7 +34,13 @@ describe("Phase 5 place-note preflight completeness", () => {
     vi.stubGlobal("fetch", fetcher);
 
     try {
-      await repo.createList({ id: "list-1", name: "Lisbon", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Lisbon",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const place = (await repo.addToList("list-1", { kind: "poi", poi: POI }, NOW)).place;
       const note: Note = {
         id: "note-1",

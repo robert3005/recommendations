@@ -1,5 +1,10 @@
-/** Removing a place must update every public projection that contained it. */
-import type { Note, Publication } from "@placemarks/domain";
+/**
+ * Removing a place must update every public projection that contained it.
+ * Since the 2026-07-19 pivot the removal itself is bottom-up: it is REFUSED
+ * while the place carries live notes — the owner deletes the note (revoking
+ * its standalone page), then the place, and every containing list re-projects.
+ */
+import { markerAt, type Note, type Publication, TeardownRefusedError } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
 
@@ -23,11 +28,23 @@ function publication(id: string, target: Publication["target"]): Publication {
 }
 
 describe("Phase 5 place-deletion publication lifecycle", () => {
-  it("dirties every containing guide and revokes standalone pages for deleted place notes", async () => {
+  it("refuses removal while the note lives, then dirties every containing list and revokes the note's page", async () => {
     const repo = new DexieRepository(`phase5-delete-place-${crypto.randomUUID()}`);
     try {
-      await repo.createList({ id: "list-1", name: "First guide", createdAt: NOW, updatedAt: NOW });
-      await repo.createList({ id: "list-2", name: "Second guide", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "First guide",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await repo.createList({
+        id: "list-2",
+        name: "Second guide",
+        marker: markerAt(1),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const place = (
         await repo.addToList(
           "list-1",
@@ -52,6 +69,20 @@ describe("Phase 5 place-deletion publication lifecycle", () => {
       const notePage = publication("publication-note", { kind: "note", id: note.id });
       await repo.db.publications.bulkPut([firstGuide, secondGuide, notePage]);
 
+      // Bottom-up teardown: authored content never dies as a side effect —
+      // the removal is refused with the note named as the blocker.
+      const refusal = await repo.removePlace(place.id, LATER).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(refusal).toBeInstanceOf(TeardownRefusedError);
+      expect((refusal as TeardownRefusedError).blockers.notes).toEqual([
+        { placeId: place.id, noteId: note.id },
+      ]);
+
+      // Deleting the note is the explicit act that revokes its standalone page…
+      await repo.deleteNote(note.id, LATER);
+      // …and unblocks the place's removal.
       await repo.removePlace(place.id, LATER);
 
       await expect(repo.getPlace(place.id)).resolves.toBeUndefined();

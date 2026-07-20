@@ -3,7 +3,7 @@
  * 15c3d8e. These assertions permit refusal or normalization, but never a
  * malformed durable identity or a deletion that bypasses its cascade.
  */
-import { linkPlaceToOsm, type Note, type ResolvedPoi } from "@placemarks/domain";
+import { linkPlaceToOsm, markerAt, type Note, type ResolvedPoi } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "./repo";
 
@@ -13,6 +13,9 @@ const LATER = "2026-07-19T11:00:00.000Z";
 function freshRepo(label: string): DexieRepository {
   return new DexieRepository(`${label}-${crypto.randomUUID()}`);
 }
+
+// Live list markers are unique pairs — each fixture list takes the next one.
+let markerCounter = 0;
 
 function poi(id: string, resolvedAt = NOW): ResolvedPoi {
   return {
@@ -27,12 +30,26 @@ function poi(id: string, resolvedAt = NOW): ResolvedPoi {
 }
 
 async function seedOsm(repo: DexieRepository, listId = "list-1") {
-  await repo.createList({ id: listId, name: listId, createdAt: NOW, updatedAt: NOW });
+  markerCounter += 1;
+  await repo.createList({
+    id: listId,
+    name: listId,
+    marker: markerAt(markerCounter - 1),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
   return (await repo.addToList(listId, { kind: "poi", poi: poi("101") }, NOW)).place;
 }
 
 async function seedManual(repo: DexieRepository, listId: string, name: string) {
-  await repo.createList({ id: listId, name: listId, createdAt: NOW, updatedAt: NOW });
+  markerCounter += 1;
+  await repo.createList({
+    id: listId,
+    name: listId,
+    marker: markerAt(markerCounter - 1),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
   return (
     await repo.addToList(
       listId,

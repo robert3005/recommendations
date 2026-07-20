@@ -1,3 +1,4 @@
+import { markerAt } from "@placemarks/domain";
 import type { Meta, StoryObj } from "@storybook/react";
 import { expect, fn, userEvent, within } from "storybook/test";
 import { ManualPinDialog } from "./ManualPinDialog";
@@ -11,7 +12,7 @@ const meta = {
   args: {
     lat: 38.7139,
     lng: -9.1394,
-    lists: [{ id: "l1", name: "Weekend", color: "#2563eb", createdAt: NOW, updatedAt: NOW }],
+    lists: [{ id: "l1", name: "Weekend", marker: markerAt(0), createdAt: NOW, updatedAt: NOW }],
     onSave: fn(),
     onCancel: fn(),
   },
@@ -47,8 +48,9 @@ export const CreatesListInline: Story = {
     await userEvent.click(canvas.getByTestId("manual-save"));
     await expect(args.onSave).toHaveBeenCalledWith(
       { name: "Trailhead", lat: 38.7139, lng: -9.1394 },
-      // Default marker: the first palette colour not used by existing lists.
-      { kind: "new", name: "Hikes", color: "#dc2626" },
+      // Default marker: the next unused (colour, icon) combination after the
+      // existing list's markerAt(0).
+      { kind: "new", name: "Hikes", marker: { color: "#2563eb", icon: "diamond" } },
     );
   },
 };

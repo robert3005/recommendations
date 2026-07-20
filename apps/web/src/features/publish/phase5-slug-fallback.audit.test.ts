@@ -1,4 +1,5 @@
 /** Normalization must always produce a valid claimable slug for a named list. */
+import { markerAt } from "@placemarks/domain";
 import { slugSchema } from "@placemarks/schemas";
 import { createShareApp, MemoryStorage } from "@placemarks/share-service";
 import { describe, expect, it } from "vitest";
@@ -15,7 +16,13 @@ describe("Phase 5 hosted slug fallback", () => {
     const fetcher: typeof fetch = async (input, init) =>
       app.request(new URL(String(input), "https://share.test").toString(), init);
     try {
-      await repo.createList({ id: "list-1", name: "東京 ☕", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "東京 ☕",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       await repo.addToList(
         "list-1",
         { kind: "manual", facts: { name: "Coffee", lat: 35.68, lng: 139.76 } },

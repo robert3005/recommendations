@@ -1,13 +1,17 @@
 /** Reactive reads over the local repository via Dexie liveQuery. */
+
 import type {
-  GuideBlockView,
   List,
+  ListBlockView,
   Note,
   OsmElementRef,
   PlaceId,
   PlaceView,
+  Post,
+  PostBlockView,
   Tag,
 } from "@placemarks/domain";
+import { displayFacts } from "@placemarks/domain";
 import { useLiveQuery } from "dexie-react-hooks";
 import type { ImportItemRow } from "./db";
 import { useDexieRepo, useRepo } from "./RepoContext";
@@ -63,14 +67,69 @@ export function useListIdsForPlace(placeId: PlaceId | undefined): string[] | und
   return useLiveQuery(() => (placeId ? repo.listIdsForPlace(placeId) : []), [repo, placeId]);
 }
 
-export function useGuide(listId: string | undefined): List | undefined {
+export function useList(listId: string | undefined): List | undefined {
   const repo = useRepo();
   return useLiveQuery(() => (listId ? repo.getList(listId) : undefined), [repo, listId]);
 }
 
-export function useGuideBlocks(listId: string | undefined): GuideBlockView[] | undefined {
+export function useListBlocks(listId: string | undefined): ListBlockView[] | undefined {
   const repo = useRepo();
-  return useLiveQuery(() => (listId ? repo.getGuideBlocks(listId) : []), [repo, listId]);
+  return useLiveQuery(() => (listId ? repo.getListBlocks(listId) : []), [repo, listId]);
+}
+
+export function usePosts(): Post[] | undefined {
+  const repo = useRepo();
+  return useLiveQuery(() => repo.listPosts(), [repo]);
+}
+
+export function usePostsForList(listId: string | undefined): Post[] | undefined {
+  const repo = useRepo();
+  return useLiveQuery(() => (listId ? repo.listPostsForList(listId) : []), [repo, listId]);
+}
+
+export function usePost(postId: string | undefined): Post | undefined {
+  const repo = useRepo();
+  return useLiveQuery(() => (postId ? repo.getPost(postId) : undefined), [repo, postId]);
+}
+
+export function usePostBlocks(postId: string | undefined): PostBlockView[] | undefined {
+  const repo = useRepo();
+  return useLiveQuery(() => (postId ? repo.getPostBlocks(postId) : []), [repo, postId]);
+}
+
+/**
+ * Lists-home row data (spec/src/map-view.md §The Lists home): each list with
+ * its place count and the first place names in list order for the truncated
+ * inline preview.
+ */
+export interface ListPreview {
+  list: List;
+  placeCount: number;
+  postCount: number;
+  previewNames: string[];
+}
+
+const PREVIEW_NAMES = 4;
+
+export function useListPreviews(): ListPreview[] | undefined {
+  const repo = useRepo();
+  return useLiveQuery(async () => {
+    const lists = await repo.listLists();
+    return Promise.all(
+      lists.map(async (list): Promise<ListPreview> => {
+        const blocks = await repo.getListBlocks(list.id);
+        const posts = await repo.listPostsForList(list.id);
+        return {
+          list,
+          placeCount: blocks.length,
+          postCount: posts.length,
+          previewNames: blocks
+            .slice(0, PREVIEW_NAMES)
+            .map((view) => displayFacts(view.place)?.name ?? "Unnamed"),
+        };
+      }),
+    );
+  }, [repo]);
 }
 
 /** Import rows waiting in the review queue (spec/src/interop.md). */

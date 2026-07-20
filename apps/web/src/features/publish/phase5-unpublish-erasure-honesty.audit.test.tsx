@@ -1,5 +1,5 @@
 /** Unpublish UI must be honest about copies outside the service's control. */
-import type { Publication } from "@placemarks/domain";
+import { markerAt, type Publication } from "@placemarks/domain";
 import { render, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createElement } from "react";
@@ -18,7 +18,13 @@ describe("Phase 5 unpublish honesty", () => {
     );
     vi.stubGlobal("fetch", fetcher);
     try {
-      await repo.createList({ id: "list-1", name: "Public guide", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Public guide",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const publication: Publication = {
         id: "publication-1",
         target: { kind: "list", id: "list-1" },

@@ -64,6 +64,7 @@ class RecordingD1 {
   private readonly documents = new Map<string, DocumentRow>();
   private readonly idempotency = new Map<string, IdempotencyRow>();
   private readonly rates = new Map<string, number>();
+  private lastWriteChanges = 1;
 
   prepare(sql: string): RecordingStatement {
     return new RecordingStatement(this, sql);
@@ -81,6 +82,13 @@ class RecordingD1 {
       return { meta: { changes: 1 } };
     }
     if (sql.startsWith("INSERT INTO audit")) return { meta: { changes: 1 } };
+    // The revision guard: fails the batch only when the conditional write lost.
+    if (sql.startsWith("INSERT INTO idempotency")) {
+      if (this.lastWriteChanges === 0) {
+        throw new Error("NOT NULL constraint failed: idempotency.key");
+      }
+      return { meta: { changes: 0 } };
+    }
     if (sql.startsWith("INSERT OR IGNORE INTO idempotency")) {
       const row = {
         key: String(values[0]),
@@ -111,6 +119,7 @@ class RecordingD1 {
       const key = `${String(values[2])}:${String(values[3])}`;
       const row = this.documents.get(key);
       if (!row || row.revoked === 1 || row.revision !== Number(values[4])) {
+        this.lastWriteChanges = 0;
         return { meta: { changes: 0 } };
       }
       this.documents.set(key, {
@@ -119,6 +128,7 @@ class RecordingD1 {
         updatedAt: String(values[1]),
         revision: row.revision + 1,
       });
+      this.lastWriteChanges = 1;
       return { meta: { changes: 1 } };
     }
     throw new Error(`Unexpected D1 write: ${sql}`);

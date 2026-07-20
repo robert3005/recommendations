@@ -3,7 +3,7 @@
  * must apply the same 5 MB guard as the guided handoff; one oversized feature
  * is refused because it cannot be split safely.
  */
-import type { GuideBlockView, List, Note, Place } from "@placemarks/domain";
+import { type List, type ListBlockView, markerAt, type Note, type Place } from "@placemarks/domain";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { exportListKml } from "../interop/export";
@@ -14,6 +14,7 @@ const MY_MAPS_FILE_LIMIT = 5 * 1024 * 1024;
 const list: List = {
   id: "direct-kml-oversized",
   name: "Direct KML limit",
+  marker: markerAt(0),
   createdAt: NOW,
   updatedAt: NOW,
 };
@@ -26,7 +27,7 @@ const place: Place = {
   createdAt: NOW,
   updatedAt: NOW,
 };
-const blocks: GuideBlockView[] = [
+const blocks: ListBlockView[] = [
   {
     block: {
       id: "direct-kml-block",
@@ -62,7 +63,7 @@ function setBlockCount(count: number): Place[] {
     0,
     blocks.length,
     ...places.map(
-      (itemPlace, index): GuideBlockView => ({
+      (itemPlace, index): ListBlockView => ({
         block: {
           id: `direct-kml-block-${index.toString()}`,
           listId: list.id,
@@ -84,8 +85,9 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../data/hooks", () => ({
-  useGuide: () => list,
-  useGuideBlocks: () => blocks,
+  useList: () => list,
+  useListBlocks: () => blocks,
+  useLists: () => [list],
 }));
 
 vi.mock("../../data/RepoContext", () => ({

@@ -3,7 +3,7 @@
  * rulings in spec/src/data-model.md. Whole-object updates must not be able to
  * rewrite a completed identity history or leave a note targeting no live row.
  */
-import { linkPlaceToOsm, type Note, type ResolvedPoi } from "@placemarks/domain";
+import { linkPlaceToOsm, markerAt, type Note, type ResolvedPoi } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "./repo";
 
@@ -31,7 +31,13 @@ describe("Phase 2 repository-boundary identity follow-up", () => {
   it("does not persist a current OSM binding change that omits the completed prior interval", async () => {
     const repo = repoFor("phase2-history-required-on-relink");
     try {
-      await repo.createList({ id: "list-1", name: "Trip", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Trip",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const original = (await repo.addToList("list-1", { kind: "poi", poi: poi("101", NOW) }, NOW))
         .place;
       const relinked = linkPlaceToOsm(original, poi("202", LATER), LATER, "resolver-match");
@@ -66,7 +72,13 @@ describe("Phase 2 repository-boundary identity follow-up", () => {
   it("does not persist a fabricated interval when the current binding did not change", async () => {
     const repo = repoFor("phase2-history-fabricated-append");
     try {
-      await repo.createList({ id: "list-1", name: "Trip", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Trip",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const original = (await repo.addToList("list-1", { kind: "poi", poi: poi("101", NOW) }, NOW))
         .place;
 
@@ -99,7 +111,13 @@ describe("Phase 2 repository-boundary identity follow-up", () => {
   it("preserves every completed history entry when a longer update rewrites its prefix", async () => {
     const repo = repoFor("phase2-history-prefix");
     try {
-      await repo.createList({ id: "list-1", name: "Trip", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Trip",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const original = (await repo.addToList("list-1", { kind: "poi", poi: poi("101", NOW) }, NOW))
         .place;
       await repo.updatePlace(linkPlaceToOsm(original, poi("202", LATER), LATER, "resolver-match"));
@@ -141,8 +159,20 @@ describe("Phase 2 repository-boundary identity follow-up", () => {
   it("serializes concurrent upgrades so an exact OSM ref cannot fork", async () => {
     const repo = repoFor("phase2-concurrent-ref-upgrade");
     try {
-      await repo.createList({ id: "list-a", name: "A", createdAt: NOW, updatedAt: NOW });
-      await repo.createList({ id: "list-b", name: "B", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-a",
+        name: "A",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await repo.createList({
+        id: "list-b",
+        name: "B",
+        marker: markerAt(1),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const first = (
         await repo.addToList(
           "list-a",
@@ -197,7 +227,13 @@ describe("Phase 2 repository-boundary note follow-up", () => {
   it("does not resurrect a tombstoned note after its target was removed", async () => {
     const repo = repoFor("phase2-note-stale-resurrection");
     try {
-      await repo.createList({ id: "list-1", name: "Trip", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Trip",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const place = (
         await repo.addToList(
           "list-1",
@@ -215,6 +251,9 @@ describe("Phase 2 repository-boundary note follow-up", () => {
         updatedAt: NOW,
       };
       await repo.createNote(note);
+      // Bottom-up teardown (2026-07-19): the place refuses to go while the
+      // note lives — the owner dismantles the note first, then the place.
+      await repo.deleteNote(note.id, LATER);
       await repo.removePlace(place.id, LATER);
 
       await repo
@@ -231,7 +270,13 @@ describe("Phase 2 repository-boundary note follow-up", () => {
   it("does not retarget an existing note to a missing aggregate", async () => {
     const repo = repoFor("phase2-note-missing-retarget");
     try {
-      await repo.createList({ id: "list-1", name: "Trip", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Trip",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const place = (
         await repo.addToList(
           "list-1",

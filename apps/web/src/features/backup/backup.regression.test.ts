@@ -1,3 +1,4 @@
+import { markerAt } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
 import { exportBackup, importBackup } from "./backup";
@@ -14,6 +15,7 @@ describe("Phase 3 backup compatibility", () => {
       await source.createList({
         id: "takeout-list",
         name: "Takeout",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });

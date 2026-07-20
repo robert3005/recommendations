@@ -1,4 +1,5 @@
 /** A key already sent for one payload must never be reused after an in-flight edit. */
+import { markerAt } from "@placemarks/domain";
 import { createShareApp, MemoryStorage } from "@placemarks/share-service";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -40,6 +41,7 @@ describe("Phase 5 in-flight idempotency-key hygiene", () => {
       await repo.createList({
         id: "list-1",
         name: "In-flight guide",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });

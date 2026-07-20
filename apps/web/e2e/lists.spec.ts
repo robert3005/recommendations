@@ -22,8 +22,8 @@ test("adding to a list saves the place; the Lists tab reads the marked list", as
   const placeSheet = page.getByTestId("place-sheet");
   await placeSheet.getByTestId("add-to-list").selectOption("__new__");
   await placeSheet.getByLabel("New list name").fill("Lisbon favourites");
-  // The default marker colour (first palette entry) is preselected.
-  await expect(placeSheet.getByTestId("marker-#dc2626")).toBeChecked();
+  // The default marker (first unused colour+icon combination) is preselected.
+  await expect(placeSheet.getByTestId("marker-#dc2626-circle")).toBeChecked();
   await placeSheet.getByTestId("create-list-and-add").click();
   // The act of adding was the save: the saved sheet takes over, mark on map.
   const details = page.getByTestId("place-details");
@@ -43,7 +43,7 @@ test("adding to a list saves the place; the Lists tab reads the marked list", as
     .getByRole("link", { name: "Lists" })
     .click();
   await expect(page.getByTestId("lists-page")).toBeVisible();
-  await expect(page.getByTestId("list-marker")).toHaveAttribute("data-color", "#dc2626");
+  await expect(page.getByTestId("marker-glyph")).toHaveAttribute("data-color", "#dc2626");
   await page.getByRole("link", { name: /Lisbon favourites/ }).click();
   await expect(page.getByTestId("list-page")).toBeVisible();
   await expect(page.getByTestId("list-marker")).toHaveAttribute("data-color", "#dc2626");
@@ -96,8 +96,8 @@ test("Edit mode reorders, renames, recolours, and removes; reading stays read-on
 
   await page.getByTestId("list-name-input").fill("Curated Lisbon");
   // The radio itself is sr-only; its swatch label is the click target.
-  await page.locator('label:has([data-testid="marker-#2563eb"])').click();
-  await expect(page.getByTestId("marker-#2563eb")).toBeChecked();
+  await page.locator('label:has([data-testid="marker-#2563eb-diamond"])').click();
+  await expect(page.getByTestId("marker-#2563eb-diamond")).toBeChecked();
   await page.getByTestId("edit-list").click(); // Done
   await expect(page.getByTestId("list-page")).toContainText("Curated Lisbon");
   await expect(page.getByTestId("list-marker")).toHaveAttribute("data-color", "#2563eb");
@@ -119,11 +119,11 @@ test("a list created on the Lists tab is offered on the place card", async ({ pa
   await page.goto("/lists");
   await page.getByTestId("new-list").click();
   await page.getByLabel("New list name").fill("Weekend");
-  await expect(page.getByTestId("marker-#dc2626")).toBeChecked();
+  await expect(page.getByTestId("marker-#dc2626-circle")).toBeChecked();
   await page.getByTestId("create-list").click();
   const entry = page.getByRole("link", { name: /Weekend/ });
   await expect(entry).toBeVisible();
-  await expect(page.getByTestId("list-marker")).toHaveAttribute("data-color", "#dc2626");
+  await expect(page.getByTestId("marker-glyph")).toHaveAttribute("data-color", "#dc2626");
 
   // The app-created list receives its first place from the map card.
   await page

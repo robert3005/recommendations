@@ -110,8 +110,17 @@ class LaterWriterD1 implements D1Like, StatementDatabase {
     return results;
   }
 
+  private lastWriteChanges = 1;
+
   run(sql: string, values: readonly unknown[]): Result {
     if (sql.startsWith("INSERT INTO audit")) return { meta: { changes: 1 } };
+    // The revision guard: fails the batch only when the conditional write lost.
+    if (sql.startsWith("INSERT INTO idempotency")) {
+      if (this.lastWriteChanges === 0) {
+        throw new Error("NOT NULL constraint failed: idempotency.key");
+      }
+      return { meta: { changes: 0 } };
+    }
     if (sql.startsWith("INSERT OR IGNORE INTO idempotency")) {
       const row = {
         key: String(values[0]),
@@ -125,13 +134,17 @@ class LaterWriterD1 implements D1Like, StatementDatabase {
     }
     if (sql.startsWith("UPDATE documents SET revision = revision + 1")) {
       const expectedRevision = Number(values[4]);
-      if (this.document.revision !== expectedRevision) return { meta: { changes: 0 } };
+      if (this.document.revision !== expectedRevision) {
+        this.lastWriteChanges = 0;
+        return { meta: { changes: 0 } };
+      }
       this.document = {
         ...this.document,
         revision: this.document.revision + 1,
         body: String(values[0]),
         updatedAt: String(values[1]),
       };
+      this.lastWriteChanges = 1;
       return { meta: { changes: 1 } };
     }
     throw new Error(`Unexpected D1 write: ${sql}`);

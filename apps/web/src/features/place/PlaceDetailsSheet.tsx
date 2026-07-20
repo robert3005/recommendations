@@ -4,7 +4,13 @@
  * the manual-pin link-to-OSM upgrade, and Remove (from all lists, which removes
  * the place).
  */
-import { displayFacts, linkPlaceToOsm, type Note } from "@placemarks/domain";
+import {
+  displayFacts,
+  linkPlaceToOsm,
+  type Note,
+  type TeardownBlockers,
+  TeardownRefusedError,
+} from "@placemarks/domain";
 import { useEffect, useRef, useState } from "react";
 import { useListIdsForPlace, useLists, useNotesForPlace, usePlaceView } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
@@ -12,6 +18,7 @@ import { newId } from "../../lib/id";
 import { nowIso } from "../../lib/time";
 import { Markdown } from "../../markdown/Markdown";
 import { useUiStore } from "../../state/ui";
+import { BlockerDialog } from "../lists/BlockerDialog";
 import { NoteEditor } from "../notes/NoteEditor";
 import { CandidatePicker } from "../picker/CandidatePicker";
 import { NotePublishButton } from "../publish/NotePublishButton";
@@ -31,13 +38,21 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
   const [editingNote, setEditingNote] = useState<Note>();
   const [linking, setLinking] = useState(false);
   const [message, setMessage] = useState<string>();
-  // Modal focus: enter the sheet on open, return to the invoker on close.
+  const [refusal, setRefusal] = useState<TeardownBlockers>();
+  // Modal focus: enter the sheet once it has actually rendered (the place
+  // view resolves asynchronously — a mount-time effect fires while the sheet
+  // is still null and focuses nothing), return to the invoker on close.
   const sheetRef = useRef<HTMLElement>(null);
+  const focusedOnce = useRef(false);
+  const previousFocus = useRef<HTMLElement | null>(null);
+  const hasView = view !== undefined;
   useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
+    if (!hasView || focusedOnce.current) return;
+    focusedOnce.current = true;
+    previousFocus.current = document.activeElement as HTMLElement | null;
     sheetRef.current?.focus();
-    return () => previous?.focus();
-  }, []);
+  }, [hasView]);
+  useEffect(() => () => previousFocus.current?.focus(), []);
 
   if (!view) return null;
   const facts = displayFacts(view.place);
@@ -111,7 +126,18 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
         <button
           type="button"
           onClick={() => {
-            void repo.removePlace(view.place.id, now).then(clearSelection);
+            // Bottom-up teardown: the refusal names the blockers and the
+            // place stays selected so the owner can dismantle them here.
+            void repo
+              .removePlace(view.place.id, now)
+              .then(clearSelection)
+              .catch((err: unknown) => {
+                if (err instanceof TeardownRefusedError) {
+                  setRefusal(err.blockers);
+                  return;
+                }
+                throw err;
+              });
           }}
           className="ml-auto text-[11px] font-medium text-red-700 underline hover:text-red-900"
           data-testid="remove-place"
@@ -119,6 +145,13 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
           Remove place
         </button>
       </div>
+      {refusal ? (
+        <BlockerDialog
+          title="Can’t remove this place yet"
+          blockers={refusal}
+          onClose={() => setRefusal(undefined)}
+        />
+      ) : null}
       {message ? (
         <p className="mt-2 text-xs text-stone-600" data-testid="sheet-message">
           {message}
@@ -139,7 +172,7 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
                   await repo.createList({
                     id: listId,
                     name: target.name,
-                    color: target.color,
+                    marker: target.marker,
                     createdAt: now,
                     updatedAt: now,
                   });

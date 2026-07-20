@@ -1,5 +1,5 @@
 /** Backup/restore roundtrip, merge semantics, and validation (spec/src/storage-sync.md). */
-import type { ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type ResolvedPoi } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
 import { exportBackup, importBackup } from "./backup";
@@ -26,10 +26,25 @@ function poi(id: string): ResolvedPoi {
 }
 
 async function seed(repo: DexieRepository) {
-  await repo.createList({ id: "l1", name: "Lisbon", createdAt: NOW, updatedAt: NOW });
+  await repo.createList({
+    id: "l1",
+    name: "Lisbon",
+    marker: markerAt(0),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
   const view = await repo.addToList("l1", { kind: "poi", poi: poi("101") }, NOW);
   await repo.assignTag(view.place.id, "coffee", NOW);
-  await repo.addSectionBlock("l1", "## Morning", NOW);
+  // Editorial prose lives on a post about the list (2026-07-19 pivot).
+  await repo.createPost({
+    id: "p1",
+    title: "Lisbon",
+    listId: "l1",
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
+  await repo.addPostSection("p1", "## Morning", NOW);
+  await repo.embedPlaceInPost("p1", view.place.id, NOW);
   await repo.createNote({
     id: "n1",
     target: { kind: "place", placeId: view.place.id },
@@ -55,8 +70,12 @@ describe("backup roundtrip", () => {
     const places = await target.listPlaces();
     expect(places).toHaveLength(1);
     expect(places[0]?.tags.map((t) => t.name)).toEqual(["coffee"]);
-    const blocks = await target.getGuideBlocks("l1");
-    expect(blocks).toHaveLength(2);
+    // Lists carry membership only; the editorial sequence restores on the post.
+    const blocks = await target.getListBlocks("l1");
+    expect(blocks).toHaveLength(1);
+    const postBlocks = await target.getPostBlocks("p1");
+    expect(postBlocks).toHaveLength(2);
+    expect((await target.getList("l1"))?.marker).toEqual(markerAt(0));
     // PlaceId is preserved — backup restore is the trusted identity path.
     expect(places[0]?.place.id).toBe((await source.listPlaces())[0]?.place.id);
   });

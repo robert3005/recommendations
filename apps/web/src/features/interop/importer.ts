@@ -9,6 +9,7 @@
  */
 import {
   classifyCandidates,
+  completeMarker,
   displayFacts,
   type ExternalRef,
   type ManualFacts,
@@ -25,7 +26,6 @@ import {
 import type { ImportBatchRow, ImportItemRow } from "../../data/db";
 import type { DexieRepository } from "../../data/repo";
 import { newId } from "../../lib/id";
-import { nextUnusedColor } from "../../lib/markers";
 import { googleFeatureId, isGoogleMapsUrl, osmRefFromUrl } from "./googleUrl";
 import { type ParsedItem, parseImportFile } from "./parse";
 
@@ -368,6 +368,7 @@ async function listIdForSource(
   repo: DexieRepository,
   sourceName: string,
   sourceColor: string | undefined,
+  sourceIcon: string | undefined,
   now: string,
 ): Promise<string> {
   const bound = await repo.db.importSources.get(sourceName);
@@ -379,10 +380,19 @@ async function listIdForSource(
   const existing = lists.find((l) => l.name === sourceName);
   const id = existing?.id ?? newId();
   if (!existing) {
+    // A KML style colour (and, from our own exports, icon) survives import;
+    // whatever the source omitted is completed to keep markers unique
+    // (spec/src/roadmap.md Phase 6: KML style mapping on import/export).
     await repo.createList({
       id,
       name: sourceName,
-      color: sourceColor ?? nextUnusedColor(lists),
+      marker: completeMarker(
+        {
+          ...(sourceColor ? { color: sourceColor } : {}),
+          ...(sourceIcon ? { icon: sourceIcon } : {}),
+        },
+        lists.map((l) => l.marker),
+      ),
       createdAt: now,
       updatedAt: now,
     });
@@ -431,7 +441,9 @@ export async function runImport(
   for (const list of parsed.lists) {
     // A list holding only unusable rows is bookkeeping, not a real list.
     const listId =
-      list.items.length > 0 ? await listIdForSource(repo, list.name, list.color, now) : "";
+      list.items.length > 0
+        ? await listIdForSource(repo, list.name, list.color, list.icon, now)
+        : "";
     for (const row of list.unusable) {
       // Unusable source rows are persisted, not just counted.
       await repo.db.importItems.put({
@@ -574,6 +586,22 @@ export async function runImport(
             )
             .toArray();
           for (const staleRow of stale) await repo.db.importItems.delete(staleRow.id);
+          // A batch whose last pending review was just superseded is done —
+          // it must not linger as a phantom "reviewing" queue.
+          for (const staleBatchId of new Set(stale.map((i) => i.batchId))) {
+            if (staleBatchId === batch.id) continue;
+            const remaining = await repo.db.importItems
+              .where("batchId")
+              .equals(staleBatchId)
+              .filter((i) => i.status === "review")
+              .count();
+            if (remaining === 0) {
+              const oldBatch = await repo.db.importBatches.get(staleBatchId);
+              if (oldBatch && oldBatch.status !== "done") {
+                await repo.db.importBatches.put({ ...oldBatch, status: "done" });
+              }
+            }
+          }
         }
       } else {
         // Every source row is accounted for. An identical row already pending

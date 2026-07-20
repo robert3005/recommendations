@@ -1,4 +1,4 @@
-import type { PoiResolver, ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type PoiResolver, type ResolvedPoi } from "@placemarks/domain";
 import type { SharedGuide } from "@placemarks/schemas";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -55,7 +55,13 @@ describe("Phase 4 offline shared-guide import deduplication", () => {
     };
 
     try {
-      await repo.createList({ id: "existing", name: "Existing", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "existing",
+        name: "Existing",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const local = await repo.addToList("existing", { kind: "poi", poi }, NOW);
 
       const result = await saveSharedGuide(repo, resolver, guide, NOW);

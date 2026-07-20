@@ -1,7 +1,7 @@
 -- Share-service D1 schema (spec/src/sharing.md §Share service).
 CREATE TABLE IF NOT EXISTS documents (
   slug TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('list', 'note')),
+  kind TEXT NOT NULL CHECK (kind IN ('list', 'post', 'note')),
   revision INTEGER NOT NULL,
   tokenHash TEXT NOT NULL,
   body TEXT NOT NULL,
@@ -51,8 +51,11 @@ CREATE TABLE IF NOT EXISTS idempotency (
   key TEXT PRIMARY KEY,
   response TEXT NOT NULL,
   status INTEGER NOT NULL,
-  -- Age column for the scheduled 90-day purge (OPERATIONS.md).
-  createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+  -- Age column for the scheduled 90-day purge (OPERATIONS.md). Stored in
+  -- ISO-8601 "T" format so TEXT comparison against the purge cutoff is
+  -- chronological — datetime('now')'s space-separated shape would sort every
+  -- same-day row before an ISO cutoff and purge young rows.
+  createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS rate (

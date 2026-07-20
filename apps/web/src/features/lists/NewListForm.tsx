@@ -1,20 +1,21 @@
 /**
- * Create a list: a name plus a marker colour (spec/src/map-view.md). Used
- * directly on the Lists tab (2026-07-18: lists can be created in the app,
- * before any place joins them) and inline while adding a place to a new list.
+ * Create a list: a name plus a unique (colour, icon) marker
+ * (spec/src/map-view.md). Used directly on the Lists home (2026-07-18: lists
+ * can be created in the app, before any place joins them) and inline while
+ * adding a place to a new list.
  */
-import type { List } from "@placemarks/domain";
+import type { List, ListMarker } from "@placemarks/domain";
 import { useState } from "react";
-import { nextUnusedColor } from "../../lib/markers";
+import { suggestMarker } from "../../lib/markers";
 import { MarkerSwatches } from "./MarkerSwatches";
 
 export interface NewListFormProps {
-  /** Existing lists — the marker defaults to the next unused palette colour. */
+  /** Existing lists — the marker defaults to the next unused combination. */
   lists: List[] | undefined;
   submitLabel: string;
   submitTestId: string;
   radioName: string;
-  onCreate: (name: string, color: string) => void;
+  onCreate: (name: string, marker: ListMarker) => void;
   onCancel: () => void;
 }
 
@@ -27,8 +28,8 @@ export function NewListForm({
   onCancel,
 }: NewListFormProps) {
   const [name, setName] = useState("");
-  const [color, setColor] = useState<string>();
-  const selectedColor = color ?? nextUnusedColor(lists ?? []);
+  const [marker, setMarker] = useState<ListMarker>();
+  const selectedMarker = marker ?? suggestMarker(lists ?? []);
 
   return (
     <div className="mt-1">
@@ -53,8 +54,8 @@ export function NewListForm({
             const trimmed = name.trim();
             if (trimmed === "") return;
             setName("");
-            setColor(undefined);
-            onCreate(trimmed, selectedColor);
+            setMarker(undefined);
+            onCreate(trimmed, selectedMarker);
           }}
           className="shrink-0 rounded bg-stone-800 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
           data-testid={submitTestId}
@@ -69,7 +70,12 @@ export function NewListForm({
           Cancel
         </button>
       </div>
-      <MarkerSwatches radioName={radioName} selected={selectedColor} onSelect={setColor} />
+      <MarkerSwatches
+        radioName={radioName}
+        selected={selectedMarker}
+        used={(lists ?? []).map((l) => l.marker)}
+        onSelect={setMarker}
+      />
     </div>
   );
 }

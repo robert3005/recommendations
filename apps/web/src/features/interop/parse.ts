@@ -41,6 +41,8 @@ export interface ParsedList {
   unusable: UnusableRow[];
   /** Marker colour carried by the source (KML styles). */
   color?: string;
+  /** Marker icon carried by the source (our own KML exports' style ids). */
+  icon?: string;
 }
 
 export interface ParsedImport {
@@ -73,9 +75,12 @@ export function parseSavedCsv(text: string, listName: string): ParsedList {
   const unusable: UnusableRow[] = [];
   // Our exporter defensively quotes formula-leading cells with an apostrophe
   // (=SUM… → '=SUM…). Round-tripping strips exactly that guard — owned data
-  // must come back byte-identical.
+  // must come back byte-identical. Only OUR OWN exports carry the guard: they
+  // are recognizable by the Attribution column, and a genuine apostrophe in a
+  // foreign Takeout CSV is user data that must survive untouched.
+  const ownExport = (parsed.meta.fields ?? []).includes("attribution");
   const unquoteFormula = (value: string): string =>
-    /^'[\s\r\t]*[=+\-@]/.test(value) ? value.slice(1) : value;
+    ownExport && /^'[\s\r\t]*[=+\-@]/.test(value) ? value.slice(1) : value;
   for (const row of parsed.data) {
     const title = row.title ? unquoteFormula(row.title).trim() : undefined;
     const url = row.url?.trim() || undefined;
@@ -250,6 +255,23 @@ function styleColor(id: string, doc: Document): string | undefined {
 }
 
 /**
+ * The marker icon our own KML exports encode in the style id
+ * (`placemarks-<icon>` — spec/src/roadmap.md Phase 6: KML style mapping on
+ * import/export); foreign KML styles simply carry no icon.
+ */
+function styleIcon(id: string, doc: Document): string | undefined {
+  const own = id.match(/^placemarks-([a-z]+)$/)?.[1];
+  if (own) return own;
+  // A StyleMap resolves through its normal pair like styleColor does.
+  const pairs = [...doc.querySelectorAll(`StyleMap[id="${id}"] Pair`)];
+  const normal =
+    pairs.find((pair) => pair.querySelector("key")?.textContent?.trim() === "normal") ?? pairs[0];
+  const mapped = normal?.querySelector("styleUrl")?.textContent?.trim();
+  if (mapped?.startsWith("#")) return mapped.slice(1).match(/^placemarks-([a-z]+)$/)?.[1];
+  return undefined;
+}
+
+/**
  * The marker colour a KML container's DIRECT placemarks reference via
  * styleUrl — a nested folder's style belongs to that folder's own list.
  */
@@ -257,6 +279,13 @@ function containerColor(container: Element, doc: Document): string | undefined {
   const styleUrl = container.querySelector(":scope > Placemark > styleUrl")?.textContent?.trim();
   if (!styleUrl?.startsWith("#")) return undefined;
   return styleColor(styleUrl.slice(1), doc);
+}
+
+/** The marker icon a KML container's DIRECT placemarks reference, if ours. */
+function containerIcon(container: Element, doc: Document): string | undefined {
+  const styleUrl = container.querySelector(":scope > Placemark > styleUrl")?.textContent?.trim();
+  if (!styleUrl?.startsWith("#")) return undefined;
+  return styleIcon(styleUrl.slice(1), doc);
 }
 
 function kmlFragmentToList(container: Element, doc: Document, name: string): ParsedList {
@@ -274,7 +303,12 @@ function kmlFragmentToList(container: Element, doc: Document, name: string): Par
   );
   const collection = kmlToGeoJson(wrapped) as { features?: GeoJsonFeature[] };
   const color = containerColor(container, doc);
-  return { ...collectFeatures(collection.features ?? [], name), ...(color ? { color } : {}) };
+  const icon = containerIcon(container, doc);
+  return {
+    ...collectFeatures(collection.features ?? [], name),
+    ...(color ? { color } : {}),
+    ...(icon ? { icon } : {}),
+  };
 }
 
 /**
@@ -294,7 +328,14 @@ export function parseKml(text: string, fallbackName: string): ParsedList[] {
     const list = collectFeatures(collection.features ?? [], docName || fallbackName);
     const rootContainer = doc.querySelector("kml > Document") ?? doc.documentElement;
     const rootStyle = rootContainer ? containerColor(rootContainer, doc) : undefined;
-    return [{ ...list, ...(rootStyle ? { color: rootStyle } : {}) }];
+    const rootIcon = rootContainer ? containerIcon(rootContainer, doc) : undefined;
+    return [
+      {
+        ...list,
+        ...(rootStyle ? { color: rootStyle } : {}),
+        ...(rootIcon ? { icon: rootIcon } : {}),
+      },
+    ];
   }
   const lists: ParsedList[] = [];
   const usedNames = new Map<string, number>();
@@ -321,9 +362,13 @@ export function parseKml(text: string, fallbackName: string): ParsedList[] {
     const looseColor = looseStyleUrl?.startsWith("#")
       ? styleColor(looseStyleUrl.slice(1), doc)
       : undefined;
+    const looseIcon = looseStyleUrl?.startsWith("#")
+      ? styleIcon(looseStyleUrl.slice(1), doc)
+      : undefined;
     lists.push({
       ...collectFeatures(collection.features ?? [], uniqueName(docName || fallbackName)),
       ...(looseColor ? { color: looseColor } : {}),
+      ...(looseIcon ? { icon: looseIcon } : {}),
     });
   }
   for (const [index, folder] of folders.entries()) {

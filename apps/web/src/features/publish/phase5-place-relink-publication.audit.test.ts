@@ -1,5 +1,5 @@
 /** Owner-confirmed OSM relinks must dirty every hosted guide containing the place. */
-import { linkPlaceToOsm, type Publication, type ResolvedPoi } from "@placemarks/domain";
+import { linkPlaceToOsm, markerAt, type Publication, type ResolvedPoi } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
 
@@ -10,7 +10,13 @@ describe("Phase 5 publication dirtying after place identity repair", () => {
   it("queues a payload-less marker when the owner links a published manual place to OSM", async () => {
     const repo = new DexieRepository(`phase5-place-relink-${crypto.randomUUID()}`);
     try {
-      await repo.createList({ id: "list-1", name: "Relink guide", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Relink guide",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const manual = (
         await repo.addToList(
           "list-1",

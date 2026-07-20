@@ -3,11 +3,12 @@
  * copied identity records need both stable-id keys and values, and every
  * snapshot image omission needs a human-readable identity before generation.
  */
+import { markerAt } from "@placemarks/domain";
 import type { SharedGuide } from "@placemarks/schemas";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DexieRepository } from "../../data/repo";
-import { projectGuide } from "./project";
+import { projectList } from "./project";
 import { SharePreview } from "./SharePreview";
 
 const NOW = "2026-07-19T12:00:00.000Z";
@@ -80,7 +81,13 @@ describe("Phase 4 exact preview disclosure", () => {
   it("identifies each omitted image instead of showing only a generic boolean notice", async () => {
     const repo = new DexieRepository(`phase4-media-disclosure-${crypto.randomUUID()}`);
     try {
-      await repo.createList({ id: "list-1", name: "Media guide", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Media guide",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const place = await repo.addToList(
         "list-1",
         { kind: "manual", facts: { name: "Viewpoint", lat: 38.7, lng: -9.1 } },
@@ -98,7 +105,7 @@ describe("Phase 4 exact preview disclosure", () => {
         updatedAt: NOW,
       });
 
-      const projection = await projectGuide(repo, "list-1");
+      const projection = await projectList(repo, "list-1");
       if (!projection) throw new Error("projection missing");
       render(
         <SharePreview
@@ -127,7 +134,13 @@ describe("Phase 4 snapshot media privacy", () => {
     const repo = new DexieRepository(`phase4-remote-image-${crypto.randomUUID()}`);
     const privateImageUrl = "https://private.example/photo.jpg?access_token=family-secret";
     try {
-      await repo.createList({ id: "list-1", name: "Remote image", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Remote image",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const place = await repo.addToList(
         "list-1",
         { kind: "manual", facts: { name: "Viewpoint", lat: 38.7, lng: -9.1 } },
@@ -143,7 +156,7 @@ describe("Phase 4 snapshot media privacy", () => {
         updatedAt: NOW,
       });
 
-      const projection = await projectGuide(repo, "list-1");
+      const projection = await projectList(repo, "list-1");
       if (!projection) throw new Error("projection missing");
       const payload = JSON.stringify(projection.guide);
 

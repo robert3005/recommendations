@@ -1,11 +1,17 @@
 /** A portable export must fail closed when owned note content cannot be read. */
-import type { GuideBlockView, List, Place } from "@placemarks/domain";
+import { type List, type ListBlockView, markerAt, type Place } from "@placemarks/domain";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ListPage } from "./ListPage";
 
 const NOW = "2026-07-19T12:00:00.000Z";
-const list: List = { id: "list", name: "Portable notes", createdAt: NOW, updatedAt: NOW };
+const list: List = {
+  id: "list",
+  name: "Portable notes",
+  marker: markerAt(0),
+  createdAt: NOW,
+  updatedAt: NOW,
+};
 const place: Place = {
   id: "place",
   origin: "manual",
@@ -15,7 +21,7 @@ const place: Place = {
   createdAt: NOW,
   updatedAt: NOW,
 };
-const blocks: GuideBlockView[] = [
+const blocks: ListBlockView[] = [
   {
     block: {
       id: "block",
@@ -41,8 +47,9 @@ vi.mock("@tanstack/react-router", () => ({
   useParams: () => ({ listId: list.id }),
 }));
 vi.mock("../../data/hooks", () => ({
-  useGuide: () => list,
-  useGuideBlocks: () => blocks,
+  useList: () => list,
+  useListBlocks: () => blocks,
+  useLists: () => [list],
 }));
 vi.mock("../../data/RepoContext", () => ({
   useRepo: () => ({

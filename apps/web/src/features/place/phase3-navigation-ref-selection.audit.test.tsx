@@ -1,3 +1,4 @@
+import { markerAt } from "@placemarks/domain";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
@@ -14,7 +15,13 @@ describe("Phase 3 navigation external-ref selection", () => {
     const googleUrl = "https://www.google.com/maps/place/Cafe/data=!4m2!3m1!1s0x1f9a2b:0xdeadbeef";
 
     try {
-      await repo.createList({ id: "list", name: "Imported", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list",
+        name: "Imported",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const view = await repo.addToList(
         "list",
         {

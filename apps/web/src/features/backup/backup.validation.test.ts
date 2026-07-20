@@ -1,4 +1,4 @@
-import type { ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type ResolvedPoi } from "@placemarks/domain";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -51,6 +51,7 @@ describe("backup validation regressions", () => {
       await source.createList({
         id: "source-list",
         name: "Source",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -127,6 +128,7 @@ describe("backup identity merge", () => {
       await source.createList({
         id: "source-list",
         name: "Source",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -136,6 +138,7 @@ describe("backup identity merge", () => {
       await target.createList({
         id: "target-list",
         name: "Target",
+        marker: markerAt(1),
         createdAt: NOW,
         updatedAt: NOW,
       });

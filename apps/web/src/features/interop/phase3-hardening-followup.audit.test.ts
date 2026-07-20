@@ -6,6 +6,7 @@
 import {
   createOsmPlace,
   type List,
+  markerAt,
   type PoiResolver,
   type ResolvedPoi,
   type SearchProvider,
@@ -104,6 +105,7 @@ describe("Phase 3 CSV ODbL continuity with retained Google identity", () => {
     const sourceList: List = {
       id: "source-list",
       name: "Source",
+      marker: markerAt(0),
       createdAt: NOW,
       updatedAt: NOW,
     };

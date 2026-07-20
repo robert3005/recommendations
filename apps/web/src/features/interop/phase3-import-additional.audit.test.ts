@@ -8,6 +8,7 @@
  */
 import {
   linkPlaceToOsm,
+  markerAt,
   type PoiResolver,
   type ResolvedPoi,
   type SearchProvider,
@@ -364,7 +365,13 @@ describe("Phase 3 exact-reference dedup audit", () => {
     });
 
     try {
-      await repo.createList({ id: "existing", name: "Existing", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "existing",
+        name: "Existing",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const original = await repo.addToList("existing", { kind: "poi", poi: oldPoi }, NOW);
       await repo.updatePlace(
         linkPlaceToOsm(original.place, replacement, "2026-07-20T10:00:00.000Z", "resolver-match"),
@@ -402,7 +409,13 @@ describe("Phase 3 exact-reference dedup audit", () => {
     });
 
     try {
-      await repo.createList({ id: "existing", name: "Existing", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "existing",
+        name: "Existing",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const original = await repo.addToList("existing", { kind: "poi", poi: current }, NOW);
 
       const report = await runImport(
@@ -442,7 +455,13 @@ describe("Phase 3 exact-reference dedup audit", () => {
     });
 
     try {
-      await repo.createList({ id: "existing", name: "Existing", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "existing",
+        name: "Existing",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const original = await repo.addToList("existing", { kind: "poi", poi: existingPoi }, NOW);
       const googleUrl = "https://www.google.com/maps/place/Cafe/data=!4m2!3m1!1s0xabc:0xdef";
 
@@ -482,7 +501,13 @@ describe("Phase 3 exact-reference dedup audit", () => {
     });
 
     try {
-      await repo.createList({ id: "trip", name: "Trip", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "trip",
+        name: "Trip",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const original = await repo.addToList("trip", { kind: "poi", poi: current }, NOW);
 
       const report = await runImport(
@@ -512,7 +537,13 @@ describe("Phase 3 exact-reference dedup audit", () => {
     });
 
     try {
-      await repo.createList({ id: "trip", name: "Trip", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "trip",
+        name: "Trip",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       await repo.addToList("trip", { kind: "poi", poi: existing }, NOW);
 
       const report = await runImport(
@@ -631,8 +662,20 @@ describe("Phase 3 conservative geocoding and accounting audit", () => {
     const repo = new DexieRepository(`phase3-local-dedup-ambiguity-${crypto.randomUUID()}`);
 
     try {
-      await repo.createList({ id: "first", name: "First", createdAt: NOW, updatedAt: NOW });
-      await repo.createList({ id: "second", name: "Second", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "first",
+        name: "First",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await repo.createList({
+        id: "second",
+        name: "Second",
+        marker: markerAt(1),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       await repo.addToList(
         "first",
         { kind: "manual", facts: { name: "Common name", lat: 38.7138, lng: -9.1394 } },

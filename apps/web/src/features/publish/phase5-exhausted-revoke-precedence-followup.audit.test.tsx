@@ -1,5 +1,5 @@
 /** Exhausting a permanent DELETE failure must preserve its operation and idempotency key. */
-import type { Publication } from "@placemarks/domain";
+import { markerAt, type Publication } from "@placemarks/domain";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -44,6 +44,7 @@ describe("Phase 5 exhausted revocation precedence", () => {
       await repo.createList({
         id: "list-1",
         name: "Public guide",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });

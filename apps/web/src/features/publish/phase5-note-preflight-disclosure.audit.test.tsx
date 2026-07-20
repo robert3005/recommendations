@@ -1,5 +1,5 @@
 /** First-publishing a note is also creation of a hosted public link. */
-import type { Note } from "@placemarks/domain";
+import { markerAt, type Note } from "@placemarks/domain";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +16,7 @@ describe("Phase 5 standalone-note publication preflight", () => {
     const repo = new DexieRepository(`phase5-note-preflight-${crypto.randomUUID()}`);
     const note: Note = {
       id: "note-1",
-      target: { kind: "list", listId: "list-1" },
+      target: { kind: "post", postId: "post-1" },
       title: "Public field note",
       body: "The exact prose that would leave this device.",
       mediaIds: [],
@@ -30,7 +30,20 @@ describe("Phase 5 standalone-note publication preflight", () => {
     vi.stubGlobal("fetch", fetcher);
 
     try {
-      await repo.createList({ id: "list-1", name: "Field notes", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Field notes",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await repo.createPost({
+        id: "post-1",
+        title: "Lisbon field guide",
+        listId: "list-1",
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       await repo.createNote(note);
       render(
         <RepoProvider repo={repo}>
@@ -43,7 +56,7 @@ describe("Phase 5 standalone-note publication preflight", () => {
 
       expect(await screen.findByText(note.body)).toBeInTheDocument();
       expect(screen.getByText(note.title ?? "")).toBeInTheDocument();
-      expect(screen.getByText("Field notes")).toBeInTheDocument();
+      expect(await screen.findByText("Lisbon field guide")).toBeInTheDocument();
       expect(fetcher).not.toHaveBeenCalled();
       const confirmation = screen.getByTestId("confirm-publish-note");
       expect(confirmation).toBeEnabled();
@@ -54,9 +67,10 @@ describe("Phase 5 standalone-note publication preflight", () => {
       const submitted = JSON.parse(String(request?.body)) as {
         document: { context: unknown };
       };
-      // The confirmed disclosure named the parent list. The actual public
-      // document must carry that same context, not substitute the note title.
-      expect(submitted.document.context).toEqual({ kind: "list", listTitle: "Field notes" });
+      // The confirmed disclosure named the parent post. The actual public
+      // document must carry that same context — the post's authoritative
+      // title, never a caller-supplied label or the note title.
+      expect(submitted.document.context).toEqual({ kind: "post", postTitle: "Lisbon field guide" });
     } finally {
       repo.db.close();
     }

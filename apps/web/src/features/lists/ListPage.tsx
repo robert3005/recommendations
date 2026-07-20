@@ -4,14 +4,19 @@
  * recolour — imported lists are too large for place-card-only curation.
  * Every list exports as KML / Takeout-shaped CSV / GeoJSON / GPX.
  */
-import { displayFacts, type GuideBlockView, type Note } from "@placemarks/domain";
+import {
+  displayFacts,
+  type ListBlockView,
+  type Note,
+  type TeardownBlockers,
+  TeardownRefusedError,
+} from "@placemarks/domain";
 import type { SharedGuide } from "@placemarks/schemas";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
-import { useGuide, useGuideBlocks } from "../../data/hooks";
+import { useList, useListBlocks, useLists } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import { downloadBytes, downloadText } from "../../lib/download";
-import { DEFAULT_PIN_COLOR } from "../../lib/markers";
 import { nowIso } from "../../lib/time";
 import {
   type ExportPlaceView,
@@ -23,9 +28,11 @@ import {
 } from "../interop/export";
 import { StateBadge } from "../place/StateBadge";
 import { PublishControls } from "../publish/PublishControls";
-import { type ProjectionStats, projectGuide } from "../share/project";
+import { type ProjectionStats, projectList } from "../share/project";
 import { SharePreview } from "../share/SharePreview";
 import { encodeSnapshot, SnapshotTooLargeError } from "../share/snapshot";
+import { BlockerDialog } from "./BlockerDialog";
+import { MarkerGlyph } from "./MarkerGlyph";
 import { MarkerSwatches } from "./MarkerSwatches";
 
 const EXPORTS = [
@@ -39,10 +46,12 @@ export function ListPage() {
   const { listId } = useParams({ from: "/lists/$listId" });
   const repo = useRepo();
   const navigate = useNavigate();
-  const list = useGuide(listId);
-  const blocks = useGuideBlocks(listId);
+  const list = useList(listId);
+  const blocks = useListBlocks(listId);
+  const lists = useLists();
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState<string>();
+  const [refusal, setRefusal] = useState<{ title: string; blockers: TeardownBlockers }>();
   const [sharing, setSharing] = useState<{
     guide: SharedGuide;
     stats: ProjectionStats;
@@ -55,8 +64,19 @@ export function ListPage() {
 
   if (!list) return <div className="p-4 text-stone-500">List not found.</div>;
 
+  /** Teardown refusals surface as an actionable blocker report, never a crash. */
+  const guarded = (title: string, action: () => Promise<void>) => {
+    action().catch((err: unknown) => {
+      if (err instanceof TeardownRefusedError) {
+        setRefusal({ title, blockers: err.blockers });
+        return;
+      }
+      throw err;
+    });
+  };
+
   const openShare = async () => {
-    const projection = await projectGuide(repo, list.id);
+    const projection = await projectList(repo, list.id);
     if (!projection) return;
     try {
       const { fragment, compressedBytes } = encodeSnapshot(projection.guide);
@@ -81,14 +101,13 @@ export function ListPage() {
     setCopied(false);
   };
 
-  const placeBlocks = (blocks ?? []).filter((v) => v.block.content.type === "place");
+  const placeBlocks = blocks ?? [];
 
   // Fail closed: a portable export with silently missing notes is worse than
   // no export — read errors abort the download and surface instead.
   const collectViews = async (): Promise<ExportPlaceView[]> => {
     const views: ExportPlaceView[] = [];
     for (const view of placeBlocks) {
-      if (!view.place) continue;
       const notes: Note[] = await repo.listNotesForPlace(view.place.id);
       const placeView = await repo.getPlaceView(view.place.id);
       views.push({ place: view.place, notes, tags: placeView?.tags ?? [] });
@@ -113,8 +132,12 @@ export function ListPage() {
     }
     if (byCount.length === 0) byCount.push([]);
     const chunks: ExportPlaceView[][] = [];
+    // Measure with the LONGEST name a downloaded part can carry — the
+    // " (part N)" suffix is applied after splitting, and a boundary chunk
+    // measured under the bare name could exceed the limit once renamed.
     const fits = (chunk: ExportPlaceView[]): boolean =>
-      new TextEncoder().encode(exportListKml(list, chunk)).byteLength <= MY_MAPS_FILE_LIMIT;
+      new TextEncoder().encode(exportListKml({ ...list, name: `${list.name} (part 999)` }, chunk))
+        .byteLength <= MY_MAPS_FILE_LIMIT;
     const bySize = (chunk: ExportPlaceView[]): void => {
       if (fits(chunk)) {
         chunks.push(chunk);
@@ -175,7 +198,7 @@ export function ListPage() {
     downloadText(`${safeName()}.${writer.key}`, writer.mime, writer.write(list, views));
   };
 
-  const move = (view: GuideBlockView, direction: -1 | 1) => {
+  const move = (view: ListBlockView, direction: -1 | 1) => {
     const index = placeBlocks.findIndex((v) => v.block.id === view.block.id);
     const target = index + direction;
     if (target < 0 || target >= placeBlocks.length) return;
@@ -202,20 +225,18 @@ export function ListPage() {
             />
             <MarkerSwatches
               radioName="list-page-marker"
-              selected={list.color ?? DEFAULT_PIN_COLOR}
-              onSelect={(color) => {
-                void repo.updateList({ ...list, color, updatedAt: nowIso() });
+              selected={list.marker}
+              used={(lists ?? []).filter((l) => l.id !== list.id).map((l) => l.marker)}
+              onSelect={(marker) => {
+                void repo.updateList({ ...list, marker, updatedAt: nowIso() });
               }}
             />
           </div>
         ) : (
           <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-900">
-            <span
-              className="inline-block h-4 w-4 rounded-full"
-              style={{ backgroundColor: list.color ?? DEFAULT_PIN_COLOR }}
-              data-testid="list-marker"
-              data-color={list.color ?? DEFAULT_PIN_COLOR}
-            />
+            <span data-testid="list-marker" data-color={list.marker.color}>
+              <MarkerGlyph marker={list.marker} size={18} />
+            </span>
             {list.name}
           </h1>
         )}
@@ -290,7 +311,7 @@ export function ListPage() {
       </div>
       {exportError ? (
         <output className="mt-1 block rounded bg-orange-50 p-2 text-[11px] text-orange-800">
-          Export failed — nothing was downloaded (notes could not be read: {exportError}).
+          Export failed — nothing was downloaded ({exportError}).
         </output>
       ) : null}
       <p className="mt-1 text-[11px] text-stone-400">
@@ -377,7 +398,11 @@ export function ListPage() {
                       type="button"
                       className="rounded px-1.5 py-0.5 text-xs text-red-700 hover:bg-red-50"
                       data-testid="remove-from-list"
-                      onClick={() => void repo.removeBlock(view.block.id, nowIso())}
+                      onClick={() =>
+                        guarded("Can’t remove this place yet", () =>
+                          repo.removeBlock(view.block.id, nowIso()),
+                        )
+                      }
                     >
                       Remove
                     </button>
@@ -396,16 +421,40 @@ export function ListPage() {
       </ul>
 
       {editing ? (
-        <button
-          type="button"
-          className="mt-6 rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
-          data-testid="delete-list"
-          onClick={() => {
-            void repo.deleteList(list.id, nowIso()).then(() => navigate({ to: "/lists" }));
-          }}
-        >
-          Delete list
-        </button>
+        <div className="mt-6 flex items-center gap-2">
+          <button
+            type="button"
+            className="rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+            data-testid="remove-all-places"
+            onClick={() =>
+              guarded("Can’t empty this list yet", () => repo.removeAllPlaces(list.id, nowIso()))
+            }
+          >
+            Remove all places
+          </button>
+          <button
+            type="button"
+            className="rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+            data-testid="delete-list"
+            onClick={() =>
+              guarded("Can’t delete this list yet", () =>
+                repo.deleteList(list.id, nowIso()).then(() => {
+                  void navigate({ to: "/lists" });
+                }),
+              )
+            }
+          >
+            Delete list
+          </button>
+        </div>
+      ) : null}
+
+      {refusal ? (
+        <BlockerDialog
+          title={refusal.title}
+          blockers={refusal.blockers}
+          onClose={() => setRefusal(undefined)}
+        />
       ) : null}
     </div>
   );

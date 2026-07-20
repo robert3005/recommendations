@@ -67,10 +67,20 @@ class LostUpdateD1 implements D1Like {
     return Promise.all(statements.map((statement) => statement.run()));
   }
 
+  private lastWriteChanges = 1;
+
   run(sql: string, values: readonly unknown[]): Result {
     if (sql.startsWith("INSERT INTO audit")) {
       this.auditCount += 1;
       return { meta: { changes: 1 } };
+    }
+    // The revision guard: SQLite fails the whole batch (NULL primary key)
+    // exactly when the preceding conditional write changed zero rows.
+    if (sql.startsWith("INSERT INTO idempotency")) {
+      if (this.lastWriteChanges === 0) {
+        throw new Error("NOT NULL constraint failed: idempotency.key");
+      }
+      return { meta: { changes: 0 } };
     }
     if (sql.startsWith("INSERT OR IGNORE INTO idempotency")) {
       const row = {
@@ -84,13 +94,17 @@ class LostUpdateD1 implements D1Like {
     }
     if (sql.startsWith("UPDATE documents SET revision = revision + 1")) {
       const expectedRevision = Number(values[4]);
-      if (this.document.revision !== expectedRevision) return { meta: { changes: 0 } };
+      if (this.document.revision !== expectedRevision) {
+        this.lastWriteChanges = 0;
+        return { meta: { changes: 0 } };
+      }
       this.document = {
         ...this.document,
         revision: this.document.revision + 1,
         body: String(values[0]),
         updatedAt: String(values[1]),
       };
+      this.lastWriteChanges = 1;
       return { meta: { changes: 1 } };
     }
     throw new Error(`Unexpected D1 write: ${sql}`);

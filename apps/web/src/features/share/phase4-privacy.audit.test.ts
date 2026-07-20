@@ -1,9 +1,9 @@
 /** Additional Phase 4 checks from the current authoritative sharing design. */
-import type { PoiResolver, ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type PoiResolver, type ResolvedPoi } from "@placemarks/domain";
 import type { SharedGuide, SharedPlaceAnchor, SharedPlaceEvidence } from "@placemarks/schemas";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
-import { projectGuide } from "./project";
+import { projectList } from "./project";
 import { resolveSharedAnchor } from "./resolveShared";
 import { saveSharedGuide } from "./saveSharedGuide";
 
@@ -62,6 +62,7 @@ describe("Phase 4 public projection privacy", () => {
       await repo.createList({
         id: "list-1",
         name: "Private media",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -80,7 +81,7 @@ describe("Phase 4 public projection privacy", () => {
         updatedAt: NOW,
       });
 
-      const projection = await projectGuide(repo, "list-1");
+      const projection = await projectList(repo, "list-1");
       if (!projection) throw new Error("projection missing");
       const payload = JSON.stringify(projection.guide);
 
@@ -98,6 +99,7 @@ describe("Phase 4 public projection privacy", () => {
       await repo.createList({
         id: "list-1",
         name: "Remote media disclosure",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -117,7 +119,7 @@ describe("Phase 4 public projection privacy", () => {
         updatedAt: NOW,
       });
 
-      const projection = await projectGuide(repo, "list-1");
+      const projection = await projectList(repo, "list-1");
       if (!projection) throw new Error("projection missing");
       const payload = JSON.stringify(projection.guide);
 
@@ -130,19 +132,22 @@ describe("Phase 4 public projection privacy", () => {
     }
   });
 
-  it("matches the SharedGuide schema in the spec and does not add an undocumented colour field", async () => {
+  it("matches the SharedGuide schema in the spec and does not add an undocumented marker field", async () => {
     const repo = new DexieRepository(`phase4-schema-drift-${crypto.randomUUID()}`);
     try {
+      // The local marker is a viewer-side concern (spec/src/sharing.md §Shared
+      // guide document) — neither it nor its colour may drift into the payload.
       await repo.createList({
         id: "list-1",
         name: "Schema contract",
-        color: "#dc2626",
+        marker: { color: "#dc2626", icon: "star" },
         createdAt: NOW,
         updatedAt: NOW,
       });
 
-      const projection = await projectGuide(repo, "list-1");
+      const projection = await projectList(repo, "list-1");
 
+      expect(projection?.guide).not.toHaveProperty("marker");
       expect(projection?.guide).not.toHaveProperty("color");
     } finally {
       repo.db.close();

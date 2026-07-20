@@ -3,14 +3,14 @@
  * lists (spec/src/data-model.md: membership is existence), so the pin is born
  * into one: an existing list or a new one created here.
  */
-import type { List } from "@placemarks/domain";
+import type { List, ListMarker } from "@placemarks/domain";
 import { useEffect, useRef, useState } from "react";
-import { nextUnusedColor } from "../../lib/markers";
+import { suggestMarker } from "../../lib/markers";
 import { MarkerSwatches } from "../lists/MarkerSwatches";
 
 export type ManualPinListTarget =
   | { kind: "existing"; listId: string }
-  | { kind: "new"; name: string; color: string };
+  | { kind: "new"; name: string; marker: ListMarker };
 
 export interface ManualPinDialogProps {
   lat: number;
@@ -36,13 +36,13 @@ export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPin
   const [category, setCategory] = useState("");
   const [listChoice, setListChoice] = useState<string>((lists ?? []).length > 0 ? "" : "__new__");
   const [newListName, setNewListName] = useState("");
-  const [color, setColor] = useState<string>();
+  const [marker, setMarker] = useState<ListMarker>();
 
-  const selectedColor = color ?? nextUnusedColor(lists ?? []);
+  const selectedMarker = marker ?? suggestMarker(lists ?? []);
   const listTarget: ManualPinListTarget | undefined =
     listChoice === "__new__"
       ? newListName.trim() !== ""
-        ? { kind: "new", name: newListName.trim(), color: selectedColor }
+        ? { kind: "new", name: newListName.trim(), marker: selectedMarker }
         : undefined
       : listChoice !== ""
         ? { kind: "existing", listId: listChoice }
@@ -123,8 +123,9 @@ export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPin
             />
             <MarkerSwatches
               radioName="manual-list-marker"
-              selected={selectedColor}
-              onSelect={setColor}
+              selected={selectedMarker}
+              used={(lists ?? []).map((l) => l.marker)}
+              onSelect={setMarker}
             />
           </div>
         ) : null}

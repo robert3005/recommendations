@@ -1,5 +1,5 @@
 /** Residual backup/restore regressions found while auditing Phase 2 at 15c3d8e. */
-import type { ResolvedPoi } from "@placemarks/domain";
+import { markerAt, type ResolvedPoi } from "@placemarks/domain";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -67,7 +67,13 @@ async function rewriteArchive(backup: Blob, mutate: (data: MutableData) => void)
 }
 
 async function seed(repo: DexieRepository) {
-  await repo.createList({ id: "list-1", name: "Trip", createdAt: NOW, updatedAt: NOW });
+  await repo.createList({
+    id: "list-1",
+    name: "Trip",
+    marker: markerAt(0),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
   const place = (await repo.addToList("list-1", { kind: "poi", poi: poi() }, NOW)).place;
   await repo.createNote({
     id: "note-1",

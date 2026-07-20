@@ -2,13 +2,19 @@
  * Additional Phase 3 export checks derived from the current
  * spec/src/interop.md CSV portability contract.
  */
-import type { List, Note, Place } from "@placemarks/domain";
+import { type List, markerAt, type Note, type Place } from "@placemarks/domain";
 import Papa from "papaparse";
 import { describe, expect, it } from "vitest";
 import { exportListCsv, exportListGeoJson } from "./export";
 
 const NOW = "2026-07-19T12:00:00.000Z";
-const list: List = { id: "list", name: "Formula audit", createdAt: NOW, updatedAt: NOW };
+const list: List = {
+  id: "list",
+  name: "Formula audit",
+  marker: markerAt(0),
+  createdAt: NOW,
+  updatedAt: NOW,
+};
 
 function exportPayload(payload: string): Record<string, string> | undefined {
   const place: Place = {

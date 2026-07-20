@@ -153,9 +153,14 @@ export function MapView({
     });
     map.on("data", (event) => {
       // Only BASEMAP traffic is recovery evidence — our own local GeoJSON
-      // sources load fine while the basemap is down.
-      const sourceId = (event as { sourceId?: string }).sourceId;
+      // sources load fine while the basemap is down, and a source's request
+      // cycle merely going idle is not successful traffic.
+      const { sourceId, sourceDataType } = event as {
+        sourceId?: string;
+        sourceDataType?: string;
+      };
       if (sourceId === "pois" || sourceId === "saved" || sourceId === "selection") return;
+      if (sourceDataType === "idle") return;
       setUnavailable(false);
     });
 
@@ -210,8 +215,10 @@ export function MapView({
         source: "saved",
         filter: ["!", ["has", "point_count"]],
         paint: {
-          // Unlinked manual pins keep their marker; others wear their list colour.
-          "circle-color": ["case", ["==", ["get", "unlinked"], 1], "#b45309", ["get", "color"]],
+          // Every pin wears its list's marker colour — an unlinked pin is
+          // marked by a small dot, not a different colour (2026-07-19,
+          // spec/src/map-view.md: list identity owns the pin's look).
+          "circle-color": ["get", "color"],
           "circle-radius": 8,
           "circle-stroke-width": 2,
           "circle-stroke-color": "#fafaf9",

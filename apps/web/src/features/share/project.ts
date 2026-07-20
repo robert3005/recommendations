@@ -1,8 +1,11 @@
 /**
- * Public projection (spec/src/sharing.md §Shared guide document): build the
- * versioned SharedGuide from a list. Private PlaceIds, database ids, tags
- * (until BlockTagSelection lands), non-shareable notes, and editor tokens
- * never enter the payload; note images become explicit text placeholders.
+ * Public projection (spec/src/sharing.md §One block document, two
+ * projections): build the versioned block document from a list (place blocks
+ * only; shareable place notes ride along) or from a post (the full
+ * section/embed sequence with explicit note attachments and tag selections,
+ * plus a reference to its list). Private PlaceIds, database ids, non-selected
+ * tags, non-shareable notes, and editor tokens never enter the payload; note
+ * images become explicit text placeholders.
  */
 import type { Note, OsmEvidence, Place, PlacemarksRepository } from "@placemarks/domain";
 import type {
@@ -129,15 +132,8 @@ export interface ProjectionStats {
   omittedImages?: string[];
 }
 
-export async function projectGuide(
-  repo: PlacemarksRepository,
-  listId: string,
-): Promise<{ guide: SharedGuide; stats: ProjectionStats } | undefined> {
-  const list = await repo.getList(listId);
-  if (!list) return undefined;
-  const blocks = await repo.getGuideBlocks(listId);
-
-  const stats: ProjectionStats = {
+function newStats(): ProjectionStats {
+  return {
     places: 0,
     sections: 0,
     sharedNotes: 0,
@@ -145,20 +141,93 @@ export async function projectGuide(
     imagesOmitted: false,
     omittedImages: [],
   };
+}
+
+// A block's public identity derives from (but never leaks) its private id —
+// stable across reorders, opaque to readers.
+const publicBlockId = async (privateId: string): Promise<string> =>
+  `b${(await contentHash(`block:${privateId}`)).slice(0, 16)}`;
+
+/**
+ * A shared **list** projects the list's place blocks — no narrative sections;
+ * each place's shareable notes ride along (spec/src/sharing.md §First-release
+ * simplifications). Title = list name.
+ */
+export async function projectList(
+  repo: PlacemarksRepository,
+  listId: string,
+): Promise<{ guide: SharedGuide; stats: ProjectionStats } | undefined> {
+  const list = await repo.getList(listId);
+  if (!list) return undefined;
+  const blocks = await repo.getListBlocks(listId);
+
+  const stats = newStats();
   const noteImages = (body: string) => {
     if (!containsImages(body)) return;
     stats.imagesOmitted = true;
     stats.omittedImages?.push(...omittedImageAlts(body));
   };
   const sharedBlocks: SharedBlock[] = [];
-  // A block's public identity derives from (but never leaks) its private id —
-  // stable across reorders, opaque to readers.
-  const publicBlockId = async (privateId: string): Promise<string> =>
-    `b${(await contentHash(`block:${privateId}`)).slice(0, 16)}`;
+
+  for (const view of blocks) {
+    const anchor = anchorForPlace(view.place);
+    if (!anchor) {
+      stats.omittedPlaces += 1;
+      continue;
+    }
+    const shareableNotes = (await repo.listNotesForPlace(view.place.id)).filter((n) => n.shareable);
+    for (const shared of shareableNotes) noteImages(shared.body);
+    stats.places += 1;
+    stats.sharedNotes += shareableNotes.length;
+    sharedBlocks.push({
+      id: await publicBlockId(view.block.id),
+      type: "place",
+      place: anchor,
+      ...(shareableNotes.length > 0 ? { notes: shareableNotes.map(toSharedNote) } : {}),
+    });
+  }
+
+  // The document mirrors the spec's schema exactly — the local marker is a
+  // viewer-side concern, not part of the shared contract.
+  const base = {
+    v: 1 as const,
+    kind: "list" as const,
+    title: list.name,
+    blocks: sharedBlocks,
+  };
+  const guide: SharedGuide = { ...base, contentHash: await contentHash(base) };
+  return { guide, stats };
+}
+
+/**
+ * A shared **post** projects the post's full block sequence — prose sections
+ * (each section's own shareable post note), place embeds with explicitly
+ * attached shareable notes and selected tags — plus a reference to its list:
+ * the list's title always, its public slug when the caller resolved one
+ * (spec/src/posts.md §Publishing).
+ */
+export async function projectPost(
+  repo: PlacemarksRepository,
+  postId: string,
+  listSlug?: string,
+): Promise<{ guide: SharedGuide; stats: ProjectionStats } | undefined> {
+  const post = await repo.getPost(postId);
+  if (!post) return undefined;
+  const list = await repo.getList(post.listId);
+  if (!list) return undefined;
+  const blocks = await repo.getPostBlocks(postId);
+
+  const stats = newStats();
+  const noteImages = (body: string) => {
+    if (!containsImages(body)) return;
+    stats.imagesOmitted = true;
+    stats.omittedImages?.push(...omittedImageAlts(body));
+  };
+  const sharedBlocks: SharedBlock[] = [];
 
   for (const view of blocks) {
     if (view.block.content.type === "section") {
-      // A section's own list note travels only when marked shareable.
+      // A section's own post note travels only when marked shareable.
       if (!view.sectionNote?.shareable) continue;
       stats.sections += 1;
       noteImages(view.sectionNote.body);
@@ -175,24 +244,27 @@ export async function projectGuide(
       stats.omittedPlaces += 1;
       continue;
     }
-    const shareableNotes = (await repo.listNotesForPlace(place.id)).filter((n) => n.shareable);
-    for (const shared of shareableNotes) noteImages(shared.body);
+    // Posts carry explicitly attached notes and selected tags — the durable
+    // edges, not everything shareable on the place.
+    const attachedNotes = (view.attachments ?? []).map((a) => a.note).filter((n) => n.shareable);
+    for (const shared of attachedNotes) noteImages(shared.body);
+    const selectedTags = (view.tagSelections ?? []).map((s) => s.tag.name);
     stats.places += 1;
-    stats.sharedNotes += shareableNotes.length;
+    stats.sharedNotes += attachedNotes.length;
     sharedBlocks.push({
       id: await publicBlockId(view.block.id),
       type: "place",
       place: anchor,
-      ...(shareableNotes.length > 0 ? { notes: shareableNotes.map(toSharedNote) } : {}),
-      // Tags stay private until explicit BlockTagSelection lands (spec/src/sharing.md).
+      ...(attachedNotes.length > 0 ? { notes: attachedNotes.map(toSharedNote) } : {}),
+      ...(selectedTags.length > 0 ? { tags: selectedTags } : {}),
     });
   }
 
-  // The document mirrors the spec's schema exactly — the local marker colour
-  // is a viewer-side concern, not part of the shared contract.
   const base = {
     v: 1 as const,
-    title: list.name,
+    kind: "post" as const,
+    title: post.title,
+    list: { title: list.name, ...(listSlug ? { slug: listSlug } : {}) },
     blocks: sharedBlocks,
   };
   const guide: SharedGuide = { ...base, contentHash: await contentHash(base) };

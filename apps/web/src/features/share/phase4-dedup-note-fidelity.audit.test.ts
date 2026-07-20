@@ -1,5 +1,5 @@
 /** Place deduplication must not discard the guide prose attached to that place. */
-import type { PoiResolver } from "@placemarks/domain";
+import { markerAt, type PoiResolver } from "@placemarks/domain";
 import type { SharedGuide } from "@placemarks/schemas";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -33,6 +33,7 @@ describe("Phase 4 guide-import note fidelity after deduplication", () => {
       await repo.createList({
         id: "list-1",
         name: guide.title,
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });

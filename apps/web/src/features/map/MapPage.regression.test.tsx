@@ -28,7 +28,7 @@ vi.mock("../../data/hooks", () => ({
     {
       id: "takeout-list",
       name: "Takeout",
-      color: "#2563eb",
+      marker: { color: "#2563eb", icon: "circle" },
       createdAt: "2026-07-18T12:00:00.000Z",
       updatedAt: "2026-07-18T12:00:00.000Z",
     },
@@ -59,7 +59,7 @@ vi.mock("../picker/CandidatePicker", () => ({ CandidatePicker: () => null }));
 vi.mock("../picker/ManualPinDialog", () => ({ ManualPinDialog: () => null }));
 
 describe("Phase 3 imported map markers", () => {
-  it("keeps an unlinked imported place in its list colour", () => {
+  it("keeps an unlinked imported place in its list colour, flagged unlinked", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
     render(
@@ -68,8 +68,11 @@ describe("Phase 3 imported map markers", () => {
       </QueryClientProvider>,
     );
 
+    // 2026-07-19 (spec/src/map-view.md): list identity owns the pin's look —
+    // an unlinked place wears its list marker colour; the `unlinked` flag only
+    // drives the small "not linked" dot, never a special colour.
     expect(fixture.capturedProps?.placePins).toEqual([
-      expect.objectContaining({ placeId: "imported-place", color: "#2563eb", unlinked: false }),
+      expect.objectContaining({ placeId: "imported-place", color: "#2563eb", unlinked: true }),
     ]);
   });
 });

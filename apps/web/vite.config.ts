@@ -36,16 +36,42 @@ export default defineConfig(({ command, mode }) => {
     }
     // Copying the development/demo URLs into env vars is not a production
     // provider path. Matching operates on the parsed, canonical hostname:
-    // encoded dots cannot hide a demo host, and demo-looking text in a path
-    // or a longer unrelated hostname is not a match.
+    // encoded dots cannot hide a demo host, a trailing root-dot spelling is
+    // the same host, and demo-looking text in a path or a longer unrelated
+    // hostname is not a match. A value that does not parse as a URL at all is
+    // not a provider path either — the build fails closed rather than
+    // shipping a config nothing can fetch from.
     const hostnameOf = (value: string | undefined): string | undefined => {
       if (!value) return undefined;
       try {
-        return new URL(value).hostname.toLowerCase();
+        return new URL(value).hostname.toLowerCase().replace(/\.+$/, "");
       } catch {
         return undefined;
       }
     };
+    // A same-origin relative path (a self-hosted style/endpoint served with
+    // the app) is a valid production configuration with no hostname of its
+    // own; anything that parses as neither absolute nor relative is not a
+    // provider path at all.
+    const isRelativePath = (value: string | undefined): boolean => {
+      if (!value || !value.startsWith("/")) return false;
+      try {
+        new URL(value, "https://self.invalid");
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const malformed = REQUIRED_PROVIDER_VARS.filter((key) => {
+      const value = providerValue(key);
+      return hostnameOf(value) === undefined && !isRelativePath(value);
+    });
+    if (malformed.length > 0) {
+      throw new Error(
+        `production build fails closed: ${malformed.join(", ")} are not valid provider URLs — ` +
+          "point every VITE_ provider variable at a contracted or self-hosted deployment.",
+      );
+    }
     const demo = REQUIRED_PROVIDER_VARS.filter((key) =>
       DEVELOPMENT_ONLY_HOSTS.some((host) => hostnameOf(providerValue(key)) === host),
     );

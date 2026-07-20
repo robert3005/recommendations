@@ -3,7 +3,14 @@
  * round-trips. Interchange metadata must survive the slow/review path just as
  * it does immediate placement, and safety encoding must not mutate owned data.
  */
-import type { List, Note, Place, PoiResolver, SearchProvider } from "@placemarks/domain";
+import {
+  type List,
+  markerAt,
+  type Note,
+  type Place,
+  type PoiResolver,
+  type SearchProvider,
+} from "@placemarks/domain";
 import { strToU8 } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -25,7 +32,7 @@ function noMatches(): { search: SearchProvider; resolver: PoiResolver } {
 }
 
 function list(id: string): List {
-  return { id, name: "Portable list", createdAt: NOW, updatedAt: NOW };
+  return { id, name: "Portable list", marker: markerAt(0), createdAt: NOW, updatedAt: NOW };
 }
 
 describe("Phase 3 persisted interchange fidelity follow-up", () => {

@@ -18,7 +18,7 @@ import type { SharedGuide, SharedPlaceAnchor, SharedPlaceEvidence } from "@place
 import type { ImportBatchRow, ImportItemRow } from "../../data/db";
 import type { DexieRepository } from "../../data/repo";
 import { newId } from "../../lib/id";
-import { nextUnusedColor } from "../../lib/markers";
+import { suggestMarker } from "../../lib/markers";
 import { evidenceFromShared, resolveSharedAnchor } from "./resolveShared";
 
 export interface SaveSharedResult {
@@ -26,6 +26,7 @@ export interface SaveSharedResult {
   added: number;
   duplicates: number;
   pending: number;
+  /** Narrative sections are a post's prose — they never import into a list. */
   sections: number;
 }
 
@@ -44,7 +45,7 @@ export async function saveSharedGuide(
     await repo.createList({
       id: listId,
       name: guide.title,
-      color: nextUnusedColor(lists),
+      marker: suggestMarker(lists),
       createdAt: now,
       updatedAt: now,
     });
@@ -55,7 +56,9 @@ export async function saveSharedGuide(
 
   for (const block of guide.blocks) {
     if (block.type === "section") {
-      await repo.addSectionBlock(listId, block.note.body, now, block.note.title);
+      // A shared post's embeds import into a list (spec/src/sharing.md §Public
+      // viewer); its narrative sections belong to the author's post and are
+      // counted for the report, never imported as list content.
       result.sections += 1;
       continue;
     }

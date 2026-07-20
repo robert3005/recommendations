@@ -6,7 +6,7 @@ import { DISCOVER_MIN_ZOOM, MAP_STYLE_URL } from "../../config";
 import { useLibraryPlaces, useListMembership, useLists } from "../../data/hooks";
 import { useDexieRepo, useRepo } from "../../data/RepoContext";
 import { newId } from "../../lib/id";
-import { pinColorForLists } from "../../lib/markers";
+import { DEFAULT_PIN_COLOR, MULTI_LIST_PIN_COLOR, pinMarkerForLists } from "../../lib/markers";
 import { nowIso } from "../../lib/time";
 import { initialViewport, persistViewport } from "../../lib/viewport";
 import { MapView, type PlacePinFeature, type PoiPinFeature } from "../../map/MapView";
@@ -95,10 +95,15 @@ export function MapPage() {
         name: facts.name ?? "Place",
         lat: facts.lat,
         lng: facts.lng,
-        // Only deliberate manual pins keep the distinct orange marker; an
-        // imported-but-unlinked place wears its list colour like any other.
-        unlinked: view.place.resolutionState === "unlinked" && view.place.origin === "manual",
-        color: pinColorForLists(memberLists),
+        // An unlinked pin wears its list's marker with a small "not linked"
+        // dot — list identity owns the pin's look (spec/src/map-view.md).
+        unlinked: view.place.resolutionState === "unlinked",
+        color:
+          pinMarkerForLists(memberLists).kind === "single"
+            ? (memberLists[0]?.marker.color ?? DEFAULT_PIN_COLOR)
+            : memberLists.length > 1
+              ? MULTI_LIST_PIN_COLOR
+              : DEFAULT_PIN_COLOR,
       },
     ];
   });
@@ -297,7 +302,7 @@ export function MapPage() {
                 await repo.createList({
                   id: listId,
                   name: listTarget.name,
-                  color: listTarget.color,
+                  marker: listTarget.marker,
                   createdAt: nowIso(),
                   updatedAt: nowIso(),
                 });

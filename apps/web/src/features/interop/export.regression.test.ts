@@ -1,6 +1,7 @@
 import {
   createOsmPlace,
   type List,
+  markerAt,
   type Note,
   type Place,
   type PoiResolver,
@@ -15,7 +16,13 @@ import { runImport } from "./importer";
 import { parseGeoJson, parseSavedCsv } from "./parse";
 
 const NOW = "2026-07-18T12:00:00.000Z";
-const list: List = { id: "list", name: "Interop", createdAt: NOW, updatedAt: NOW };
+const list: List = {
+  id: "list",
+  name: "Interop",
+  marker: markerAt(0),
+  createdAt: NOW,
+  updatedAt: NOW,
+};
 
 function importedPlace(overrides: Partial<Place> = {}): Place {
   return {

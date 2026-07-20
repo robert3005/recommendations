@@ -1,5 +1,6 @@
 export * from "./entities";
 export * from "./geo";
+export * from "./markers";
 export * from "./match";
 export * from "./osm";
 export * from "./place";
@@ -8,4 +9,5 @@ export * from "./providers";
 export * from "./rank";
 export * from "./repository";
 export * from "./resolution";
+export * from "./sync";
 export * from "./tags";

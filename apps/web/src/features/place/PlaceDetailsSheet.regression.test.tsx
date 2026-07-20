@@ -1,3 +1,4 @@
+import { markerAt } from "@placemarks/domain";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -14,7 +15,13 @@ describe("import licensing boundary", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
     try {
-      await repo.createList({ id: "l1", name: "Takeout", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "l1",
+        name: "Takeout",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const imported = await repo.addToList(
         "l1",
         {

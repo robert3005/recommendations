@@ -166,7 +166,7 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
                   await repo.createList({
                     id: listId,
                     name: target.name,
-                    color: target.color,
+                    marker: target.marker,
                     createdAt: nowIso(),
                     updatedAt: nowIso(),
                   });

@@ -1,5 +1,5 @@
 /** User-facing acceptance check for spec/src/interop.md's My Maps export contract. */
-import type { GuideBlockView, List, Place } from "@placemarks/domain";
+import { type List, type ListBlockView, markerAt, type Place } from "@placemarks/domain";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ListPage } from "./ListPage";
@@ -8,7 +8,7 @@ const NOW = "2026-07-19T12:00:00.000Z";
 const list: List = {
   id: "large-list",
   name: "Large trip",
-  color: "#dc2626",
+  marker: markerAt(0),
   createdAt: NOW,
   updatedAt: NOW,
 };
@@ -23,7 +23,7 @@ const place: Place = {
   updatedAt: NOW,
 };
 
-const blocks: GuideBlockView[] = Array.from({ length: 2_001 }, (_, index) => {
+const blocks: ListBlockView[] = Array.from({ length: 2_001 }, (_, index) => {
   const member = { ...place, id: `place-${index}` };
   return {
     block: {
@@ -44,8 +44,9 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../../data/hooks", () => ({
-  useGuide: () => list,
-  useGuideBlocks: () => blocks,
+  useList: () => list,
+  useListBlocks: () => blocks,
+  useLists: () => [list],
 }));
 
 vi.mock("../../data/RepoContext", () => ({

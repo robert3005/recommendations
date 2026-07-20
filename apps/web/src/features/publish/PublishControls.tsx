@@ -8,7 +8,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useState } from "react";
 import { useDexieRepo } from "../../data/RepoContext";
 import { nowIso } from "../../lib/time";
-import { projectGuide } from "../share/project";
+import { projectList } from "../share/project";
 import { publicationForList, publishList, revokePublication } from "./publication";
 
 export function PublishControls({ listId }: { listId: string }) {
@@ -22,7 +22,7 @@ export function PublishControls({ listId }: { listId: string }) {
   const pendingChanges = useLiveQuery(async () => {
     if (!publication?.lastPublishedLocalRevision) return false;
     try {
-      const projection = await projectGuide(repo, listId);
+      const projection = await projectList(repo, listId);
       return projection
         ? projection.guide.contentHash !== publication.lastPublishedLocalRevision
         : false;
@@ -86,7 +86,7 @@ export function PublishControls({ listId }: { listId: string }) {
             onClick={() =>
               // Preflight first: nothing leaves the device until the exact
               // projection is disclosed and confirmed (spec/src/sharing.md).
-              void projectGuide(repo, listId).then((projection) => {
+              void projectList(repo, listId).then((projection) => {
                 if (projection) setPreflight(projection.guide);
               })
             }

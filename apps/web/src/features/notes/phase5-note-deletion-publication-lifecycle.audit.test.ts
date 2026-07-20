@@ -1,5 +1,5 @@
 /** A deleted public note must not leave unreachable public projections behind. */
-import type { Note, Publication } from "@placemarks/domain";
+import { markerAt, type Note, type Publication } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
 
@@ -29,6 +29,7 @@ describe("Phase 5 note-deletion publication lifecycle", () => {
       await repo.createList({
         id: "list-1",
         name: "Published guide",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });

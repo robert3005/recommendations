@@ -3,7 +3,7 @@
  * These cases focus on final-state LWW/edge invariants not exercised by the
  * existing replace-graph and identity-coalescing audit suites.
  */
-import type { Note } from "@placemarks/domain";
+import { markerAt, type Note } from "@placemarks/domain";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
@@ -57,8 +57,18 @@ async function rewriteArchive(backup: Blob, mutate: (data: MutableData) => void)
   return new Blob([zipped.slice().buffer as ArrayBuffer], { type: "application/zip" });
 }
 
+// Live list markers are unique (colour, icon) pairs; a counter keeps fixture
+// lists distinct even across merged libraries.
+let markerCounter = 0;
+
 async function seedManual(repo: DexieRepository, listId = "list-1"): Promise<string> {
-  await repo.createList({ id: listId, name: listId, createdAt: NOW, updatedAt: NOW });
+  await repo.createList({
+    id: listId,
+    name: listId,
+    marker: markerAt(markerCounter++),
+    createdAt: NOW,
+    updatedAt: NOW,
+  });
   return (
     await repo.addToList(
       listId,
@@ -108,6 +118,7 @@ describe("Phase 2 backup place-shape and attribution validation", () => {
       await source.createList({
         id: "source-list",
         name: "source-list",
+        marker: markerAt(markerCounter++),
         createdAt: NOW,
         updatedAt: NOW,
       });
@@ -187,7 +198,7 @@ describe("Phase 2 backup merge LWW and final graph", () => {
         /block|place|graph|membership/i,
       );
       expect(await repo.getPlace(placeId)).toBeDefined();
-      expect(await repo.getGuideBlocks("list-1")).toHaveLength(1);
+      expect(await repo.getListBlocks("list-1")).toHaveLength(1);
     } finally {
       repo.db.close();
     }
@@ -259,9 +270,16 @@ describe("Phase 2 backup merge LWW and final graph", () => {
         updatedAt: NOW,
       };
       await repo.createNote(note);
-      const block = (await repo.getGuideBlocks("list-1"))[0]?.block;
-      if (!block) throw new Error("block fixture is missing");
-      await repo.attachNoteToBlock(block.id, note.id, NOW);
+      // Attachments join notes to POST place blocks (2026-07-19 pivot).
+      await repo.createPost({
+        id: "post-1",
+        title: "list-1",
+        listId: "list-1",
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      const block = await repo.embedPlaceInPost("post-1", placeId, NOW);
+      await repo.attachNoteToPostBlock(block.id, note.id, NOW);
       const duplicateArchive = await rewriteArchive(await exportBackup(repo, NOW), (data) => {
         const attachment = row(data, "blockNoteAttachments", () => true);
         attachment.id = "different-edge-id";

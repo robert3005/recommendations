@@ -1,5 +1,5 @@
 /** Every local edit and its publication dirty marker are one IndexedDB commit. */
-import type { Note, Publication } from "@placemarks/domain";
+import { markerAt, type Note, type Publication } from "@placemarks/domain";
 import { describe, expect, it, vi } from "vitest";
 import { DexieRepository } from "../../data/repo";
 
@@ -33,12 +33,13 @@ describe("Phase 5 additional edit/dirty atomicity", () => {
       await repo.createList({
         id: "list-1",
         name: "Atomic reorder",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });
       await addManual(repo, "First");
       await addManual(repo, "Second");
-      const beforeBlocks = (await repo.getGuideBlocks("list-1")).map(({ block }) => block.id);
+      const beforeBlocks = (await repo.getListBlocks("list-1")).map(({ block }) => block.id);
       const hosted = publication("publication-list", { kind: "list", id: "list-1" });
       await repo.db.publications.put(hosted);
 
@@ -49,7 +50,7 @@ describe("Phase 5 additional edit/dirty atomicity", () => {
         repo.moveBlock(beforeBlocks[1] ?? "", beforeBlocks[0] ?? "", LATER),
       ).rejects.toThrow(/dirty-marker/i);
 
-      expect((await repo.getGuideBlocks("list-1")).map(({ block }) => block.id)).toEqual(
+      expect((await repo.getListBlocks("list-1")).map(({ block }) => block.id)).toEqual(
         beforeBlocks,
       );
       expect(await repo.db.publications.get(hosted.id)).toEqual(hosted);
@@ -66,11 +67,12 @@ describe("Phase 5 additional edit/dirty atomicity", () => {
       await repo.createList({
         id: "list-1",
         name: "Atomic removal",
+        marker: markerAt(0),
         createdAt: NOW,
         updatedAt: NOW,
       });
       const place = (await addManual(repo, "Must remain")).place;
-      const block = (await repo.getGuideBlocks("list-1"))[0]?.block;
+      const block = (await repo.getListBlocks("list-1"))[0]?.block;
       if (!block) throw new Error("block fixture missing");
       const hosted = publication("publication-list", { kind: "list", id: "list-1" });
       await repo.db.publications.put(hosted);
@@ -80,7 +82,7 @@ describe("Phase 5 additional edit/dirty atomicity", () => {
       );
       await expect(repo.removeBlock(block.id, LATER)).rejects.toThrow(/dirty-marker/i);
 
-      expect(await repo.getGuideBlocks("list-1")).toHaveLength(1);
+      expect(await repo.getListBlocks("list-1")).toHaveLength(1);
       expect(await repo.getPlace(place.id)).toBeDefined();
       expect(await repo.db.publications.get(hosted.id)).toEqual(hosted);
       expect(await repo.db.publicationOutbox.count()).toBe(0);
@@ -93,7 +95,13 @@ describe("Phase 5 additional edit/dirty atomicity", () => {
   it("rolls a shareable note edit and every affected publication back together", async () => {
     const repo = new DexieRepository(`phase5-atomic-note-${crypto.randomUUID()}`);
     try {
-      await repo.createList({ id: "list-1", name: "Atomic note", createdAt: NOW, updatedAt: NOW });
+      await repo.createList({
+        id: "list-1",
+        name: "Atomic note",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
       const place = (await addManual(repo, "Noted place")).place;
       const note: Note = {
         id: "note-1",

@@ -12,7 +12,7 @@ import { SHARE_API_URL } from "../../config";
 import type { DexieRepository } from "../../data/repo";
 import { newId } from "../../lib/id";
 import { count, reportError } from "../../lib/metrics";
-import { anchorForPlace, projectGuide, withImagePlaceholders } from "../share/project";
+import { anchorForPlace, projectList, projectPost, withImagePlaceholders } from "../share/project";
 
 /** The hosted publication for a note page, if any. */
 export async function publicationForNote(
@@ -40,16 +40,16 @@ export async function publishNote(
   if (publication?.status === "revoked") publication = undefined;
   const slug = publication?.slug ?? slugFor(note.title ?? contextTitle);
   // A place note carries its durable OSM anchor (ref + copied recovery
-  // evidence); a list note carries its parent list's actual name — the
+  // evidence); a post note carries its parent post's actual title — the
   // published context is authoritative data, never a caller-supplied label.
-  let context: SharedNote["context"] = { kind: "list", listTitle: contextTitle };
+  let context: SharedNote["context"] = { kind: "post", postTitle: contextTitle };
   if (note.target.kind === "place") {
     const place = await repo.getPlace(note.target.placeId);
     const anchor = place ? anchorForPlace(place) : undefined;
     if (anchor) context = { kind: "place", place: anchor };
   } else {
-    const list = await repo.getList(note.target.listId);
-    if (list) context = { kind: "list", listTitle: list.name };
+    const post = await repo.getPost(note.target.postId);
+    if (post) context = { kind: "post", postTitle: post.title };
   }
   const document: SharedNote = {
     v: 1,
@@ -129,9 +129,36 @@ async function projectListDocument(
   repo: DexieRepository,
   listId: string,
 ): Promise<{ body: string; revision: string } | undefined> {
-  const projection = await projectGuide(repo, listId);
+  const projection = await projectList(repo, listId);
   if (!projection) return undefined;
   return { body: JSON.stringify(projection.guide), revision: projection.guide.contentHash };
+}
+
+/** The hosted publication for a post, if any. */
+export async function publicationForPost(
+  repo: DexieRepository,
+  postId: string,
+): Promise<Publication | undefined> {
+  const rows = (await repo.db.publications.toArray()).filter(
+    (p) => !p.deleted && p.target.kind === "post" && p.target.id === postId && p.mode === "hosted",
+  );
+  // A live publication outranks a revoked tombstone of the same target.
+  return rows.find((p) => p.status !== "revoked") ?? rows[0];
+}
+
+/**
+ * The list's public slug a shared post may carry (spec/src/posts.md
+ * §Publishing): only a slug that has actually been claimed publicly; a
+ * revoked list page drops the link at the next successful post publish.
+ */
+export async function publicListSlug(
+  repo: DexieRepository,
+  listId: string,
+): Promise<string | undefined> {
+  const publication = await publicationForList(repo, listId);
+  if (!publication?.slug) return undefined;
+  if (publication.status === "revoked" || publication.status === "revoking") return undefined;
+  return publication.publishedRevision !== undefined ? publication.slug : undefined;
 }
 
 /** Create (or re-queue) the hosted publication for a list and run the outbox. */
@@ -181,6 +208,76 @@ export async function publishList(
   await enqueuePublish(repo, publication.id, document.revision, document.body, now);
   await runPublicationOutbox(repo, fetcher);
   return (await repo.db.publications.get(publication.id)) ?? publication;
+}
+
+/** Create (or re-queue) the hosted publication for a post and run the outbox. */
+export async function publishPost(
+  repo: DexieRepository,
+  postId: string,
+  now: string,
+  fetcher: typeof fetch = fetch,
+): Promise<Publication | undefined> {
+  const post = await repo.getPost(postId);
+  if (!post) return undefined;
+  // The shared post names its list and carries the list's public slug when
+  // one exists (spec/src/posts.md §Publishing).
+  const listSlug = await publicListSlug(repo, post.listId);
+  const projection = await projectPost(repo, postId, listSlug);
+  if (!projection) return undefined;
+  const document = {
+    body: JSON.stringify(projection.guide),
+    revision: projection.guide.contentHash,
+  };
+
+  let publication = await publicationForPost(repo, postId);
+  // A revoked slug is tombstoned forever — publishing again means a fresh
+  // publication with a fresh claim, never an update to the tombstone.
+  if (publication?.status === "revoked") publication = undefined;
+  if (!publication) {
+    const credentialId = newId();
+    await repo.db.credentials.put({
+      id: credentialId,
+      token: newEditorToken(),
+      createdAt: now,
+      updatedAt: now,
+    });
+    publication = {
+      id: newId(),
+      target: { kind: "post", id: postId },
+      mode: "hosted",
+      channel: "posts",
+      slug: slugFor(post.title),
+      credentialId,
+      status: "queued",
+      localRevision: document.revision,
+      createdAt: now,
+      updatedAt: now,
+    };
+  } else {
+    publication = {
+      ...publication,
+      status: publication.status === "published" ? "queued" : publication.status,
+      localRevision: document.revision,
+      updatedAt: now,
+    };
+  }
+  await repo.db.publications.put(publication);
+  await enqueuePublish(repo, publication.id, document.revision, document.body, now);
+  await runPublicationOutbox(repo, fetcher);
+  return (await repo.db.publications.get(publication.id)) ?? publication;
+}
+
+/**
+ * The share-service path segment for a publication: its recorded channel when
+ * present (a pre-pivot guide migrated onto a post keeps serving from
+ * /s/lists under its original slug — spec/src/sharing.md §Share service),
+ * else the segment implied by the target kind.
+ */
+export function publicationChannel(publication: Publication): "lists" | "posts" | "notes" {
+  if (publication.channel) return publication.channel;
+  if (publication.target.kind === "note") return "notes";
+  if (publication.target.kind === "post") return "posts";
+  return "lists";
 }
 
 /**
@@ -351,7 +448,7 @@ export async function runPublicationOutbox(
       "idempotency-key": job.id,
       "content-type": "application/json",
     };
-    const base = `${SHARE_API_URL}/s/${publication.target.kind === "note" ? "notes" : "lists"}`;
+    const base = `${SHARE_API_URL}/s/${publicationChannel(publication)}`;
     const nowIso = new Date().toISOString();
 
     try {
@@ -475,7 +572,14 @@ export async function runPublicationOutbox(
         attempts: job.attempts + 1,
         lastError: err instanceof Error ? err.message : String(err),
       });
-      if (!transient && job.attempts >= 5) await repo.db.publicationOutbox.delete(job.id);
+      // Exhausted PUBLISH drafts are dropped — but a revocation is never
+      // abandoned: the pending DELETE (under its original idempotency key) is
+      // what keeps Retry an unpublish and can never turn it back into a
+      // publish (spec/src/sharing.md §Failure isolation and revocation
+      // precedence).
+      if (!transient && job.attempts >= 5 && job.action === "publish") {
+        await repo.db.publicationOutbox.delete(job.id);
+      }
       stalled.add(job.publicationId);
     }
   }
