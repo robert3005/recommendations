@@ -1,4 +1,5 @@
 import { createShareApp, MemoryStorage } from "@placemarks/share-service";
+import { createSyncApp, MemorySyncStorage } from "@placemarks/sync-service";
 import { HttpResponse, http } from "msw";
 import { OSM_API_URL, OVERPASS_URL, PHOTON_URL } from "../config";
 import {
@@ -90,8 +91,36 @@ class PersistentMemoryStorage extends MemoryStorage {
 
 const shareApp = createShareApp({ storage: new PersistentMemoryStorage() });
 
+/**
+ * The dev/e2e sync service is likewise the REAL service app over in-memory
+ * storage (spec/src/storage-sync.md). Login codes are "delivered" to
+ * localStorage so the dev UI and e2e flows can read them (there is no real
+ * mailer in the mock environment).
+ */
+const SYNC_CODE_KEY = "placemarks:msw-sync-code";
+
+const syncApp = createSyncApp({
+  storage: new MemorySyncStorage(),
+  mailer: {
+    async send(email, code) {
+      try {
+        globalThis.localStorage?.setItem(SYNC_CODE_KEY, JSON.stringify({ email, code }));
+      } catch {
+        // best effort — tests can also read the control endpoint below
+      }
+      lastSyncCode = { email, code };
+    },
+  },
+});
+let lastSyncCode: { email: string; code: string } | undefined;
+
 export const handlers = [
   http.all(/\/s\/(lists|posts|notes)(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
+  http.all(/\/sync\/.*$/, ({ request }) => syncApp.fetch(request.clone())),
+  // Test/dev-only: the "email" delivery of the last login code.
+  http.get(/\/__test\/sync-code$/, () =>
+    lastSyncCode ? HttpResponse.json(lastSyncCode) : new HttpResponse(null, { status: 404 }),
+  ),
   http.get(`${PHOTON_URL}/api`, ({ request }) => {
     const q = new URL(request.url).searchParams.get("q") ?? "";
     if (q.toLowerCase().includes("migrado")) return HttpResponse.json(photonMigradoResponse);

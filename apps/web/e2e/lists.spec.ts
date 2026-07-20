@@ -1,9 +1,17 @@
 /**
  * Lists-first flow (spec/src/vision.md): adding a place to a list IS the save;
- * lists carry a user-selected marker; the Lists tab reads list contents and can
- * create lists (2026-07-18) — contents are edited elsewhere.
+ * lists carry a user-selected marker; the Lists home reads list contents and can
+ * create lists (2026-07-18) — contents are edited elsewhere. The canvas is one
+ * collapse away (spec/src/map-view.md §The grammar), never a tab switch.
  */
 import { expect, type Page, test } from "@playwright/test";
+
+/** Step the pane toward the map: expanded → split → collapsed. */
+async function collapsePane(page: Page, times = 1) {
+  for (let index = 0; index < times; index += 1) {
+    await page.getByTestId("pane-collapse").click();
+  }
+}
 
 async function openPlace(page: Page, optionName: RegExp) {
   const search = page.getByRole("combobox", { name: "Search places" });
@@ -13,9 +21,11 @@ async function openPlace(page: Page, optionName: RegExp) {
   await expect(page.getByTestId("place-sheet")).toBeVisible();
 }
 
-test("adding to a list saves the place; the Lists tab reads the marked list", async ({ page }) => {
+test("adding to a list saves the place; the Lists home reads the marked list", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+  // The canvas chrome (search) is reachable once the pane is not expanded.
+  await collapsePane(page);
 
   // Café Central: never explicitly saved — adding it to a new list saves it.
   await openPlace(page, /Café Central/);
@@ -37,13 +47,16 @@ test("adding to a list saves the place; the Lists tab reads the marked list", as
   await expect(details).toBeVisible();
   await details.getByRole("button", { name: "Close" }).click();
 
-  // The Lists tab reads: marker + both places in order, no edit affordances.
+  // The Lists home reads: marker + both places in order, no edit affordances.
   await page
     .getByRole("navigation", { name: "Primary" })
     .getByRole("link", { name: "Lists" })
     .click();
   await expect(page.getByTestId("lists-page")).toBeVisible();
-  await expect(page.getByTestId("marker-glyph")).toHaveAttribute("data-color", "#dc2626");
+  await expect(page.getByTestId("list-row").getByTestId("marker-glyph")).toHaveAttribute(
+    "data-color",
+    "#dc2626",
+  );
   await page.getByRole("link", { name: /Lisbon favourites/ }).click();
   await expect(page.getByTestId("list-page")).toBeVisible();
   await expect(page.getByTestId("list-marker")).toHaveAttribute("data-color", "#dc2626");
@@ -66,6 +79,7 @@ test("Edit mode reorders, renames, recolours, and removes; reading stays read-on
 }) => {
   await page.goto("/");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+  await collapsePane(page);
 
   // Two places into a fresh list.
   await openPlace(page, /Café Central/);
@@ -107,29 +121,33 @@ test("Edit mode reorders, renames, recolours, and removes; reading stays read-on
   await items.nth(1).getByTestId("remove-from-list").click();
   await expect(items).toHaveCount(1);
   await page.getByTestId("edit-list").click();
+  // The canvas beside the pane projects the surviving pin — home shows all lists.
   await page
     .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Map" })
+    .getByRole("link", { name: "Lists" })
     .click();
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "1");
 });
 
-test("a list created on the Lists tab is offered on the place card", async ({ page }) => {
+test("a list created on the Lists home is offered on the place card", async ({ page }) => {
   // Lists exist on their own (2026-07-18): created here, before any place joins.
+  // The old /lists path still lands on the home via redirect.
   await page.goto("/lists");
+  await expect(page.getByTestId("lists-page")).toBeVisible();
   await page.getByTestId("new-list").click();
   await page.getByLabel("New list name").fill("Weekend");
   await expect(page.getByTestId("marker-#dc2626-circle")).toBeChecked();
   await page.getByTestId("create-list").click();
   const entry = page.getByRole("link", { name: /Weekend/ });
   await expect(entry).toBeVisible();
-  await expect(page.getByTestId("marker-glyph")).toHaveAttribute("data-color", "#dc2626");
+  await expect(page.getByTestId("list-row").getByTestId("marker-glyph")).toHaveAttribute(
+    "data-color",
+    "#dc2626",
+  );
 
-  // The app-created list receives its first place from the map card.
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Map" })
-    .click();
+  // The app-created list receives its first place from the card on the canvas —
+  // one collapse away, on the same route.
+  await collapsePane(page);
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
   await openPlace(page, /Café Central/);
   await page.getByTestId("place-sheet").getByTestId("add-to-list").selectOption({

@@ -12,6 +12,7 @@ import { useListPreviews } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import { newId } from "../../lib/id";
 import { nowIso } from "../../lib/time";
+import { useCanvasProjection } from "../../state/projection";
 import { MarkerGlyph } from "./MarkerGlyph";
 import { NewListForm } from "./NewListForm";
 
@@ -20,6 +21,9 @@ export function ListsPage() {
   const previews = useListPreviews();
   const [creating, setCreating] = useState(false);
   const lists = previews?.map((p) => p.list);
+  // Home projects all lists — every point wearing its list marker
+  // (spec/src/map-view.md §The grammar).
+  useCanvasProjection({ kind: "all" });
 
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="lists-page">
@@ -68,7 +72,7 @@ export function ListsPage() {
             <div className="flex items-start gap-3 px-1 py-3 hover:bg-stone-50">
               <MarkerGlyph marker={list.marker} size={20} />
               <div className="min-w-0 flex-1">
-                <Link to="/lists/$listId" params={{ listId: list.id }} className="block">
+                <Link to="/list/$listId" params={{ listId: list.id }} className="block">
                   <span className="font-medium text-stone-900">{list.name}</span>
                   <span className="ml-2 text-xs text-stone-500" data-testid="list-place-count">
                     {placeCount} {placeCount === 1 ? "place" : "places"}
@@ -82,7 +86,7 @@ export function ListsPage() {
               </div>
               {postCount > 0 ? (
                 <Link
-                  to="/lists/$listId"
+                  to="/list/$listId"
                   params={{ listId: list.id }}
                   hash="posts"
                   className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50"

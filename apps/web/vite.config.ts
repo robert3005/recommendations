@@ -54,7 +54,7 @@ export default defineConfig(({ command, mode }) => {
     // own; anything that parses as neither absolute nor relative is not a
     // provider path at all.
     const isRelativePath = (value: string | undefined): boolean => {
-      if (!value || !value.startsWith("/")) return false;
+      if (!value?.startsWith("/")) return false;
       try {
         new URL(value, "https://self.invalid");
         return true;

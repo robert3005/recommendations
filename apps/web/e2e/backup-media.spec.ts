@@ -10,6 +10,8 @@ const ONE_PIXEL_PNG = Buffer.from(
 test("a browser backup contains and checksums note media", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+  // Reach the canvas search beside the pane (spec/src/map-view.md §The grammar).
+  await page.getByTestId("pane-collapse").click();
 
   await page.getByRole("combobox", { name: "Search places" }).fill("cafe");
   await page.getByRole("option", { name: /Café Central/ }).click();

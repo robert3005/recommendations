@@ -11,6 +11,7 @@ import {
   type TeardownBlockers,
   TeardownRefusedError,
 } from "@placemarks/domain";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useEffect, useRef, useState } from "react";
 import { useListIdsForPlace, useLists, useNotesForPlace, usePlaceView } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
@@ -27,6 +28,46 @@ import { NavLinks } from "./NavLinks";
 import { OsmLink } from "./OsmLink";
 import { PlaceFields } from "./PlaceFields";
 import { TagEditor } from "./TagEditor";
+
+/** "Embed in post" appears while a post editor is open (spec/src/map-view.md). */
+function EmbedInPost({ placeId, memberListIds }: { placeId: string; memberListIds: string[] }) {
+  const repo = useRepo();
+  const embedTargetPostId = useUiStore((s) => s.embedTargetPostId);
+  const post = useLiveQuery(
+    () => (embedTargetPostId ? repo.getPost(embedTargetPostId) : undefined),
+    [repo, embedTargetPostId],
+  );
+  const [message, setMessage] = useState<string>();
+  if (!post) return null;
+  const isMember = memberListIds.includes(post.listId);
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        className="rounded bg-stone-800 px-2.5 py-1 text-xs font-medium text-white"
+        data-testid="embed-in-post"
+        onClick={() => {
+          void (async () => {
+            try {
+              // The one door: a place not yet in the post's list is added to
+              // the list first, then embedded (membership is existence).
+              if (!isMember) {
+                await repo.addToList(post.listId, { kind: "existing", placeId }, nowIso());
+              }
+              await repo.embedPlaceInPost(post.id, placeId, nowIso());
+              setMessage(`Embedded in “${post.title}”.`);
+            } catch (err) {
+              setMessage(err instanceof Error ? err.message : String(err));
+            }
+          })();
+        }}
+      >
+        {isMember ? "Embed in post" : "Add to list & embed in post"}
+      </button>
+      {message ? <p className="mt-1 text-xs text-stone-600">{message}</p> : null}
+    </div>
+  );
+}
 
 export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
   const repo = useRepo();
@@ -157,6 +198,11 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
           {message}
         </p>
       ) : null}
+
+      {/* An open post editor offers the embed gesture right on the card
+          (spec/src/posts.md §Authoring: browse-tap-embed; a non-member goes
+          through the one door — add to the list first, then embed). */}
+      <EmbedInPost placeId={view.place.id} memberListIds={memberListIds ?? []} />
 
       {/* Lists: the place card is the only write surface for lists. */}
       <div className="mt-4">

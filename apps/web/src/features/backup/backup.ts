@@ -1070,321 +1070,344 @@ export async function importBackup(
 
   let imported = 0;
   let conflictCopies = 0;
+  // Every row the restore actually writes syncs like any other local edit
+  // (spec/src/storage-sync.md) — skipped merge duplicates never re-enter the
+  // log under a fresh stamp.
+  const written: { table: string; row: { id: string } }[] = [];
 
-  await db.transaction("rw", [...tables.map(([, t]) => t), db.mediaBlobs], async () => {
-    if (mode === "replace") {
-      for (const [, table] of tables) await table.clear();
-      await db.mediaBlobs.clear();
-      for (const [key, table] of tables) {
-        // Derived index fields are recomputed, never trusted: stale refKeys in
-        // an archive could fork the same exact OSM identity after restore.
-        const rows =
-          key === "places"
-            ? data[key].map((row) => ({
-                ...row,
-                refKeys: allRefKeys(row as unknown as Place),
-              }))
-            : data[key];
-        // biome-ignore lint/suspicious/noExplicitAny: structural rows validated by zod
-        await (table as any).bulkPut(rows as any[]);
-        imported += data[key].length;
-      }
-    } else {
-      // Identity merge (spec/src/place-identity.md): the same exact OSM element —
-      // by current or historical ref — must not become two library places.
-      // Incoming duplicates are dropped and their edges rewritten to the retained
-      // PlaceId before the per-id merge.
-      const existingByRefKey = new Map<string, string>();
-      for (const row of await db.places.toArray()) {
-        if (row.deleted) continue;
-        for (const key of canonicalKeys(row)) existingByRefKey.set(key, row.id);
-      }
-      const remap = new Map<string, string>();
-      const incomingByRefKey = new Map<string, string>();
-      type EvidenceLike = { observedAt: string };
-      type PlaceShape = {
-        id: string;
-        deleted?: boolean;
-        currentOsmRef?: OsmElementRef;
-        osmRefHistory?: { ref: OsmElementRef }[];
-        firstSeen?: EvidenceLike;
-        lastVerified?: EvidenceLike;
-      };
-      const evidenceDonors: { retainedId: string; donor: PlaceShape }[] = [];
-      data.places = data.places.filter((place) => {
-        const row = place as unknown as PlaceShape;
-        if (row.deleted) return true;
-        const keys = canonicalKeys(row);
-        // The same exact OSM element must not arrive twice under two ids —
-        // nor collide with a different retained local place.
-        const retained =
-          keys.map((key) => existingByRefKey.get(key)).find((id) => id && id !== row.id) ??
-          keys.map((key) => incomingByRefKey.get(key)).find((id) => id && id !== row.id);
-        if (!retained) {
-          for (const key of keys) incomingByRefKey.set(key, row.id);
-          return true;
-        }
-        remap.set(row.id, retained);
-        evidenceDonors.push({ retainedId: retained, donor: row });
-        return false;
-      });
-      // Coalescing must never discard the dropped row's newer observation —
-      // the retained place keeps the earliest firstSeen and latest lastVerified.
-      for (const { retainedId, donor } of evidenceDonors) {
-        const graft = (target: PlaceShape): boolean => {
-          let changed = false;
-          if (
-            donor.lastVerified &&
-            (!target.lastVerified || donor.lastVerified.observedAt > target.lastVerified.observedAt)
-          ) {
-            target.lastVerified = donor.lastVerified;
-            changed = true;
-          }
-          if (
-            donor.firstSeen &&
-            (!target.firstSeen || donor.firstSeen.observedAt < target.firstSeen.observedAt)
-          ) {
-            target.firstSeen = donor.firstSeen;
-            changed = true;
-          }
-          return changed;
-        };
-        const incomingRetained = data.places.find((p) => p.id === retainedId) as
-          | PlaceShape
-          | undefined;
-        if (incomingRetained) {
-          graft(incomingRetained);
-          continue;
-        }
-        const existingRetained = (await db.places.get(retainedId)) as unknown as
-          | (PlaceShape & Place)
-          | undefined;
-        if (existingRetained && !existingRetained.deleted && graft(existingRetained)) {
-          await db.places.put({
-            ...existingRetained,
-            refKeys: allRefKeys(existingRetained as unknown as Place),
-          } as never);
-        }
-      }
-      if (remap.size > 0) {
-        for (const assignment of data.tagAssignments) {
-          const target = remap.get(assignment.placeId);
-          if (target) assignment.placeId = target;
-        }
-        for (const block of [...data.listBlocks, ...data.postBlocks]) {
-          const row = block as unknown as {
-            kind?: string;
-            refId?: string;
-            content?: { type?: string; placeId?: string };
-          };
-          if (row.kind !== "place" || !row.refId) continue;
-          const target = remap.get(row.refId);
-          if (!target) continue;
-          row.refId = target;
-          if (row.content?.type === "place") row.content.placeId = target;
-        }
-        for (const note of data.notes) {
-          const row = note as unknown as {
-            target?: { kind?: string; placeId?: string };
-            targetKey?: string;
-          };
-          if (row.target?.kind !== "place" || !row.target.placeId) continue;
-          const target = remap.get(row.target.placeId);
-          if (!target) continue;
-          row.target.placeId = target;
-          row.targetKey = `place:${target}`;
-        }
-      }
-
-      const skippedBlockTargets = new Map<string, string>();
-      for (const [key, table] of tables) {
-        for (const incoming of data[key]) {
-          // Rewritten edges must not violate repository uniqueness invariants:
-          // one live block per (listId, placeId), one live (placeId, tagId) pair.
-          if (key === "listBlocks") {
-            const row = incoming as unknown as {
-              id: string;
-              listId: string;
-              kind?: string;
-              refId?: string;
-              deleted?: boolean;
-            };
-            if (!row.deleted && row.kind === "place" && row.refId) {
-              const siblings = await db.listBlocks.where("listId").equals(row.listId).toArray();
-              const clash = siblings.find(
-                (b) => !b.deleted && b.kind === "place" && b.refId === row.refId && b.id !== row.id,
-              );
-              if (clash) {
-                // The membership already exists locally — the incoming
-                // duplicate is skipped and its dependents follow the retained
-                // block instead of dangling.
-                skippedBlockTargets.set(row.id, clash.id);
-                continue;
-              }
-            }
-          }
-          if (key === "postBlocks") {
-            const row = incoming as unknown as {
-              id: string;
-              postId: string;
-              kind?: string;
-              refId?: string;
-              deleted?: boolean;
-            };
-            if (!row.deleted && row.kind === "place" && row.refId) {
-              const siblings = await db.postBlocks.where("postId").equals(row.postId).toArray();
-              const clash = siblings.find(
-                (b) => !b.deleted && b.kind === "place" && b.refId === row.refId && b.id !== row.id,
-              );
-              if (clash) {
-                // The embed already exists (possibly via identity remapping) —
-                // the incoming duplicate is skipped and its dependents follow
-                // the retained block instead of dangling.
-                skippedBlockTargets.set(row.id, clash.id);
-                continue;
-              }
-            }
-          }
-          if (key === "tagAssignments") {
-            const row = incoming as unknown as {
-              id: string;
-              placeId: string;
-              tagId: string;
-              deleted?: boolean;
-            };
-            if (!row.deleted) {
-              const pairs = await db.tagAssignments
-                .where("[placeId+tagId]")
-                .equals([row.placeId, row.tagId])
-                .toArray();
-              const clash = pairs.find((a) => !a.deleted && a.id !== row.id);
-              if (clash) continue;
-            }
-          }
-          if (key === "blockTagSelections") {
-            const row = incoming as unknown as {
-              id: string;
-              blockId: string;
-              tagId: string;
-              deleted?: boolean;
-            };
-            // Follow a skipped duplicate embed onto its retained block.
-            const retainedBlock = skippedBlockTargets.get(row.blockId);
-            if (retainedBlock) row.blockId = retainedBlock;
-            if (!row.deleted) {
-              const edges = await db.blockTagSelections.toArray();
-              const clash = edges.find(
-                (edge) =>
-                  !edge.deleted &&
-                  edge.blockId === row.blockId &&
-                  edge.tagId === row.tagId &&
-                  edge.id !== row.id,
-              );
-              if (clash) continue;
-            }
-          }
-          if (key === "blockNoteAttachments") {
-            const row = incoming as unknown as {
-              id: string;
-              blockId: string;
-              noteId: string;
-              deleted?: boolean;
-            };
-            // Follow a skipped duplicate membership onto its retained block.
-            const retainedBlock = skippedBlockTargets.get(row.blockId);
-            if (retainedBlock) row.blockId = retainedBlock;
-            if (!row.deleted) {
-              // One live edge per (block, note) — a re-identified duplicate
-              // from another device must not double the attachment.
-              const edges = await db.blockNoteAttachments.toArray();
-              const clash = edges.find(
-                (edge) =>
-                  !edge.deleted &&
-                  edge.blockId === row.blockId &&
-                  edge.noteId === row.noteId &&
-                  edge.id !== row.id,
-              );
-              if (clash) continue;
-            }
-          }
+  await db.transaction(
+    "rw",
+    [...tables.map(([, t]) => t), db.mediaBlobs, db.mutationOutbox, db.syncRevs],
+    async () => {
+      if (mode === "replace") {
+        for (const [, table] of tables) await table.clear();
+        await db.mediaBlobs.clear();
+        for (const [key, table] of tables) {
+          // Derived index fields are recomputed, never trusted: stale refKeys in
+          // an archive could fork the same exact OSM identity after restore.
+          const rows =
+            key === "places"
+              ? data[key].map((row) => ({
+                  ...row,
+                  refKeys: allRefKeys(row as unknown as Place),
+                }))
+              : data[key];
           // biome-ignore lint/suspicious/noExplicitAny: structural rows validated by zod
-          const existing = (await (table as any).get(incoming.id)) as
-            | { id: string; updatedAt: string; deleted?: boolean; body?: string }
+          await (table as any).bulkPut(rows as any[]);
+          for (const row of rows as { id: string }[]) written.push({ table: key, row });
+          imported += data[key].length;
+        }
+      } else {
+        // Identity merge (spec/src/place-identity.md): the same exact OSM element —
+        // by current or historical ref — must not become two library places.
+        // Incoming duplicates are dropped and their edges rewritten to the retained
+        // PlaceId before the per-id merge.
+        const existingByRefKey = new Map<string, string>();
+        for (const row of await db.places.toArray()) {
+          if (row.deleted) continue;
+          for (const key of canonicalKeys(row)) existingByRefKey.set(key, row.id);
+        }
+        const remap = new Map<string, string>();
+        const incomingByRefKey = new Map<string, string>();
+        type EvidenceLike = { observedAt: string };
+        type PlaceShape = {
+          id: string;
+          deleted?: boolean;
+          currentOsmRef?: OsmElementRef;
+          osmRefHistory?: { ref: OsmElementRef }[];
+          firstSeen?: EvidenceLike;
+          lastVerified?: EvidenceLike;
+        };
+        const evidenceDonors: { retainedId: string; donor: PlaceShape }[] = [];
+        data.places = data.places.filter((place) => {
+          const row = place as unknown as PlaceShape;
+          if (row.deleted) return true;
+          const keys = canonicalKeys(row);
+          // The same exact OSM element must not arrive twice under two ids —
+          // nor collide with a different retained local place.
+          const retained =
+            keys.map((key) => existingByRefKey.get(key)).find((id) => id && id !== row.id) ??
+            keys.map((key) => incomingByRefKey.get(key)).find((id) => id && id !== row.id);
+          if (!retained) {
+            for (const key of keys) incomingByRefKey.set(key, row.id);
+            return true;
+          }
+          remap.set(row.id, retained);
+          evidenceDonors.push({ retainedId: retained, donor: row });
+          return false;
+        });
+        // Coalescing must never discard the dropped row's newer observation —
+        // the retained place keeps the earliest firstSeen and latest lastVerified.
+        for (const { retainedId, donor } of evidenceDonors) {
+          const graft = (target: PlaceShape): boolean => {
+            let changed = false;
+            if (
+              donor.lastVerified &&
+              (!target.lastVerified ||
+                donor.lastVerified.observedAt > target.lastVerified.observedAt)
+            ) {
+              target.lastVerified = donor.lastVerified;
+              changed = true;
+            }
+            if (
+              donor.firstSeen &&
+              (!target.firstSeen || donor.firstSeen.observedAt < target.firstSeen.observedAt)
+            ) {
+              target.firstSeen = donor.firstSeen;
+              changed = true;
+            }
+            return changed;
+          };
+          const incomingRetained = data.places.find((p) => p.id === retainedId) as
+            | PlaceShape
             | undefined;
-          if (!existing) {
+          if (incomingRetained) {
+            graft(incomingRetained);
+            continue;
+          }
+          const existingRetained = (await db.places.get(retainedId)) as unknown as
+            | (PlaceShape & Place)
+            | undefined;
+          if (existingRetained && !existingRetained.deleted && graft(existingRetained)) {
+            const grafted = {
+              ...existingRetained,
+              refKeys: allRefKeys(existingRetained as unknown as Place),
+            };
+            await db.places.put(grafted as never);
+            written.push({ table: "places", row: grafted as { id: string } });
+          }
+        }
+        if (remap.size > 0) {
+          for (const assignment of data.tagAssignments) {
+            const target = remap.get(assignment.placeId);
+            if (target) assignment.placeId = target;
+          }
+          for (const block of [...data.listBlocks, ...data.postBlocks]) {
+            const row = block as unknown as {
+              kind?: string;
+              refId?: string;
+              content?: { type?: string; placeId?: string };
+            };
+            if (row.kind !== "place" || !row.refId) continue;
+            const target = remap.get(row.refId);
+            if (!target) continue;
+            row.refId = target;
+            if (row.content?.type === "place") row.content.placeId = target;
+          }
+          for (const note of data.notes) {
+            const row = note as unknown as {
+              target?: { kind?: string; placeId?: string };
+              targetKey?: string;
+            };
+            if (row.target?.kind !== "place" || !row.target.placeId) continue;
+            const target = remap.get(row.target.placeId);
+            if (!target) continue;
+            row.target.placeId = target;
+            row.targetKey = `place:${target}`;
+          }
+        }
+
+        const skippedBlockTargets = new Map<string, string>();
+        for (const [key, table] of tables) {
+          for (const incoming of data[key]) {
+            // Rewritten edges must not violate repository uniqueness invariants:
+            // one live block per (listId, placeId), one live (placeId, tagId) pair.
+            if (key === "listBlocks") {
+              const row = incoming as unknown as {
+                id: string;
+                listId: string;
+                kind?: string;
+                refId?: string;
+                deleted?: boolean;
+              };
+              if (!row.deleted && row.kind === "place" && row.refId) {
+                const siblings = await db.listBlocks.where("listId").equals(row.listId).toArray();
+                const clash = siblings.find(
+                  (b) =>
+                    !b.deleted && b.kind === "place" && b.refId === row.refId && b.id !== row.id,
+                );
+                if (clash) {
+                  // The membership already exists locally — the incoming
+                  // duplicate is skipped and its dependents follow the retained
+                  // block instead of dangling.
+                  skippedBlockTargets.set(row.id, clash.id);
+                  continue;
+                }
+              }
+            }
+            if (key === "postBlocks") {
+              const row = incoming as unknown as {
+                id: string;
+                postId: string;
+                kind?: string;
+                refId?: string;
+                deleted?: boolean;
+              };
+              if (!row.deleted && row.kind === "place" && row.refId) {
+                const siblings = await db.postBlocks.where("postId").equals(row.postId).toArray();
+                const clash = siblings.find(
+                  (b) =>
+                    !b.deleted && b.kind === "place" && b.refId === row.refId && b.id !== row.id,
+                );
+                if (clash) {
+                  // The embed already exists (possibly via identity remapping) —
+                  // the incoming duplicate is skipped and its dependents follow
+                  // the retained block instead of dangling.
+                  skippedBlockTargets.set(row.id, clash.id);
+                  continue;
+                }
+              }
+            }
+            if (key === "tagAssignments") {
+              const row = incoming as unknown as {
+                id: string;
+                placeId: string;
+                tagId: string;
+                deleted?: boolean;
+              };
+              if (!row.deleted) {
+                const pairs = await db.tagAssignments
+                  .where("[placeId+tagId]")
+                  .equals([row.placeId, row.tagId])
+                  .toArray();
+                const clash = pairs.find((a) => !a.deleted && a.id !== row.id);
+                if (clash) continue;
+              }
+            }
+            if (key === "blockTagSelections") {
+              const row = incoming as unknown as {
+                id: string;
+                blockId: string;
+                tagId: string;
+                deleted?: boolean;
+              };
+              // Follow a skipped duplicate embed onto its retained block.
+              const retainedBlock = skippedBlockTargets.get(row.blockId);
+              if (retainedBlock) row.blockId = retainedBlock;
+              if (!row.deleted) {
+                const edges = await db.blockTagSelections.toArray();
+                const clash = edges.find(
+                  (edge) =>
+                    !edge.deleted &&
+                    edge.blockId === row.blockId &&
+                    edge.tagId === row.tagId &&
+                    edge.id !== row.id,
+                );
+                if (clash) continue;
+              }
+            }
+            if (key === "blockNoteAttachments") {
+              const row = incoming as unknown as {
+                id: string;
+                blockId: string;
+                noteId: string;
+                deleted?: boolean;
+              };
+              // Follow a skipped duplicate membership onto its retained block.
+              const retainedBlock = skippedBlockTargets.get(row.blockId);
+              if (retainedBlock) row.blockId = retainedBlock;
+              if (!row.deleted) {
+                // One live edge per (block, note) — a re-identified duplicate
+                // from another device must not double the attachment.
+                const edges = await db.blockNoteAttachments.toArray();
+                const clash = edges.find(
+                  (edge) =>
+                    !edge.deleted &&
+                    edge.blockId === row.blockId &&
+                    edge.noteId === row.noteId &&
+                    edge.id !== row.id,
+                );
+                if (clash) continue;
+              }
+            }
+            // biome-ignore lint/suspicious/noExplicitAny: structural rows validated by zod
+            const existing = (await (table as any).get(incoming.id)) as
+              | { id: string; updatedAt: string; deleted?: boolean; body?: string }
+              | undefined;
+            if (!existing) {
+              if (key === "places") {
+                (incoming as { refKeys?: string[] }).refKeys = allRefKeys(
+                  incoming as unknown as Place,
+                );
+              }
+              // biome-ignore lint/suspicious/noExplicitAny: structural rows validated by zod
+              await (table as any).put(incoming);
+              written.push({ table: key, row: incoming as { id: string } });
+              imported += 1;
+              continue;
+            }
+            if (incoming.updatedAt <= existing.updatedAt) {
+              // A conflicting note body is NEVER silently discarded — even when
+              // the incoming side loses last-write-wins, its body survives as a
+              // recoverable conflict copy (spec/src/storage-sync.md).
+              if (
+                key === "notes" &&
+                !existing.deleted &&
+                !incoming.deleted &&
+                existing.body !== undefined &&
+                (incoming as { body?: string }).body !== undefined &&
+                (incoming as { body?: string }).body !== existing.body
+              ) {
+                const copy: Note & { targetKey: string } = {
+                  ...(incoming as unknown as Note & { targetKey: string }),
+                  id: newId(),
+                  title: `(conflict copy) ${(incoming as { title?: string }).title ?? ""}`.trim(),
+                  updatedAt: now,
+                };
+                await db.notes.put(copy);
+                written.push({ table: "notes", row: copy });
+                conflictCopies += 1;
+              }
+              continue;
+            }
+            // Same derived-index rule as replace mode: recompute, never trust.
             if (key === "places") {
               (incoming as { refKeys?: string[] }).refKeys = allRefKeys(
                 incoming as unknown as Place,
               );
             }
-            // biome-ignore lint/suspicious/noExplicitAny: structural rows validated by zod
-            await (table as any).put(incoming);
-            imported += 1;
-            continue;
-          }
-          if (incoming.updatedAt <= existing.updatedAt) {
-            // A conflicting note body is NEVER silently discarded — even when
-            // the incoming side loses last-write-wins, its body survives as a
-            // recoverable conflict copy (spec/src/storage-sync.md).
+            // Never silently discard a conflicting note body.
             if (
               key === "notes" &&
               !existing.deleted &&
               !incoming.deleted &&
               existing.body !== undefined &&
-              (incoming as { body?: string }).body !== undefined &&
               (incoming as { body?: string }).body !== existing.body
             ) {
               const copy: Note & { targetKey: string } = {
-                ...(incoming as unknown as Note & { targetKey: string }),
+                ...(existing as unknown as Note & { targetKey: string }),
                 id: newId(),
-                title: `(conflict copy) ${(incoming as { title?: string }).title ?? ""}`.trim(),
+                title: `(conflict copy) ${(existing as { title?: string }).title ?? ""}`.trim(),
                 updatedAt: now,
               };
               await db.notes.put(copy);
+              written.push({ table: "notes", row: copy });
               conflictCopies += 1;
             }
-            continue;
+            // biome-ignore lint/suspicious/noExplicitAny: structural rows validated by zod
+            await (table as any).put(incoming);
+            written.push({ table: key, row: incoming as { id: string } });
+            imported += 1;
           }
-          // Same derived-index rule as replace mode: recompute, never trust.
-          if (key === "places") {
-            (incoming as { refKeys?: string[] }).refKeys = allRefKeys(incoming as unknown as Place);
-          }
-          // Never silently discard a conflicting note body.
-          if (
-            key === "notes" &&
-            !existing.deleted &&
-            !incoming.deleted &&
-            existing.body !== undefined &&
-            (incoming as { body?: string }).body !== existing.body
-          ) {
-            const copy: Note & { targetKey: string } = {
-              ...(existing as unknown as Note & { targetKey: string }),
-              id: newId(),
-              title: `(conflict copy) ${(existing as { title?: string }).title ?? ""}`.trim(),
-              updatedAt: now,
-            };
-            await db.notes.put(copy);
-            conflictCopies += 1;
-          }
-          // biome-ignore lint/suspicious/noExplicitAny: structural rows validated by zod
-          await (table as any).put(incoming);
-          imported += 1;
         }
       }
-    }
-    // Restore media bytes (replace) / add missing (merge).
-    for (const [name, fileBytes] of Object.entries(entries)) {
-      if (!name.startsWith("media/")) continue;
-      const key = name.slice("media/".length);
-      const existing = mode === "merge" ? await db.mediaBlobs.get(key) : undefined;
-      if (!existing) {
-        await db.mediaBlobs.put({
-          id: key,
-          blob: new Blob([fileBytes.slice().buffer as ArrayBuffer]),
-        });
+      // Restore media bytes (replace) / add missing (merge).
+      for (const [name, fileBytes] of Object.entries(entries)) {
+        if (!name.startsWith("media/")) continue;
+        const key = name.slice("media/".length);
+        const existing = mode === "merge" ? await db.mediaBlobs.get(key) : undefined;
+        if (!existing) {
+          await db.mediaBlobs.put({
+            id: key,
+            blob: new Blob([fileBytes.slice().buffer as ArrayBuffer]),
+          });
+        }
       }
-    }
-  });
+      // Restored rows enter the sync outbox in the same transaction — a restore
+      // on a synced device propagates like any other edit.
+      await repo.logRestoredRows(written);
+    },
+  );
 
   return { mode, imported, conflictCopies };
 }

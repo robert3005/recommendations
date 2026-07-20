@@ -46,6 +46,7 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("../../data/hooks", () => ({
   useList: () => list,
   useListBlocks: () => blocks,
+  usePostsForList: () => [],
   useLists: () => [list],
 }));
 

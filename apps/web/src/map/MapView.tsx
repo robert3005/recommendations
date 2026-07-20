@@ -1,22 +1,32 @@
 /**
- * Thin MapLibre adapter (spec/src/tech-stack.md: no wrapper library — we own this boundary).
- * Renders the basemap with required OSM attribution, saved pins (clustered), transient
- * viewport POIs, and reports gestures upward. No domain logic lives here.
+ * Thin MapLibre adapter (spec/src/tech-stack.md: no wrapper library — we own
+ * this boundary). Renders the basemap with required OSM attribution, library
+ * pins wearing their list's (colour, icon) marker (clustered), transient
+ * viewport POIs, labelled review-candidate marks, and reports gestures
+ * upward. No domain logic lives here.
  */
 import type { BBox, OsmElementRef } from "@placemarks/domain";
 import type { FeatureCollection } from "geojson";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import { DISCOVER_DEBOUNCE_MS, OSM_ATTRIBUTION_HTML } from "../config";
+import { MARKER_ICON_PATHS, MULTI_LIST_PIN_COLOR } from "../lib/markers";
 
 export interface PlacePinFeature {
   placeId: string;
   name: string;
   lat: number;
   lng: number;
-  unlinked: boolean;
-  /** List marker colour (or the default) — spec/src/map-view.md. */
+  /** List marker colour (deterministic first list when in several). */
   color: string;
+  /** List marker icon id (spec/src/map-view.md: pins wear icon + colour). */
+  icon: string;
+  /** An unlinked pin wears its list's marker with a small "not linked" dot. */
+  unlinked: boolean;
+  /** In several lists: the deterministic stacked/badged variant. */
+  multi: boolean;
+  /** Outside the current projection's focus: rendered dimmed. */
+  dimmed: boolean;
 }
 
 export interface PoiPinFeature {
@@ -28,6 +38,15 @@ export interface PoiPinFeature {
   lng: number;
 }
 
+/** A labelled transient mark — review-queue candidates (A, B, C…). */
+export interface MarkPinFeature {
+  key: string;
+  name: string;
+  label: string;
+  lat: number;
+  lng: number;
+}
+
 export interface MapViewProps {
   styleUrl: string;
   /** Starting camera — the caller decides (last viewport / timezone approximation). */
@@ -35,11 +54,18 @@ export interface MapViewProps {
   initialZoom: number;
   placePins: PlacePinFeature[];
   poiPins: PoiPinFeature[];
+  markPins?: MarkPinFeature[];
   /** The currently selected place — marked immediately with a ring. */
   selectionPin?: { lat: number; lng: number } | null;
   flyTo?: { lat: number; lng: number; zoom?: number } | null;
+  /**
+   * One camera move to frame a projection (route change / reveal after
+   * idling). `key` de-duplicates: the move applies once per distinct key.
+   */
+  fitTo?: { bounds: BBox; key: string } | null;
   onSelectPlace?: (placeId: string) => void;
   onSelectPoi?: (poi: PoiPinFeature) => void;
+  onSelectMark?: (mark: MarkPinFeature) => void;
   onLongPress?: (pos: { lat: number; lng: number }) => void;
   onViewportChange?: (view: {
     bbox: BBox;
@@ -51,6 +77,68 @@ export interface MapViewProps {
 const LONG_PRESS_MS = 600;
 const LONG_PRESS_TOLERANCE_PX = 8;
 
+/** Sprite id for a marker variant — parsed back by the sprite painter. */
+function markerImageId(pin: PlacePinFeature): string {
+  return `pm|${pin.color}|${pin.icon}|${pin.unlinked ? "u" : "-"}|${pin.multi ? "m" : "-"}`;
+}
+
+/**
+ * Paint a marker sprite: the icon glyph in white on the colour disc, a grey
+ * "not linked" dot, a dark "+" badge for the multi-list variant — the same
+ * look MarkerGlyph renders in the DOM.
+ */
+function paintMarkerImage(id: string): ImageData | undefined {
+  const [, color = "#888888", icon = "circle", unlinked = "-", multi = "-"] = id.split("|");
+  const size = 44; // 2× for retina; icon-size 0.5 in the layer
+  if (typeof document === "undefined" || typeof Path2D === "undefined") return undefined;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return undefined;
+  const center = size / 2;
+  const radius = size * 0.36;
+  ctx.beginPath();
+  ctx.arc(center, center, radius, 0, Math.PI * 2);
+  ctx.fillStyle = multi === "m" ? MULTI_LIST_PIN_COLOR : color;
+  ctx.fill();
+  ctx.lineWidth = size * 0.06;
+  ctx.strokeStyle = "#fafaf9";
+  ctx.stroke();
+  // The glyph path data is authored on a 24×24 viewBox.
+  const path = new Path2D(MARKER_ICON_PATHS[icon] ?? MARKER_ICON_PATHS.circle ?? "");
+  const glyphScale = (radius * 1.24) / 24;
+  ctx.save();
+  ctx.translate(center - 12 * glyphScale, center - 12 * glyphScale);
+  ctx.scale(glyphScale, glyphScale);
+  ctx.fillStyle = "#fafaf9";
+  ctx.fill(path);
+  ctx.restore();
+  if (multi === "m") {
+    // The stacked/badged variant: a small "+" badge at the top right.
+    ctx.beginPath();
+    ctx.arc(center + radius * 0.85, center - radius * 0.85, size * 0.14, 0, Math.PI * 2);
+    ctx.fillStyle = "#fafaf9";
+    ctx.fill();
+    ctx.fillStyle = "#1c1917";
+    ctx.font = `bold ${(size * 0.22).toString()}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("+", center + radius * 0.85, center - radius * 0.82);
+  }
+  if (unlinked === "u") {
+    // The small "not linked" dot (supersedes the distinct orange marker).
+    ctx.beginPath();
+    ctx.arc(center + radius * 0.85, center + radius * 0.85, size * 0.11, 0, Math.PI * 2);
+    ctx.fillStyle = "#78716c";
+    ctx.fill();
+    ctx.lineWidth = size * 0.03;
+    ctx.strokeStyle = "#fafaf9";
+    ctx.stroke();
+  }
+  return ctx.getImageData(0, 0, size, size);
+}
+
 function placesToGeoJSON(pins: PlacePinFeature[]): FeatureCollection {
   return {
     type: "FeatureCollection",
@@ -60,8 +148,8 @@ function placesToGeoJSON(pins: PlacePinFeature[]): FeatureCollection {
       properties: {
         placeId: pin.placeId,
         name: pin.name,
-        unlinked: pin.unlinked ? 1 : 0,
-        color: pin.color,
+        iconId: markerImageId(pin),
+        dimmed: pin.dimmed ? 1 : 0,
       },
     })),
   };
@@ -78,25 +166,53 @@ function poisToGeoJSON(pins: PoiPinFeature[]): FeatureCollection {
   };
 }
 
+function marksToGeoJSON(pins: MarkPinFeature[]): FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: pins.map((pin) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [pin.lng, pin.lat] },
+      properties: { key: pin.key, name: pin.name, label: pin.label },
+    })),
+  };
+}
+
 export function MapView({
   styleUrl,
   initialCenter,
   initialZoom,
   placePins,
   poiPins,
+  markPins = [],
   selectionPin,
   flyTo,
+  fitTo,
   onSelectPlace,
   onSelectPoi,
+  onSelectMark,
   onLongPress,
   onViewportChange,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const callbacksRef = useRef({ onSelectPlace, onSelectPoi, onLongPress, onViewportChange });
-  callbacksRef.current = { onSelectPlace, onSelectPoi, onLongPress, onViewportChange };
+  const callbacksRef = useRef({
+    onSelectPlace,
+    onSelectPoi,
+    onSelectMark,
+    onLongPress,
+    onViewportChange,
+  });
+  callbacksRef.current = {
+    onSelectPlace,
+    onSelectPoi,
+    onSelectMark,
+    onLongPress,
+    onViewportChange,
+  };
   const poiPinsRef = useRef(poiPins);
   poiPinsRef.current = poiPins;
+  const markPinsRef = useRef(markPins);
+  markPinsRef.current = markPins;
   // A basemap that never establishes itself is a designed state, not a blank
   // canvas (spec/src/map-view.md §Offline and failure states).
   const [unavailable, setUnavailable] = useState(false);
@@ -132,6 +248,14 @@ export function MapView({
       // Designed state, not a blank screen: the map stays fully usable without location.
     });
 
+    // Marker sprites are painted on demand — every (colour, icon, dot, badge)
+    // variant materializes the first time a pin wears it.
+    map.on("styleimagemissing", (event: { id: string }) => {
+      if (!event.id.startsWith("pm|") || map.hasImage(event.id)) return;
+      const image = paintMarkerImage(event.id);
+      if (image) map.addImage(event.id, image, { pixelRatio: 2 });
+    });
+
     // Observable view state for tests and debugging (canvas pixels are not inspectable
     // without preserveDrawingBuffer, which costs performance).
     const container = containerRef.current;
@@ -160,6 +284,7 @@ export function MapView({
         sourceDataType?: string;
       };
       if (sourceId === "pois" || sourceId === "saved" || sourceId === "selection") return;
+      if (sourceId === "marks") return;
       if (sourceDataType === "idle") return;
       setUnavailable(false);
     });
@@ -209,20 +334,43 @@ export function MapView({
         },
         paint: { "text-color": "#fafaf9" },
       });
+      // Library pins wear their list's unique marker (icon + colour) —
+      // spec/src/map-view.md §Core interactions; dimmed outside the current
+      // projection's focus.
       map.addLayer({
         id: "saved-pins",
-        type: "circle",
+        type: "symbol",
         source: "saved",
         filter: ["!", ["has", "point_count"]],
+        layout: {
+          "icon-image": ["get", "iconId"],
+          "icon-size": 0.5,
+          "icon-allow-overlap": true,
+        },
         paint: {
-          // Every pin wears its list's marker colour — an unlinked pin is
-          // marked by a small dot, not a different colour (2026-07-19,
-          // spec/src/map-view.md: list identity owns the pin's look).
-          "circle-color": ["get", "color"],
-          "circle-radius": 8,
+          "icon-opacity": ["case", ["==", ["get", "dimmed"], 1], 0.35, 1],
+        },
+      });
+
+      // Labelled transient marks (review-queue candidates: A, B, C…).
+      map.addSource("marks", { type: "geojson", data: marksToGeoJSON([]) });
+      map.addLayer({
+        id: "mark-pins",
+        type: "circle",
+        source: "marks",
+        paint: {
+          "circle-color": "#9a3412",
+          "circle-radius": 10,
           "circle-stroke-width": 2,
           "circle-stroke-color": "#fafaf9",
         },
+      });
+      map.addLayer({
+        id: "mark-labels",
+        type: "symbol",
+        source: "marks",
+        layout: { "text-field": ["get", "label"], "text-size": 11 },
+        paint: { "text-color": "#fafaf9" },
       });
 
       map.addSource("selection", {
@@ -260,7 +408,12 @@ export function MapView({
         const pin = poiPinsRef.current.find((p) => p.refKey === refKeyProp);
         if (pin) callbacksRef.current.onSelectPoi?.(pin);
       });
-      for (const layer of ["saved-pins", "saved-clusters", "poi-pins"]) {
+      map.on("click", "mark-pins", (e) => {
+        const keyProp = e.features?.[0]?.properties?.key as string | undefined;
+        const mark = markPinsRef.current.find((m) => m.key === keyProp);
+        if (mark) callbacksRef.current.onSelectMark?.(mark);
+      });
+      for (const layer of ["saved-pins", "saved-clusters", "poi-pins", "mark-pins"]) {
         map.on("mouseenter", layer, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -363,6 +516,21 @@ export function MapView({
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
+      (map.getSource("marks") as maplibregl.GeoJSONSource | undefined)?.setData(
+        marksToGeoJSON(markPins),
+      );
+      if (containerRef.current) {
+        containerRef.current.dataset.marks = String(markPins.length);
+      }
+    };
+    if (map.getSource("marks")) apply();
+    else map.once("load", apply);
+  }, [markPins]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
       const source = map.getSource("selection") as maplibregl.GeoJSONSource | undefined;
       source?.setData({
         type: "FeatureCollection",
@@ -397,6 +565,23 @@ export function MapView({
       offset: [0, -120],
     });
   }, [flyTo]);
+
+  // One camera move per projection change (spec/src/map-view.md §The grammar).
+  const appliedFitKey = useRef<string | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !fitTo || appliedFitKey.current === fitTo.key) return;
+    appliedFitKey.current = fitTo.key;
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    map.fitBounds(
+      [
+        [fitTo.bounds.west, fitTo.bounds.south],
+        [fitTo.bounds.east, fitTo.bounds.north],
+      ],
+      { padding: 72, maxZoom: 16, duration: reduceMotion ? 0 : 700 },
+    );
+    if (containerRef.current) containerRef.current.dataset.fitKey = fitTo.key;
+  }, [fitTo]);
 
   return (
     <div className="relative h-full w-full">

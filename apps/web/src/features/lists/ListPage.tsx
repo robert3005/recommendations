@@ -14,10 +14,13 @@ import {
 import type { SharedGuide } from "@placemarks/schemas";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
-import { useList, useListBlocks, useLists } from "../../data/hooks";
+import { useList, useListBlocks, useLists, usePostsForList } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import { downloadBytes, downloadText } from "../../lib/download";
+import { newId } from "../../lib/id";
 import { nowIso } from "../../lib/time";
+import { useCanvasProjection } from "../../state/projection";
+import { useUiStore } from "../../state/ui";
 import {
   type ExportPlaceView,
   exportListCsv,
@@ -43,12 +46,18 @@ const EXPORTS = [
 ] as const;
 
 export function ListPage() {
-  const { listId } = useParams({ from: "/lists/$listId" });
+  const { listId } = useParams({ from: "/list/$listId" });
   const repo = useRepo();
   const navigate = useNavigate();
   const list = useList(listId);
   const blocks = useListBlocks(listId);
   const lists = useLists();
+  const selectPlace = useUiStore((s) => s.selectPlace);
+  const requestFlyTo = useUiStore((s) => s.requestFlyTo);
+  const posts = usePostsForList(listId);
+  // The canvas projects this list: its members, the rest dimmed
+  // (spec/src/map-view.md §The grammar).
+  useCanvasProjection({ kind: "list", listId });
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState<string>();
   const [refusal, setRefusal] = useState<{ title: string; blockers: TeardownBlockers }>();
@@ -320,6 +329,56 @@ export function ListPage() {
       </p>
       <PublishControls listId={list.id} />
 
+      {/* The editorial layer (spec/src/posts.md): a list may have several
+          posts; the list page links to them and each post links back. */}
+      <section className="mt-4" id="posts" data-testid="list-posts">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-stone-700">Posts</h2>
+          <button
+            type="button"
+            className="rounded border border-stone-300 px-2.5 py-1 text-xs font-medium text-stone-700"
+            data-testid="new-post"
+            onClick={() => {
+              const postId = newId();
+              const now = nowIso();
+              void repo
+                .createPost({
+                  id: postId,
+                  title: list.name,
+                  listId: list.id,
+                  createdAt: now,
+                  updatedAt: now,
+                })
+                .then(() => navigate({ to: "/post/$postId/edit", params: { postId } }));
+            }}
+          >
+            + New post
+          </button>
+        </div>
+        {(posts ?? []).length > 0 ? (
+          <ul className="mt-1.5 space-y-1">
+            {(posts ?? []).map((post) => (
+              <li key={post.id}>
+                <button
+                  type="button"
+                  className="text-sm font-medium text-blue-700 underline"
+                  data-testid="list-post-link"
+                  onClick={() => {
+                    void navigate({ to: "/post/$postId", params: { postId: post.id } });
+                  }}
+                >
+                  ✍ {post.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-1 text-xs text-stone-400">
+            No posts yet — a post is an article about this list.
+          </p>
+        )}
+      </section>
+
       {sharing ? (
         <SharePreview
           title={list.name}
@@ -351,9 +410,19 @@ export function ListPage() {
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <span className="font-medium text-stone-900">
+                  {/* Selection is bidirectional (spec/src/map-view.md): select
+                      in the pane → the canvas highlights and flies. */}
+                  <button
+                    type="button"
+                    className="text-left font-medium text-stone-900 hover:underline"
+                    data-testid="select-place"
+                    onClick={() => {
+                      selectPlace(view.place.id);
+                      if (facts) requestFlyTo({ lat: facts.lat, lng: facts.lng, zoom: 16 });
+                    }}
+                  >
                     {facts?.name ?? "Missing place"}
-                  </span>
+                  </button>
                   {facts?.category ? (
                     <span className="ml-2 text-xs capitalize text-stone-500">{facts.category}</span>
                   ) : null}
@@ -439,7 +508,7 @@ export function ListPage() {
             onClick={() =>
               guarded("Can’t delete this list yet", () =>
                 repo.deleteList(list.id, nowIso()).then(() => {
-                  void navigate({ to: "/lists" });
+                  void navigate({ to: "/" });
                 }),
               )
             }

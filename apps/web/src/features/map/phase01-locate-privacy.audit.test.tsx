@@ -5,8 +5,9 @@
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { MapPage } from "./MapPage";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MapCanvas } from "../../map/MapCanvas";
+import { usePaneStore } from "../../state/pane";
 
 type Handler = (event?: unknown) => void;
 
@@ -30,6 +31,7 @@ vi.mock("../../data/hooks", () => ({
   useLibraryPlaces: () => [],
   useLists: () => [],
   useListMembership: () => ({}),
+  usePostBlocks: () => undefined,
 }));
 
 vi.mock("../../data/RepoContext", () => ({
@@ -161,6 +163,10 @@ vi.mock("maplibre-gl", () => {
   };
 });
 
+beforeEach(() => {
+  usePaneStore.setState({ pane: "collapsed" });
+});
+
 afterEach(() => {
   vi.useRealTimers();
   viewport.persist.mockReset();
@@ -174,7 +180,7 @@ describe("Phase 0 Locate privacy", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const view = render(
       <QueryClientProvider client={queryClient}>
-        <MapPage />
+        <MapCanvas />
       </QueryClientProvider>,
     );
 

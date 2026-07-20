@@ -9,6 +9,7 @@ vi.mock("../../data/RepoContext", () => ({
   getDefaultRepo: () => ({ db: {} }),
 }));
 vi.mock("../interop/ImportSection", () => ({ ImportSection: () => null }));
+vi.mock("../sync/SyncSection", () => ({ SyncSection: () => null }));
 
 describe("Phase 0 provider privacy disclosure", () => {
   it("explains each provider data flow, minimization boundary, routing, and retention in Settings", () => {

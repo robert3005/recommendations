@@ -3,12 +3,21 @@
  * (there is no standalone save), persists across reload, and manual pins are
  * born straight into a list.
  */
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+
+/** Step the pane toward the map: expanded → split → collapsed. */
+async function collapsePane(page: Page, times = 1) {
+  for (let index = 0; index < times; index += 1) {
+    await page.getByTestId("pane-collapse").click();
+  }
+}
 
 test.describe("places exist through lists", () => {
   test("search → resolve → add to list → persists across reload", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+    // The canvas chrome (search) is reachable once the pane is not expanded.
+    await collapsePane(page);
 
     // Search and select.
     await page.getByRole("combobox", { name: "Search places" }).fill("cafe");
@@ -39,9 +48,11 @@ test.describe("places exist through lists", () => {
     await details.getByLabel("Add tag").press("Enter");
     await expect(details.getByText("coffee")).toBeVisible();
 
-    // Survives a full reload (IndexedDB persistence).
+    // Survives a full reload (IndexedDB persistence). The pane relaunches
+    // expanded, so the canvas idles — collapse once to let the pins paint.
     await page.reload();
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+    await collapsePane(page);
     const mapEl = page.getByTestId("map-canvas");
     await expect(mapEl).toHaveAttribute("data-pins", /^[1-9]/, { timeout: 10_000 });
     // Reopen camera-independently: search recognizes the listed place.
@@ -61,6 +72,8 @@ test.describe("places exist through lists", () => {
 
   test("long-press → manual pin is born into a list", async ({ page }) => {
     await page.goto("/");
+    // Full-bleed canvas: collapse the pane away so the long-press hits the map.
+    await collapsePane(page, 2);
     const mapEl = page.getByTestId("map-canvas");
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
     const box = await mapEl.boundingBox();

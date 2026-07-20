@@ -10,6 +10,8 @@ import { expect, type Page, test } from "@playwright/test";
 async function seedList(page: Page): Promise<void> {
   await page.goto("/");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+  // The canvas search is reachable once the pane is not expanded.
+  await page.getByTestId("pane-collapse").click();
   await page.getByRole("combobox", { name: "Search places" }).fill("cafe");
   await page.getByRole("option", { name: /Café Central/ }).click();
   const sheet = page.getByTestId("place-sheet");
@@ -46,6 +48,7 @@ test("publish → public read-only page → update → unpublish", async ({ page
   // A local edit is NOT public until published: add a place, check the page.
   await page.goto("/");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+  await page.getByTestId("pane-collapse").click();
   await page.getByRole("combobox", { name: "Search places" }).fill("cafe");
   await page.getByRole("option", { name: /Café do Rio/ }).click();
   await page.getByTestId("place-sheet").getByTestId("add-to-list").selectOption({
@@ -81,10 +84,8 @@ test("publish → public read-only page → update → unpublish", async ({ page
 
 test("a shareable note publishes as a standalone read-only page", async ({ page }) => {
   await seedList(page);
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Map" })
-    .click();
+  // The canvas (and its search) sits beside the pane on every route — no Map
+  // tab needed; seedList already stepped the pane to split.
   await page.getByRole("combobox", { name: "Search places" }).fill("cafe");
   await page.getByRole("option", { name: /Café Central/ }).click();
   await page.getByTestId("open-place").click();

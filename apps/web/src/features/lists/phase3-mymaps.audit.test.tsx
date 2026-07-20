@@ -46,6 +46,7 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("../../data/hooks", () => ({
   useList: () => list,
   useListBlocks: () => blocks,
+  usePostsForList: () => [],
   useLists: () => [list],
 }));
 
@@ -63,7 +64,11 @@ vi.mock("../../data/RepoContext", () => ({
 vi.mock("../publish/PublishControls", () => ({ PublishControls: () => null }));
 
 describe("Phase 3 Google My Maps export acceptance", () => {
-  it("offers KML and KMZ, explains the limits/split, and gives the import handoff", () => {
+  // A 2,000-place acceptance render is legitimately heavy under a fully
+  // parallel suite — give it an explicit budget instead of the default.
+  it("offers KML and KMZ, explains the limits/split, and gives the import handoff", {
+    timeout: 20_000,
+  }, () => {
     render(<ListPage />);
 
     expect.soft(screen.queryByTestId("export-kml")).toBeInTheDocument();

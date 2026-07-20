@@ -69,6 +69,60 @@ export interface ImportSourceRow {
   listId: string;
 }
 
+/**
+ * One durable local mutation awaiting the sync transport
+ * (spec/src/storage-sync.md §Multi-device sync): globally unique id, actor,
+ * entity, HLC revision stamp, and the full row snapshot. Logged in the SAME
+ * transaction as the write it records.
+ */
+export interface MutationRow {
+  id: string;
+  actorId: string;
+  table: string;
+  entityId: string;
+  hlc: string;
+  row: Record<string, unknown>;
+  createdAt: string;
+}
+
+/** Device-scoped sync state: account, cursor, clock — never part of backups. */
+export interface SyncStateRow {
+  id: "sync";
+  actorId: string;
+  accountId?: string;
+  /** Bearer token naming the sync scope; never in any public document. */
+  token?: string;
+  email?: string;
+  cursor?: string;
+  lastSyncedAt?: string;
+  lastError?: string;
+}
+
+/**
+ * entityKey (`table:id`) → the row's latest known revision stamp, and whether
+ * it came from THIS device ("local") or was applied from the server
+ * ("remote") — the signal that an incoming newer edit was CONCURRENT with an
+ * unobserved local one (conflict-copy territory), not a causal successor.
+ */
+export interface SyncRevRow {
+  key: string;
+  hlc: string;
+  origin: "local" | "remote";
+}
+
+/**
+ * Rescued content a sync interleaving orphaned (e.g. a note edit racing its
+ * target's teardown) — recoverable, never silently dropped.
+ */
+export interface SyncConflictRow {
+  id: string;
+  kind: "orphaned-note";
+  title?: string;
+  body: string;
+  reason: string;
+  at: string;
+}
+
 /** One durable publish/revoke job (spec/src/sharing.md §Local publication record). */
 export interface PublicationJobRow {
   id: string; // doubles as the Idempotency-Key
@@ -139,6 +193,10 @@ export class PlacemarksDb extends Dexie {
   publications!: EntityTable<Publication, "id">;
   credentials!: EntityTable<EditorCredential, "id">;
   publicationOutbox!: EntityTable<PublicationJobRow, "id">;
+  mutationOutbox!: EntityTable<MutationRow, "id">;
+  syncState!: EntityTable<SyncStateRow, "id">;
+  syncRevs!: EntityTable<SyncRevRow, "key">;
+  syncConflicts!: EntityTable<SyncConflictRow, "id">;
 
   constructor(name = "placemarks") {
     super(name);
@@ -312,5 +370,14 @@ export class PlacemarksDb extends Dexie {
           });
         }
       });
+    // v8 (Phase 8, spec/src/storage-sync.md §Multi-device sync): the durable
+    // mutation outbox the sync transport drains, device sync state, applied
+    // revision stamps, and rescued sync conflicts.
+    this.version(8).stores({
+      mutationOutbox: "id, table, entityId, createdAt",
+      syncState: "id",
+      syncRevs: "key",
+      syncConflicts: "id, at",
+    });
   }
 }

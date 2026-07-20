@@ -7,9 +7,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useEffect, useRef } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MapCanvas } from "../../map/MapCanvas";
+import { usePaneStore } from "../../state/pane";
 import { useUiStore } from "../../state/ui";
-import { MapPage } from "./MapPage";
 
 const phase01 = vi.hoisted(() => ({
   capturedPoiPins: [] as Array<{ name: string; category: string }>,
@@ -40,6 +41,7 @@ vi.mock("../../data/hooks", () => ({
   useLibraryPlaces: () => [],
   useLists: () => [],
   useListMembership: () => ({}),
+  usePostBlocks: () => undefined,
 }));
 
 vi.mock("../../data/RepoContext", () => ({
@@ -89,7 +91,7 @@ function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(
     <QueryClientProvider client={queryClient}>
-      <MapPage />
+      <MapCanvas />
     </QueryClientProvider>,
   );
   return { queryClient, view };
@@ -120,6 +122,10 @@ function accessibleContent(element: HTMLElement): string {
   return `${element.getAttribute("aria-label") ?? ""} ${element.textContent ?? ""} ${descriptions}`;
 }
 
+beforeEach(() => {
+  usePaneStore.setState({ pane: "collapsed" });
+});
+
 afterEach(() => {
   phase01.discover.mockClear();
   phase01.capturedPoiPins = [];
@@ -131,6 +137,12 @@ describe("Phase 0/1 category filters and non-map equivalence", () => {
     const { queryClient, view } = renderPage();
     try {
       await waitFor(() => expect(phase01.capturedPoiPins).toHaveLength(2));
+
+      // The chips are demoted behind the search affordance (2026-07-19,
+      // spec/src/map-view.md §The canvas) — still keyboard-operable, one
+      // disclosure away.
+      const disclosure = screen.getByTestId("toggle-category-chips");
+      await userEvent.click(disclosure);
 
       for (const label of ["Eat", "Drink", "Shop", "Stay", "Culture", "Health"]) {
         expect.soft(filterControl(label), `missing keyboard-operable ${label} chip`).not.toBeNull();

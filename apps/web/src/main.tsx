@@ -41,6 +41,17 @@ void prepare().then(() => {
       // Offline is a designed state; the outbox retries next launch/enqueue.
     }),
   );
+  // Background multi-device sync (spec/src/storage-sync.md): the transport
+  // drains the mutation outbox on launch and on a slow heartbeat when a sync
+  // scope is signed in. Offline attempts are silent; the outbox is durable.
+  void import("./features/sync/engine").then(({ syncNow }) => {
+    const run = () =>
+      syncNow(getDefaultRepo()).catch(() => {
+        // Offline is a designed state; mutations stay queued.
+      });
+    void run();
+    setInterval(run, 60_000);
+  });
   createRoot(rootElement).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

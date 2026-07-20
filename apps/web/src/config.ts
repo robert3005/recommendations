@@ -37,3 +37,9 @@ export const DISCOVER_DEBOUNCE_MS = 400;
  * dev/e2e MSW worker intercepts; production points at the deployed Worker.
  */
 export const SHARE_API_URL: string = import.meta.env.VITE_SHARE_API_URL ?? "";
+
+/**
+ * Sync-service base URL (spec/src/storage-sync.md §Multi-device sync). Empty =
+ * same origin (MSW in dev/e2e); production points at the deployed service.
+ */
+export const SYNC_API_URL: string = import.meta.env.VITE_SYNC_API_URL ?? "";

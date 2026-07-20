@@ -9,7 +9,7 @@ import type { SharedGuide } from "@placemarks/schemas";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MAP_STYLE_URL } from "../../config";
 import { useDexieRepo } from "../../data/RepoContext";
-import { DEFAULT_PIN_COLOR } from "../../lib/markers";
+import { DEFAULT_PIN_COLOR, FALLBACK_MARKER } from "../../lib/markers";
 import { nowIso } from "../../lib/time";
 import { MapView, type PlacePinFeature } from "../../map/MapView";
 import { Markdown } from "../../markdown/Markdown";
@@ -151,6 +151,9 @@ export function SharedGuideView({
         lng: poi?.lng ?? row.lng,
         unlinked: row.manual === true,
         color: DEFAULT_PIN_COLOR,
+        icon: FALLBACK_MARKER.icon,
+        multi: false,
+        dimmed: false,
       },
     ];
   });
@@ -199,9 +202,29 @@ export function SharedGuideView({
             {saved ? "Added to your library" : saving ? "Adding…" : "Add to my library"}
           </button>
         </header>
+        {guide.list ? (
+          // A shared post stays associated with its list (spec/src/posts.md
+          // §Publishing): named always; a working link when the list has its
+          // own hosted page (a tombstoned slug can only 404, never point
+          // elsewhere).
+          <p className="mt-1 text-sm text-stone-600" data-testid="shared-post-list">
+            From the list:{" "}
+            {guide.list.slug ? (
+              <a
+                href={`/l/${guide.list.slug}`}
+                className="font-medium text-blue-700 underline"
+                data-testid="shared-post-list-link"
+              >
+                {guide.list.title}
+              </a>
+            ) : (
+              <span className="font-medium">{guide.list.title}</span>
+            )}
+          </p>
+        ) : null}
         <p className="mt-1 text-xs text-stone-500">
-          A shared, read-only guide{mode === "snapshot" ? " (snapshot link)" : ""}. Map data ©
-          OpenStreetMap contributors.
+          A shared, read-only {guide.kind === "post" ? "post" : "guide"}
+          {mode === "snapshot" ? " (snapshot link)" : ""}. Map data © OpenStreetMap contributors.
         </p>
         {saved ? (
           <p

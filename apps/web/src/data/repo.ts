@@ -32,8 +32,10 @@ import {
   type ExternalRef,
   emptyBlockers,
   evidenceFromPoi,
+  type Hlc,
   hasBlockers,
   hasExternalRef,
+  isSyncedTable,
   type List,
   type ListBlock,
   type ListBlockView,
@@ -41,6 +43,8 @@ import {
   type ManualFacts,
   type MediaAsset,
   markerKey,
+  mergeHlc,
+  mergeRemoteChange,
   type Note,
   normalizeName,
   normalizeTagName,
@@ -54,15 +58,18 @@ import {
   type PostBlock,
   type PostBlockView,
   plausiblySameElement,
+  type RemoteChange,
   type ResolvedPoi,
   rankAfter,
   rankBetween,
   refKey,
+  type SyncedTable,
   sameRef,
   type Tag,
   type TagAssignment,
   type TeardownBlockers,
   TeardownRefusedError,
+  tickHlc,
   withExternalRef,
 } from "@placemarks/domain";
 import { newId } from "../lib/id";
@@ -97,11 +104,179 @@ function toPostBlockRow(block: PostBlock): PostBlockRow {
 const live = <T extends { deleted?: boolean }>(row: T | undefined): T | undefined =>
   row && !row.deleted ? row : undefined;
 
+/** The device's stable actor id for sync mutations (never part of backups). */
+function deviceActorId(): string {
+  try {
+    const existing = localStorage.getItem("placemarks:actor");
+    if (existing) return existing;
+    const fresh = newId();
+    localStorage.setItem("placemarks:actor", fresh);
+    return fresh;
+  } catch {
+    return "actor-volatile";
+  }
+}
+
 export class DexieRepository implements PlacemarksRepository {
   readonly db: PlacemarksDb;
+  readonly actorId: string;
+  private clock: Hlc | undefined;
 
-  constructor(dbName?: string) {
+  constructor(dbName?: string, options?: { actorId?: string }) {
     this.db = new PlacemarksDb(dbName);
+    // Tests simulating several devices in ONE browser context inject distinct
+    // actors; a real device derives its stable id from local storage.
+    this.actorId = options?.actorId ?? deviceActorId();
+  }
+
+  /** Witnessing a remote stamp keeps later local events after it. */
+  observeHlc(observed: Hlc): void {
+    this.clock = mergeHlc(this.clock, observed, Date.now(), this.actorId);
+  }
+
+  /**
+   * Write a synced-table row AND its durable mutation in the SAME transaction
+   * (spec/src/storage-sync.md: mutation ids and HLC stamps are the sync
+   * order; a committed local edit is never invisible to the transport).
+   */
+  /** Record a row this device just wrote — outbox entry + local rev stamp. */
+  private async logMutation<T extends { id: string }>(
+    tableName: SyncedTable,
+    row: T,
+  ): Promise<void> {
+    this.clock = tickHlc(this.clock, Date.now(), this.actorId);
+    await this.db.mutationOutbox.put({
+      id: newId(),
+      actorId: this.actorId,
+      table: tableName,
+      entityId: row.id,
+      hlc: this.clock,
+      row: row as unknown as Record<string, unknown>,
+      createdAt: new Date().toISOString(),
+    });
+    await this.db.syncRevs.put({
+      key: `${tableName}:${row.id}`,
+      hlc: this.clock,
+      origin: "local",
+    });
+  }
+
+  private async syncedPut<T extends { id: string }>(tableName: SyncedTable, row: T): Promise<void> {
+    await (this.db[tableName] as unknown as { put: (value: unknown) => Promise<unknown> }).put(row);
+    await this.logMutation(tableName, row);
+  }
+
+  /**
+   * Log rows a bulk write (backup restore/merge) just committed, so they sync
+   * like any other local edit (spec/src/storage-sync.md). Must run inside the
+   * same transaction as the writes; only rows that were ACTUALLY written may
+   * be logged — a skipped merge duplicate must never re-enter the log under a
+   * fresh stamp.
+   */
+  async logRestoredRows(written: { table: string; row: { id: string } }[]): Promise<void> {
+    for (const entry of written) {
+      if (!isSyncedTable(entry.table)) continue;
+      await this.logMutation(entry.table, entry.row);
+    }
+  }
+
+  /**
+   * Apply one pulled page of remote changes (spec/src/storage-sync.md
+   * §Multi-device sync) in ONE transaction: per-row HLC merge with the domain
+   * policy — conflict copies for concurrent Markdown edits, conservative
+   * place-history merging — plus rescue of content a remote teardown raced.
+   * Remote applications never re-enter the outbox (no echo); rescued copies
+   * DO (they are new local content every device should see).
+   */
+  async applyRemoteChanges(changes: RemoteChange[]): Promise<void> {
+    if (changes.length === 0) return;
+    await this.db.transaction(
+      "rw",
+      [
+        this.db.places,
+        this.db.tags,
+        this.db.tagAssignments,
+        this.db.notes,
+        this.db.mediaAssets,
+        this.db.lists,
+        this.db.listBlocks,
+        this.db.posts,
+        this.db.postBlocks,
+        this.db.blockNoteAttachments,
+        this.db.blockTagSelections,
+        this.db.syncRevs,
+        this.db.syncConflicts,
+        this.db.mutationOutbox,
+      ],
+      async () => {
+        for (const change of changes) {
+          if (!isSyncedTable(change.table)) continue;
+          const table = this.db[change.table] as unknown as {
+            get: (id: string) => Promise<Record<string, unknown> | undefined>;
+            put: (value: unknown) => Promise<unknown>;
+          };
+          const key = `${change.table}:${change.entityId}`;
+          const rev = await this.db.syncRevs.get(key);
+          const local = await table.get(change.entityId);
+          // "Concurrent" = the incoming edit did not observe the local row's
+          // latest revision, and that revision was authored HERE (a rev this
+          // device merely applied is causal history, not a competing edit).
+          const concurrentWithLocal = rev?.origin === "local" && change.actorId !== this.actorId;
+          this.observeHlc(change.hlc);
+          const decision = mergeRemoteChange(change, {
+            local,
+            localRev: rev?.hlc,
+            locallyDirty: concurrentWithLocal,
+            newId,
+            now: new Date().toISOString(),
+          });
+          if (!decision.apply) continue;
+          let row = decision.row;
+          // Derived index fields are recomputed, never trusted across devices.
+          if (change.table === "places") {
+            row = { ...row, refKeys: allRefKeys(row as unknown as Place) };
+          }
+          await table.put(row);
+          await this.db.syncRevs.put({
+            key,
+            hlc: change.hlc,
+            origin: change.actorId === this.actorId ? "local" : "remote",
+          });
+          if (decision.conflictCopy) {
+            await this.syncedPut(
+              decision.conflictCopy.table,
+              decision.conflictCopy.row as { id: string },
+            );
+          }
+          // A remote teardown can race a local note edit: the raced note
+          // surfaces as a recoverable conflict copy, never a silent drop
+          // (spec/src/storage-sync.md).
+          if (
+            (change.table === "places" || change.table === "posts") &&
+            (row as { deleted?: boolean }).deleted === true
+          ) {
+            const targetKey = `${change.table === "places" ? "place" : "post"}:${change.entityId}`;
+            const orphans = (
+              await this.db.notes.where("targetKey").equals(targetKey).toArray()
+            ).filter((note) => !note.deleted);
+            for (const orphan of orphans) {
+              await this.db.syncConflicts.put({
+                id: newId(),
+                kind: "orphaned-note",
+                ...(orphan.title !== undefined ? { title: orphan.title } : {}),
+                body: orphan.body,
+                reason: "its place or post was deleted on another device",
+                at: new Date().toISOString(),
+              });
+              await this.syncedPut(
+                "notes",
+                toNoteRow({ ...orphan, deleted: true, updatedAt: new Date().toISOString() }),
+              );
+            }
+          }
+        }
+      },
+    );
   }
 
   // ---------- places ----------
@@ -132,6 +307,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.postBlocks,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         // A whole-object update is never a deletion: removals go through the
@@ -211,7 +388,8 @@ export class DexieRepository implements PlacemarksRepository {
           !refChanged ||
           existing.currentOsmRef === undefined ||
           (place.currentOsmRef !== undefined && growthValid);
-        await this.db.places.put(
+        await this.syncedPut(
+          "places",
           toPlaceRow({
             ...place,
             origin: existing.origin,
@@ -277,19 +455,23 @@ export class DexieRepository implements PlacemarksRepository {
    * never gain two live holders.
    */
   async linkImportedPlace(place: Place, poi: ResolvedPoi, now: string): Promise<Place> {
-    return this.db.transaction("rw", [this.db.places], async () => {
-      const current = live(await this.db.places.get(place.id)) ?? place;
-      if (current.currentOsmRef) return current;
-      const holder = await this.findPlaceByOsmRef(poi.osmRef);
-      if (holder && holder.id !== current.id) {
-        // Another live place already holds this exact element — linking would
-        // fork its identity, so this upgrade quietly stands down.
-        return current;
-      }
-      const linked = linkPlaceToOsm(current, poi, now, "resolver-match");
-      await this.db.places.put(toPlaceRow(linked));
-      return linked;
-    });
+    return this.db.transaction(
+      "rw",
+      [this.db.places, this.db.mutationOutbox, this.db.syncRevs],
+      async () => {
+        const current = live(await this.db.places.get(place.id)) ?? place;
+        if (current.currentOsmRef) return current;
+        const holder = await this.findPlaceByOsmRef(poi.osmRef);
+        if (holder && holder.id !== current.id) {
+          // Another live place already holds this exact element — linking would
+          // fork its identity, so this upgrade quietly stands down.
+          return current;
+        }
+        const linked = linkPlaceToOsm(current, poi, now, "resolver-match");
+        await this.syncedPut("places", toPlaceRow(linked));
+        return linked;
+      },
+    );
   }
 
   /**
@@ -494,18 +676,18 @@ export class DexieRepository implements PlacemarksRepository {
    * time this runs; authored content never dies as a side effect.
    */
   private async tombstonePlace(place: Place, now: string): Promise<void> {
-    await this.db.places.put(toPlaceRow({ ...place, deleted: true, updatedAt: now }));
+    await this.syncedPut("places", toPlaceRow({ ...place, deleted: true, updatedAt: now }));
     const assignments = (
       await this.db.tagAssignments.where("placeId").equals(place.id).toArray()
     ).filter((a) => !a.deleted);
     for (const a of assignments) {
-      await this.db.tagAssignments.put({ ...a, deleted: true, updatedAt: now });
+      await this.syncedPut("tagAssignments", { ...a, deleted: true, updatedAt: now });
     }
     const blocks = (await this.db.listBlocks.where("refId").equals(place.id).toArray()).filter(
       (b) => !b.deleted && b.kind === "place",
     );
     for (const block of blocks) {
-      await this.db.listBlocks.put({ ...block, deleted: true, updatedAt: now });
+      await this.syncedPut("listBlocks", { ...block, deleted: true, updatedAt: now });
     }
   }
 
@@ -548,6 +730,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.postBlocks,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const place = live(await this.db.places.get(placeId));
@@ -580,7 +764,13 @@ export class DexieRepository implements PlacemarksRepository {
   async assignTag(placeId: PlaceId, tagName: string, now: string): Promise<void> {
     await this.db.transaction(
       "rw",
-      [this.db.tags, this.db.tagAssignments, this.db.places],
+      [
+        this.db.tags,
+        this.db.tagAssignments,
+        this.db.places,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
+      ],
       async () => {
         if (!live(await this.db.places.get(placeId))) {
           throw new Error("cannot tag: place not found");
@@ -592,7 +782,7 @@ export class DexieRepository implements PlacemarksRepository {
         );
         if (!tag) {
           tag = { id: newId(), name: tagName.trim(), nameNorm, createdAt: now, updatedAt: now };
-          await this.db.tags.put(tag);
+          await this.syncedPut("tags", tag);
         }
         const pair = await this.db.tagAssignments
           .where("[placeId+tagId]")
@@ -606,7 +796,7 @@ export class DexieRepository implements PlacemarksRepository {
           createdAt: now,
           updatedAt: now,
         };
-        await this.db.tagAssignments.put(assignment);
+        await this.syncedPut("tagAssignments", assignment);
       },
     );
   }
@@ -624,6 +814,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.posts,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const pair = await this.db.tagAssignments
@@ -632,7 +824,7 @@ export class DexieRepository implements PlacemarksRepository {
           .toArray();
         const existing = pair.find((a) => !a.deleted);
         if (!existing) return;
-        await this.db.tagAssignments.put({ ...existing, deleted: true, updatedAt: now });
+        await this.syncedPut("tagAssignments", { ...existing, deleted: true, updatedAt: now });
         const selections = (
           await this.db.blockTagSelections.where("tagId").equals(tagId).toArray()
         ).filter((s) => !s.deleted);
@@ -640,7 +832,11 @@ export class DexieRepository implements PlacemarksRepository {
         for (const selection of selections) {
           const block = live(await this.db.postBlocks.get(selection.blockId));
           if (block && block.kind === "place" && block.refId === placeId) {
-            await this.db.blockTagSelections.put({ ...selection, deleted: true, updatedAt: now });
+            await this.syncedPut("blockTagSelections", {
+              ...selection,
+              deleted: true,
+              updatedAt: now,
+            });
             touchedPosts.add(block.postId);
           }
         }
@@ -666,11 +862,17 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async createNote(note: Note): Promise<void> {
-    // A note attaches to a live aggregate — an orphan note is a graph error.
-    if (!(await this.noteTargetIsLive(note))) {
-      throw new Error("note target not found — notes attach to a live place or post");
-    }
-    await this.db.notes.put(toNoteRow(note));
+    await this.db.transaction(
+      "rw",
+      [this.db.notes, this.db.places, this.db.posts, this.db.mutationOutbox, this.db.syncRevs],
+      async () => {
+        // A note attaches to a live aggregate — an orphan note is a graph error.
+        if (!(await this.noteTargetIsLive(note))) {
+          throw new Error("note target not found — notes attach to a live place or post");
+        }
+        await this.syncedPut("notes", toNoteRow(note));
+      },
+    );
   }
 
   async updateNote(note: Note): Promise<void> {
@@ -688,6 +890,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.posts,
         this.db.postBlocks,
         this.db.places,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         // A whole-object update is never a deletion: only deleteNote runs the
@@ -718,7 +922,7 @@ export class DexieRepository implements PlacemarksRepository {
           );
           for (const edge of edges) {
             attachedBlockIds.push(edge.blockId);
-            await this.db.blockNoteAttachments.put({
+            await this.syncedPut("blockNoteAttachments", {
               ...edge,
               deleted: true,
               updatedAt: note.updatedAt,
@@ -731,7 +935,7 @@ export class DexieRepository implements PlacemarksRepository {
           // lands — and the revocation supersedes every pending page update.
           await this.revokePublicationsFor({ kind: "note", id: note.id }, note.updatedAt);
         }
-        await this.db.notes.put(toNoteRow(note));
+        await this.syncedPut("notes", toNoteRow(note));
         if (note.shareable) {
           // A shareable-note edit dirties its standalone page too.
           await this.dirtyPublicationsFor({ kind: "note", id: note.id }, note.updatedAt);
@@ -772,7 +976,7 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   private async tombstoneNote(note: Note, now: string): Promise<void> {
-    await this.db.notes.put(toNoteRow({ ...note, deleted: true, updatedAt: now }));
+    await this.syncedPut("notes", toNoteRow({ ...note, deleted: true, updatedAt: now }));
     // A deleted note's standalone public page queues its removal.
     await this.revokePublicationsFor({ kind: "note", id: note.id }, now);
     // A deleted note disappears from every attachment…
@@ -780,7 +984,7 @@ export class DexieRepository implements PlacemarksRepository {
       await this.db.blockNoteAttachments.where("noteId").equals(note.id).toArray()
     ).filter((a) => !a.deleted);
     for (const a of attachments) {
-      await this.db.blockNoteAttachments.put({ ...a, deleted: true, updatedAt: now });
+      await this.syncedPut("blockNoteAttachments", { ...a, deleted: true, updatedAt: now });
     }
     // …and a deleted post-section note removes its section block.
     if (note.target.kind === "post") {
@@ -788,7 +992,7 @@ export class DexieRepository implements PlacemarksRepository {
         (b) => !b.deleted && b.kind === "section",
       );
       for (const b of blocks) {
-        await this.db.postBlocks.put({ ...b, deleted: true, updatedAt: now });
+        await this.syncedPut("postBlocks", { ...b, deleted: true, updatedAt: now });
       }
     }
   }
@@ -805,6 +1009,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.postBlocks,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const note = live(await this.db.notes.get(noteId));
@@ -840,10 +1046,14 @@ export class DexieRepository implements PlacemarksRepository {
   // ---------- media ----------
 
   async putMedia(asset: MediaAsset, blob: Blob): Promise<void> {
-    await this.db.transaction("rw", [this.db.mediaAssets, this.db.mediaBlobs], async () => {
-      await this.db.mediaAssets.put(asset);
-      await this.db.mediaBlobs.put({ id: asset.localBlobKey, blob });
-    });
+    await this.db.transaction(
+      "rw",
+      [this.db.mediaAssets, this.db.mediaBlobs, this.db.mutationOutbox, this.db.syncRevs],
+      async () => {
+        await this.syncedPut("mediaAssets", asset);
+        await this.db.mediaBlobs.put({ id: asset.localBlobKey, blob });
+      },
+    );
   }
 
   async getMedia(id: string): Promise<{ asset: MediaAsset; blob: Blob } | undefined> {
@@ -878,10 +1088,14 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async createList(list: List): Promise<void> {
-    await this.db.transaction("rw", [this.db.lists], async () => {
-      await this.assertMarkerFree(list);
-      await this.db.lists.put(list);
-    });
+    await this.db.transaction(
+      "rw",
+      [this.db.lists, this.db.mutationOutbox, this.db.syncRevs],
+      async () => {
+        await this.assertMarkerFree(list);
+        await this.syncedPut("lists", list);
+      },
+    );
   }
 
   async updateList(list: List): Promise<void> {
@@ -889,11 +1103,18 @@ export class DexieRepository implements PlacemarksRepository {
     // aggregate transactions (spec/src/storage-sync.md).
     await this.db.transaction(
       "rw",
-      [this.db.lists, this.db.posts, this.db.publications, this.db.publicationOutbox],
+      [
+        this.db.lists,
+        this.db.posts,
+        this.db.publications,
+        this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
+      ],
       async () => {
         const existing = live(await this.db.lists.get(list.id));
         await this.assertMarkerFree(list);
-        await this.db.lists.put(list);
+        await this.syncedPut("lists", list);
         await this.dirtyListPublications(list.id, list.updatedAt);
         // A shared post names its list — a rename re-projects the posts too.
         if (existing && existing.name !== list.name) {
@@ -914,6 +1135,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.posts,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const list = live(await this.db.lists.get(listId));
@@ -934,7 +1157,7 @@ export class DexieRepository implements PlacemarksRepository {
             blockers,
           );
         }
-        await this.db.lists.put({ ...list, deleted: true, updatedAt: now });
+        await this.syncedPut("lists", { ...list, deleted: true, updatedAt: now });
         // The public list page comes down with the list — durably, not orphaned.
         await this.revokePublicationsFor({ kind: "list", id: listId }, now);
       },
@@ -990,6 +1213,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.tagAssignments,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         if (!live(await this.db.lists.get(listId))) throw new Error("list not found");
@@ -1002,7 +1227,7 @@ export class DexieRepository implements PlacemarksRepository {
           place = existing;
         } else if (source.kind === "manual") {
           place = createManualPlace(newId(), source.facts, now);
-          await this.db.places.put(toPlaceRow(place));
+          await this.syncedPut("places", toPlaceRow(place));
         } else if (source.kind === "import") {
           // Idempotent re-import (spec/src/interop.md): external-ref id first,
           // then the OSM match's ref, then name+proximity — the same row
@@ -1026,12 +1251,12 @@ export class DexieRepository implements PlacemarksRepository {
             if (source.poi && !merged.currentOsmRef) {
               merged = linkPlaceToOsm(merged, source.poi, now, "resolver-match");
             }
-            if (merged !== found) await this.db.places.put(toPlaceRow(merged));
+            if (merged !== found) await this.syncedPut("places", toPlaceRow(merged));
             place = merged;
           } else {
             place = createImportedPlace(newId(), source.facts, source.externalRef, now);
             if (source.poi) place = linkPlaceToOsm(place, source.poi, now, "resolver-match");
-            await this.db.places.put(toPlaceRow(place));
+            await this.syncedPut("places", toPlaceRow(place));
           }
         } else {
           const poi: ResolvedPoi = source.poi;
@@ -1062,19 +1287,19 @@ export class DexieRepository implements PlacemarksRepository {
                   updatedAt: now,
                 };
               }
-              await this.db.places.put(toPlaceRow(place));
+              await this.syncedPut("places", toPlaceRow(place));
             } else {
               place = found;
             }
           } else {
             place = createOsmPlace(newId(), poi, now);
-            await this.db.places.put(toPlaceRow(place));
+            await this.syncedPut("places", toPlaceRow(place));
           }
           // An import that OSM-matched still retains its source URL (provenance
           // and the deep link back — spec/src/interop.md).
           if (source.externalRef && !hasExternalRef(place, source.externalRef)) {
             place = withExternalRef(place, source.externalRef, now);
-            await this.db.places.put(toPlaceRow(place));
+            await this.syncedPut("places", toPlaceRow(place));
           }
         }
 
@@ -1092,7 +1317,7 @@ export class DexieRepository implements PlacemarksRepository {
           createdAt: now,
           updatedAt: now,
         };
-        await this.db.listBlocks.put(toBlockRow(block));
+        await this.syncedPut("listBlocks", toBlockRow(block));
         await this.dirtyListPublications(listId, now);
         return { place, tags: await this.tagsOf(place.id) };
       },
@@ -1103,7 +1328,14 @@ export class DexieRepository implements PlacemarksRepository {
     // The reorder and its publication dirtying commit (or fail) together.
     await this.db.transaction(
       "rw",
-      [this.db.listBlocks, this.db.lists, this.db.publications, this.db.publicationOutbox],
+      [
+        this.db.listBlocks,
+        this.db.lists,
+        this.db.publications,
+        this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
+      ],
       async () => {
         const block = live(await this.db.listBlocks.get(blockId));
         if (!block) throw new Error("block not found");
@@ -1119,7 +1351,7 @@ export class DexieRepository implements PlacemarksRepository {
           const before = index > 0 ? (siblings[index - 1]?.rank ?? null) : null;
           rank = rankBetween(before, siblings[index]?.rank ?? null);
         }
-        await this.db.listBlocks.put({ ...block, rank, updatedAt: now });
+        await this.syncedPut("listBlocks", { ...block, rank, updatedAt: now });
         await this.dirtyListPublications(block.listId, now);
       },
     );
@@ -1171,6 +1403,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.postBlocks,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const block = live(await this.db.listBlocks.get(blockId));
@@ -1182,7 +1416,7 @@ export class DexieRepository implements PlacemarksRepository {
             blockers,
           );
         }
-        await this.db.listBlocks.put({ ...block, deleted: true, updatedAt: now });
+        await this.syncedPut("listBlocks", { ...block, deleted: true, updatedAt: now });
         // Membership is existence: dropping the last membership removes the place.
         if (block.kind === "place") {
           const remaining = await this.livePlaceBlocks(block.refId);
@@ -1211,6 +1445,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.postBlocks,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         if (!live(await this.db.lists.get(listId))) throw new Error("list not found");
@@ -1229,7 +1465,7 @@ export class DexieRepository implements PlacemarksRepository {
           );
         }
         for (const block of blocks) {
-          await this.db.listBlocks.put({ ...block, deleted: true, updatedAt: now });
+          await this.syncedPut("listBlocks", { ...block, deleted: true, updatedAt: now });
           const remaining = await this.livePlaceBlocks(block.refId);
           if (remaining.length === 0) {
             const place = live(await this.db.places.get(block.refId));
@@ -1256,19 +1492,29 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   async createPost(post: Post): Promise<void> {
-    await this.db.transaction("rw", [this.db.posts, this.db.lists], async () => {
-      // A post editorialises exactly one live list.
-      if (!live(await this.db.lists.get(post.listId))) {
-        throw new Error("list not found — a post editorialises a live list");
-      }
-      await this.db.posts.put(post);
-    });
+    await this.db.transaction(
+      "rw",
+      [this.db.posts, this.db.lists, this.db.mutationOutbox, this.db.syncRevs],
+      async () => {
+        // A post editorialises exactly one live list.
+        if (!live(await this.db.lists.get(post.listId))) {
+          throw new Error("list not found — a post editorialises a live list");
+        }
+        await this.syncedPut("posts", post);
+      },
+    );
   }
 
   async updatePost(post: Post): Promise<void> {
     await this.db.transaction(
       "rw",
-      [this.db.posts, this.db.publications, this.db.publicationOutbox],
+      [
+        this.db.posts,
+        this.db.publications,
+        this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
+      ],
       async () => {
         const existing = live(await this.db.posts.get(post.id));
         if (!existing) throw new Error("post not found — updatePost is not a creation path");
@@ -1277,7 +1523,7 @@ export class DexieRepository implements PlacemarksRepository {
         if (existing.listId !== post.listId) {
           throw new Error("a post's list binding is immutable");
         }
-        await this.db.posts.put(post);
+        await this.syncedPut("posts", post);
         await this.dirtyPostPublications(post.id, post.updatedAt);
       },
     );
@@ -1297,18 +1543,20 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.blockTagSelections,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const post = live(await this.db.posts.get(postId));
         if (!post) return;
-        await this.db.posts.put({ ...post, deleted: true, updatedAt: now });
+        await this.syncedPut("posts", { ...post, deleted: true, updatedAt: now });
         await this.revokePublicationsFor({ kind: "post", id: postId }, now);
         const blocks = (await this.db.postBlocks.where("postId").equals(postId).toArray()).filter(
           (b) => !b.deleted,
         );
         for (const block of blocks) {
           await this.tombstonePostBlockEdges(block, now);
-          await this.db.postBlocks.put({ ...block, deleted: true, updatedAt: now });
+          await this.syncedPut("postBlocks", { ...block, deleted: true, updatedAt: now });
         }
         // The post's own section notes die with it — they are its prose.
         const sectionNotes = (
@@ -1326,13 +1574,13 @@ export class DexieRepository implements PlacemarksRepository {
       await this.db.blockNoteAttachments.where("blockId").equals(block.id).toArray()
     ).filter((a) => !a.deleted);
     for (const a of attachments) {
-      await this.db.blockNoteAttachments.put({ ...a, deleted: true, updatedAt: now });
+      await this.syncedPut("blockNoteAttachments", { ...a, deleted: true, updatedAt: now });
     }
     const selections = (
       await this.db.blockTagSelections.where("blockId").equals(block.id).toArray()
     ).filter((s) => !s.deleted);
     for (const s of selections) {
-      await this.db.blockTagSelections.put({ ...s, deleted: true, updatedAt: now });
+      await this.syncedPut("blockTagSelections", { ...s, deleted: true, updatedAt: now });
     }
   }
 
@@ -1403,6 +1651,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.notes,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         if (!live(await this.db.posts.get(postId))) throw new Error("post not found");
@@ -1416,7 +1666,7 @@ export class DexieRepository implements PlacemarksRepository {
           createdAt: now,
           updatedAt: now,
         };
-        await this.db.notes.put(toNoteRow(note));
+        await this.syncedPut("notes", toNoteRow(note));
         const blocks = await this.livePostBlocks(postId);
         const lastRank = blocks.length > 0 ? (blocks[blocks.length - 1]?.rank ?? null) : null;
         const block: PostBlock = {
@@ -1427,7 +1677,7 @@ export class DexieRepository implements PlacemarksRepository {
           createdAt: now,
           updatedAt: now,
         };
-        await this.db.postBlocks.put(toPostBlockRow(block));
+        await this.syncedPut("postBlocks", toPostBlockRow(block));
         await this.dirtyPostPublications(postId, now);
         return block;
       },
@@ -1445,6 +1695,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.listBlocks,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const post = live(await this.db.posts.get(postId));
@@ -1468,7 +1720,7 @@ export class DexieRepository implements PlacemarksRepository {
           createdAt: now,
           updatedAt: now,
         };
-        await this.db.postBlocks.put(toPostBlockRow(block));
+        await this.syncedPut("postBlocks", toPostBlockRow(block));
         await this.dirtyPostPublications(postId, now);
         return block;
       },
@@ -1478,7 +1730,14 @@ export class DexieRepository implements PlacemarksRepository {
   async movePostBlock(blockId: string, beforeBlockId: string | null, now: string): Promise<void> {
     await this.db.transaction(
       "rw",
-      [this.db.postBlocks, this.db.posts, this.db.publications, this.db.publicationOutbox],
+      [
+        this.db.postBlocks,
+        this.db.posts,
+        this.db.publications,
+        this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
+      ],
       async () => {
         const block = live(await this.db.postBlocks.get(blockId));
         if (!block) throw new Error("block not found");
@@ -1494,7 +1753,7 @@ export class DexieRepository implements PlacemarksRepository {
           const before = index > 0 ? (siblings[index - 1]?.rank ?? null) : null;
           rank = rankBetween(before, siblings[index]?.rank ?? null);
         }
-        await this.db.postBlocks.put({ ...block, rank, updatedAt: now });
+        await this.syncedPut("postBlocks", { ...block, rank, updatedAt: now });
         await this.dirtyPostPublications(block.postId, now);
       },
     );
@@ -1511,12 +1770,14 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.blockTagSelections,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const block = live(await this.db.postBlocks.get(blockId));
         if (!block) return;
         await this.tombstonePostBlockEdges(block, now);
-        await this.db.postBlocks.put({ ...block, deleted: true, updatedAt: now });
+        await this.syncedPut("postBlocks", { ...block, deleted: true, updatedAt: now });
         // A removed section block takes its post-owned note with it — through
         // the full note tombstone (its standalone page revokes, its edges
         // tombstone); a removed embed frees the place (its notes and
@@ -1544,6 +1805,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.blockNoteAttachments,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const block = live(await this.db.postBlocks.get(blockId));
@@ -1582,7 +1845,7 @@ export class DexieRepository implements PlacemarksRepository {
           createdAt: now,
           updatedAt: now,
         };
-        await this.db.blockNoteAttachments.put(attachment);
+        await this.syncedPut("blockNoteAttachments", attachment);
         await this.dirtyPostPublications(block.postId, now);
         return attachment;
       },
@@ -1598,6 +1861,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.publications,
         this.db.publicationOutbox,
         this.db.posts,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const pair = await this.db.blockNoteAttachments
@@ -1606,7 +1871,11 @@ export class DexieRepository implements PlacemarksRepository {
           .toArray();
         const existing = pair.find((a) => !a.deleted);
         if (!existing) return;
-        await this.db.blockNoteAttachments.put({ ...existing, deleted: true, updatedAt: now });
+        await this.syncedPut("blockNoteAttachments", {
+          ...existing,
+          deleted: true,
+          updatedAt: now,
+        });
         const block = await this.db.postBlocks.get(blockId);
         if (block && !block.deleted) {
           await this.dirtyPostPublications(block.postId, now);
@@ -1630,6 +1899,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.blockTagSelections,
         this.db.publications,
         this.db.publicationOutbox,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const block = live(await this.db.postBlocks.get(blockId));
@@ -1658,7 +1929,7 @@ export class DexieRepository implements PlacemarksRepository {
           createdAt: now,
           updatedAt: now,
         };
-        await this.db.blockTagSelections.put(selection);
+        await this.syncedPut("blockTagSelections", selection);
         await this.dirtyPostPublications(block.postId, now);
         return selection;
       },
@@ -1674,6 +1945,8 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.publications,
         this.db.publicationOutbox,
         this.db.posts,
+        this.db.mutationOutbox,
+        this.db.syncRevs,
       ],
       async () => {
         const pair = await this.db.blockTagSelections
@@ -1682,7 +1955,7 @@ export class DexieRepository implements PlacemarksRepository {
           .toArray();
         const existing = pair.find((s) => !s.deleted);
         if (!existing) return;
-        await this.db.blockTagSelections.put({ ...existing, deleted: true, updatedAt: now });
+        await this.syncedPut("blockTagSelections", { ...existing, deleted: true, updatedAt: now });
         const block = await this.db.postBlocks.get(blockId);
         if (block && !block.deleted) {
           await this.dirtyPostPublications(block.postId, now);

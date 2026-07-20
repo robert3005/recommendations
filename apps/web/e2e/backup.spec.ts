@@ -7,6 +7,9 @@ import { expect, type Page, test } from "@playwright/test";
 async function reopenSavedAtCenter(page: Page) {
   await page.reload();
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+  // The pane relaunches expanded over the idle canvas — collapse once so the
+  // canvas chrome is reachable and the pins paint (spec/src/map-view.md).
+  await page.getByTestId("pane-collapse").click();
   const mapEl = page.getByTestId("map-canvas");
   // The map reports painted saved pins via a data attribute — no sleeps.
   await expect(mapEl).toHaveAttribute("data-pins", /^[1-9]/, { timeout: 10_000 });
@@ -19,6 +22,8 @@ async function reopenSavedAtCenter(page: Page) {
 test("export → remove-place → import(replace) restores the library", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+  // Reach the canvas search beside the pane.
+  await page.getByTestId("pane-collapse").click();
 
   // Seed: Café Central enters the library via a new list, with a tag.
   await page.getByRole("combobox", { name: "Search places" }).fill("cafe");
@@ -45,11 +50,8 @@ test("export → remove-place → import(replace) restores the library", async (
   const backupPath = await download.path();
   await expect(page.getByTestId("settings-message")).toContainText("Backup exported");
 
-  // Destroy: remove-place the place.
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Map" })
-    .click();
+  // Destroy: remove-place the place. The canvas never navigated away —
+  // reopenSavedAtCenter reloads and collapses the pane itself.
   await reopenSavedAtCenter(page);
   await expect(page.getByTestId("place-details")).toBeVisible();
   await page.getByTestId("remove-place").click();
@@ -65,10 +67,6 @@ test("export → remove-place → import(replace) restores the library", async (
   await expect(page.getByTestId("settings-message")).toContainText("Imported");
 
   // The library is back: same place, same tag.
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Map" })
-    .click();
   await reopenSavedAtCenter(page);
   const restored = page.getByTestId("place-details");
   await expect(restored).toBeVisible();

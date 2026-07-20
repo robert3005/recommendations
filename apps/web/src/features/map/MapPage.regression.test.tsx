@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
-import { MapPage } from "./MapPage";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MapCanvas } from "../../map/MapCanvas";
+import { usePaneStore } from "../../state/pane";
 
 const fixture = vi.hoisted(() => ({
   capturedProps: undefined as
@@ -34,6 +35,7 @@ vi.mock("../../data/hooks", () => ({
     },
   ],
   useListMembership: () => ({ "imported-place": ["takeout-list"] }),
+  usePostBlocks: () => undefined,
 }));
 
 vi.mock("../../data/RepoContext", () => ({
@@ -58,13 +60,17 @@ vi.mock("../search/SearchBar", () => ({ SearchBar: () => null }));
 vi.mock("../picker/CandidatePicker", () => ({ CandidatePicker: () => null }));
 vi.mock("../picker/ManualPinDialog", () => ({ ManualPinDialog: () => null }));
 
+beforeEach(() => {
+  usePaneStore.setState({ pane: "collapsed" });
+});
+
 describe("Phase 3 imported map markers", () => {
   it("keeps an unlinked imported place in its list colour, flagged unlinked", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
     render(
       <QueryClientProvider client={queryClient}>
-        <MapPage />
+        <MapCanvas />
       </QueryClientProvider>,
     );
 

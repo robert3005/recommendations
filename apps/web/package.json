@@ -60,7 +60,8 @@
     "typescript": "^5.6.0",
     "vite": "^7.0.0",
     "vite-plugin-pwa": "^1.0.0",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "@placemarks/sync-service": "workspace:*"
   },
   "msw": {
     "workerDirectory": [

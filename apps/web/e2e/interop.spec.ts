@@ -36,12 +36,16 @@ test("a Takeout archive imports into a list; review resolves on the map", async 
   await expect(report).toContainText("1 linked to OSM");
   await expect(report).toContainText("1 to review");
 
-  // The review queue holds the un-geocodable row; place it on the map.
+  // The review queue is its own pane route now, linked from the import section.
+  await page.getByTestId("open-review-queue").click();
+  await expect(page.getByTestId("review-page")).toBeVisible();
   const reviewItem = page.getByTestId("review-item");
   await expect(reviewItem).toHaveCount(1);
   await expect(reviewItem).toContainText("Mystery Bar");
+  // "Place on map" stays on /review — it collapses the pane so the canvas shows.
   await reviewItem.getByTestId("review-place-on-map").click();
 
+  await expect(page.getByTestId("app-shell")).toHaveAttribute("data-pane-state", "collapsed");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
   await expect(page.getByTestId("placing-import-hint")).toBeVisible();
   const box = await page.getByTestId("map-canvas").boundingBox();
@@ -59,6 +63,8 @@ test("a Takeout archive imports into a list; review resolves on the map", async 
   await details.getByRole("button", { name: "Close" }).click();
 
   // The list holds all three; the linked place carries live OSM facts.
+  // The pane was collapsed for placement — reopen it to read the list.
+  await page.getByTestId("pane-reopen").click();
   await page
     .getByRole("navigation", { name: "Primary" })
     .getByRole("link", { name: "Lists" })
@@ -78,10 +84,11 @@ test("a Takeout archive imports into a list; review resolves on the map", async 
   expect(kml.match(/<Placemark>/g)).toHaveLength(3);
   expect(kml).toContain("OpenStreetMap contributors");
 
-  // The imported Google URL survives as the deep link on the linked place.
+  // Home projects every list's pins on the always-mounted canvas beside the
+  // pane (no Map tab any more) — all three imports are marked.
   await page
     .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Map" })
+    .getByRole("link", { name: "Lists" })
     .click();
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "3");
 });
@@ -118,8 +125,11 @@ test("a CSV export round-trips through the importer", async ({ page }) => {
     buffer: takeoutZip(),
   });
   await expect(page.getByTestId("import-report")).toContainText("2 placed");
+  // The queue lives on its own pane route; the import section links to it.
+  await page.getByTestId("open-review-queue").click();
   await page.getByTestId("review-item").getByTestId("review-skip").click();
-  await expect(page.getByTestId("import-review")).toHaveCount(0);
+  await expect(page.getByTestId("review-item")).toHaveCount(0);
+  await expect(page.getByTestId("review-empty")).toBeVisible();
 
   await page
     .getByRole("navigation", { name: "Primary" })

@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import { type ComponentType, createElement, useEffect, useRef } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
 import { DexieRepository } from "../../data/repo";
+import { MapCanvas } from "../../map/MapCanvas";
+import { usePaneStore } from "../../state/pane";
 import { useUiStore } from "../../state/ui";
-import { MapPage } from "./MapPage";
 
 const phase01 = vi.hoisted(() => ({ discover: vi.fn() }));
 
@@ -40,6 +41,10 @@ vi.mock("../../map/MapView", () => ({
   },
 }));
 
+beforeEach(() => {
+  usePaneStore.setState({ pane: "collapsed" });
+});
+
 afterEach(() => {
   phase01.discover.mockReset();
   useUiStore.setState({ selection: null, pickerAt: null });
@@ -58,7 +63,7 @@ describe("Phase 1 bounded viewport discovery", () => {
           createElement(
             RepoProvider as unknown as ComponentType<{ repo: DexieRepository }>,
             { repo },
-            createElement(MapPage),
+            createElement(MapCanvas),
           ),
         ),
       );

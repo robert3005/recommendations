@@ -8,6 +8,8 @@ import { type Browser, expect, type Page, test } from "@playwright/test";
 async function seedSharedList(page: Page): Promise<void> {
   await page.goto("/");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+  // The canvas search is reachable once the pane is not expanded.
+  await page.getByTestId("pane-collapse").click();
   await page.getByRole("combobox", { name: "Search places" }).fill("cafe");
   await page.getByRole("option", { name: /Café Central/ }).click();
   const sheet = page.getByTestId("place-sheet");

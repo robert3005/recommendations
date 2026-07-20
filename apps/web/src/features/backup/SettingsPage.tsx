@@ -7,6 +7,7 @@ import type { DexieRepository } from "../../data/repo";
 import { lastBackupAt, recordBackup, shouldRemindBackup } from "../../lib/backupReminder";
 import { nowIso } from "../../lib/time";
 import { ImportSection } from "../interop/ImportSection";
+import { SyncSection } from "../sync/SyncSection";
 import { exportBackup, importBackup } from "./backup";
 
 export function SettingsPage() {
@@ -136,6 +137,7 @@ export function SettingsPage() {
       </section>
 
       <ImportSection />
+      <SyncSection />
 
       <section className="mt-6">
         <h2 className="text-sm font-semibold text-stone-700">Storage</h2>

@@ -9,10 +9,11 @@ import { type ComponentType, createElement } from "react";
 import { expect, test, vi } from "vitest";
 import { RepoProvider } from "../data/RepoContext";
 import { DexieRepository } from "../data/repo";
-import { MapPage } from "../features/map/MapPage";
 import { PlaceSheet } from "../features/place/PlaceSheet";
+import { MapCanvas } from "../map/MapCanvas";
 import { server } from "../mocks/server";
 import { OsmApiResolver } from "../providers/osmApi";
+import { usePaneStore } from "../state/pane";
 import { useUiStore } from "../state/ui";
 
 const phase01 = vi.hoisted(() => ({ discover: vi.fn() }));
@@ -166,6 +167,7 @@ test("a viewport-discovery failure exposes an error state on the map surface", a
   const repo = new DexieRepository(`phase01-discovery-${crypto.randomUUID()}`);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   useUiStore.setState({ selection: null, pickerAt: null });
+  usePaneStore.setState({ pane: "collapsed" });
 
   try {
     render(
@@ -175,7 +177,7 @@ test("a viewport-discovery failure exposes an error state on the map surface", a
         createElement(
           RepoProvider as unknown as ComponentType<{ repo: DexieRepository }>,
           { repo },
-          createElement(MapPage),
+          createElement(MapCanvas),
         ),
       ),
     );

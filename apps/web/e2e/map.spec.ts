@@ -1,8 +1,17 @@
 /**
  * Map display tests (Phase 0 done-when): the map renders with correct attribution,
- * and geolocation denial never blocks the UI.
+ * and geolocation denial never blocks the UI. The canvas is always mounted under
+ * the content pane (spec/src/map-view.md §The grammar); interacting with it means
+ * stepping the pane toward the map first — it is one collapse away, not a tab.
  */
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+
+/** Step the pane toward the map: expanded → split → collapsed. */
+async function collapsePane(page: Page, times = 1) {
+  for (let index = 0; index < times; index += 1) {
+    await page.getByTestId("pane-collapse").click();
+  }
+}
 
 test.describe("map display", () => {
   test("renders the MapLibre canvas with OSM attribution", async ({ page }) => {
@@ -22,6 +31,8 @@ test.describe("map display", () => {
 
   test("map pans on drag", async ({ page }) => {
     await page.goto("/");
+    // Full-bleed canvas: collapse the pane out of the way so drags hit the map.
+    await collapsePane(page, 2);
     const mapEl = page.getByTestId("map-canvas");
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
     const before = await mapEl.getAttribute("data-center");
@@ -52,6 +63,8 @@ test.describe("map display", () => {
 
   test("the next launch restores the last viewport", async ({ page }) => {
     await page.goto("/");
+    // Full-bleed canvas so the drag below reaches the map.
+    await collapsePane(page, 2);
     const mapEl = page.getByTestId("map-canvas");
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
     // Start: the Lisbon approximation from the suite's pinned timezone.
@@ -113,6 +126,8 @@ test.describe("map display", () => {
     await page.goto("/");
     const mapEl = page.getByTestId("map-canvas");
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
+    // The locate control floats on the canvas — reveal it beside the pane.
+    await collapsePane(page);
     await page.locator(".maplibregl-ctrl-geolocate").click();
     // The map should fly to the mocked position.
     await expect(mapEl).toHaveAttribute("data-center", /-0\.12\d+,51\.50\d+/, {
@@ -122,10 +137,39 @@ test.describe("map display", () => {
   });
 
   test("navigation shell renders all top-level routes", async ({ page }) => {
+    // Launch: the Lists home in an expanded pane over the always-mounted canvas.
     await page.goto("/");
+    const shell = page.getByTestId("app-shell");
+    await expect(shell).toHaveAttribute("data-pane-state", "expanded");
+    await expect(page.getByTestId("lists-page")).toBeVisible();
+
     const nav = page.getByRole("navigation", { name: "Primary" });
-    await expect(nav.getByRole("link", { name: "Map" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Lists" })).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Review" })).toBeVisible();
     await expect(nav.getByRole("link", { name: "Settings" })).toBeVisible();
+    // The map is not a tab any more — it is one collapse away.
+    await expect(nav.getByRole("link", { name: "Map" })).toHaveCount(0);
+
+    // While the pane fully occludes it, the canvas idles.
+    await expect(page.locator("[data-canvas-idle]")).toHaveAttribute("data-canvas-idle", "1");
+
+    // The detent cycle: expanded → split → collapsed and back.
+    await page.getByTestId("pane-collapse").click();
+    await expect(shell).toHaveAttribute("data-pane-state", "split");
+    await expect(page.locator("[data-canvas-idle]")).toHaveAttribute("data-canvas-idle", "0");
+    await page.getByTestId("pane-collapse").click();
+    await expect(shell).toHaveAttribute("data-pane-state", "collapsed");
+    // Collapsed on desktop hides the pane; a floating reopen affordance appears.
+    await expect(page.getByTestId("content-pane")).toBeHidden();
+    await page.getByTestId("pane-reopen").click();
+    await expect(shell).toHaveAttribute("data-pane-state", "split");
+    await page.getByTestId("pane-expand").click();
+    await expect(shell).toHaveAttribute("data-pane-state", "expanded");
+
+    // Public viewer routes still render designed states, never blanks.
+    await page.goto("/l");
+    await expect(page.getByTestId("snapshot-error")).toContainText("Could not open");
+    await page.goto("/n/no-such-note");
+    await expect(page.getByTestId("hosted-error")).toContainText("no longer available");
   });
 });
