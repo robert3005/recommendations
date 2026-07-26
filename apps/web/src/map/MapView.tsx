@@ -59,7 +59,6 @@ export interface MapViewProps {
   initialCenter: { lat: number; lng: number };
   initialZoom: number;
   /** A typed URL camera restored after back/forward without remounting. */
-  routeCamera?: { lat: number; lng: number; zoom: number; key: string } | null;
   placePins: PlacePinFeature[];
   poiPins: PoiPinFeature[];
   markPins?: MarkPinFeature[];
@@ -81,6 +80,14 @@ export interface MapViewProps {
     center: { lat: number; lng: number };
   }) => void;
 }
+
+/**
+ * Our own GeoJSON sources. Exported because two places must agree about them:
+ * the layer setup that creates them, and the basemap-recovery guard that must
+ * NOT treat their data events as evidence the basemap came back. Two
+ * hand-maintained copies of this list silently drift.
+ */
+export const OUR_SOURCE_IDS = ["pois", "saved", "marks", "selection"] as const;
 
 const LONG_PRESS_MS = 600;
 const LONG_PRESS_TOLERANCE_PX = 8;
@@ -196,7 +203,6 @@ export function MapView({
   layoutKey,
   initialCenter,
   initialZoom,
-  routeCamera,
   placePins,
   poiPins,
   markPins = [],
@@ -309,8 +315,7 @@ export function MapView({
         sourceId?: string;
         sourceDataType?: string;
       };
-      if (sourceId === "pois" || sourceId === "saved" || sourceId === "selection") return;
-      if (sourceId === "marks") return;
+      if (OUR_SOURCE_IDS.includes(sourceId as (typeof OUR_SOURCE_IDS)[number])) return;
       if (sourceDataType === "idle") return;
       setUnavailable(false);
     });
@@ -668,7 +673,7 @@ export function MapView({
   // and a route projection were both deferred while hidden, the newer direct
   // selection wins and consumes the fit key: reveal still performs one move.
   const appliedFlyTo = useRef<MapViewProps["flyTo"] | null>(null);
-  const appliedRouteCameraKey = useRef<string | null>(null);
+  const _appliedRouteCameraKey = useRef<string | null>(null);
   const appliedFitKey = useRef<string | null>(null);
   useEffect(() => {
     if (idle) return;
@@ -687,17 +692,6 @@ export function MapView({
       });
       return;
     }
-    if (routeCamera && appliedRouteCameraKey.current !== routeCamera.key) {
-      appliedRouteCameraKey.current = routeCamera.key;
-      if (fitTo) appliedFitKey.current = fitTo.key;
-      map.easeTo({
-        center: [routeCamera.lng, routeCamera.lat],
-        zoom: routeCamera.zoom,
-        duration: reduceMotion ? 0 : 400,
-      });
-      if (containerRef.current) containerRef.current.dataset.routeCamera = routeCamera.key;
-      return;
-    }
     if (!fitTo || appliedFitKey.current === fitTo.key) return;
     appliedFitKey.current = fitTo.key;
     map.fitBounds(
@@ -708,7 +702,7 @@ export function MapView({
       { padding: 72, maxZoom: 16, duration: reduceMotion ? 0 : 700 },
     );
     if (containerRef.current) containerRef.current.dataset.fitKey = fitTo.key;
-  }, [fitTo, flyTo, idle, routeCamera]);
+  }, [fitTo, flyTo, idle]);
 
   return (
     <div className="relative h-full w-full">
@@ -722,16 +716,16 @@ export function MapView({
       >
         {OSM_ATTRIBUTION}
       </a>
+      {/* A banner, not a full-bleed takeover: a tile or glyph failure can happen
+          over a map that is otherwise drawn and usable, and covering it hides
+          information the user already has. */}
       {unavailable ? (
         <div
           role="status"
-          className="absolute inset-0 z-10 flex items-center justify-center bg-stone-100 p-6"
+          className="absolute inset-x-0 top-0 z-10 bg-stone-800/90 px-3 py-2 text-center text-xs text-white"
         >
-          <p className="max-w-sm text-center text-sm text-stone-600">
-            <span className="font-semibold text-stone-800">Map unavailable.</span> The map style
-            could not load. Search and your lists keep working — the map returns when the connection
-            does.
-          </p>
+          <span className="font-semibold">Map unavailable.</span> Part of the map could not load.
+          Search and your lists keep working — it returns when the connection does.
         </div>
       ) : null}
     </div>

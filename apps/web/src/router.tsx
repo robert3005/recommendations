@@ -12,11 +12,9 @@ import {
   createRouter,
   Link,
   Outlet,
-  retainSearchParams,
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { useRef, useState } from "react";
 import { SettingsPage } from "./features/backup/SettingsPage";
 import { ReviewPage } from "./features/interop/ReviewPage";
 import { ListPage } from "./features/lists/ListPage";
@@ -29,40 +27,6 @@ import { HostedViewerPage } from "./features/share/HostedViewerPage";
 import { SnapshotViewerPage } from "./features/share/SnapshotViewerPage";
 import { MapCanvas } from "./map/MapCanvas";
 import { type PaneState, usePaneStore } from "./state/pane";
-
-export interface ViewportRouteSearch {
-  lat?: number;
-  lng?: number;
-  zoom?: number;
-}
-
-function finiteSearchNumber(value: unknown): number | undefined {
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
-  if (typeof value !== "string" || value.trim() === "") return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-/** Validate the camera carried by every typed route; partial/unsafe cameras are discarded. */
-export function validateViewportSearch(search: Record<string, unknown>): ViewportRouteSearch {
-  const lat = finiteSearchNumber(search.lat);
-  const lng = finiteSearchNumber(search.lng);
-  const zoom = finiteSearchNumber(search.zoom);
-  if (
-    lat === undefined ||
-    lng === undefined ||
-    zoom === undefined ||
-    lat < -90 ||
-    lat > 90 ||
-    lng < -180 ||
-    lng > 180 ||
-    zoom < 0 ||
-    zoom > 24
-  ) {
-    return {};
-  }
-  return { lat, lng, zoom };
-}
 
 /** Pane geometry per state — desktop panel widths / mobile sheet detents. */
 function paneClasses(pane: PaneState): string {
@@ -89,76 +53,14 @@ export function isPublicViewerPath(pathname: string): boolean {
   return pathname === "/l" || pathname.startsWith("/l/") || pathname.startsWith("/p/");
 }
 
-const PEEK_HEIGHT = 56;
-
-export function paneStateAtHeight(height: number, viewportHeight: number): PaneState {
-  const detents: { pane: PaneState; height: number }[] = [
-    { pane: "collapsed", height: PEEK_HEIGHT },
-    { pane: "split", height: viewportHeight / 2 },
-    { pane: "expanded", height: viewportHeight },
-  ];
-  return detents.reduce((closest, candidate) =>
-    Math.abs(candidate.height - height) < Math.abs(closest.height - height) ? candidate : closest,
-  ).pane;
-}
-
 function RootLayout() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const routeViewport = useRouterState({ select: (state) => state.location.search });
-  const navigate = useNavigate();
-  // The persistent root shell is not a concrete leaf route, so TanStack
-  // cannot infer `from` for a search-only replace. The root route validator
-  // remains the typed boundary; this adapter preserves whichever leaf is open.
-  const replaceRouteViewport = navigate as unknown as (options: {
-    replace: true;
-    resetScroll: false;
-    search: (current: ViewportRouteSearch) => ViewportRouteSearch;
-  }) => Promise<unknown>;
+  const _navigate = useNavigate();
   const readOnly = isPublicViewerPath(pathname);
   const pane = usePaneStore((s) => s.pane);
   const setPane = usePaneStore((s) => s.setPane);
   const collapse = usePaneStore((s) => s.collapse);
   const expand = usePaneStore((s) => s.expand);
-  const dragRef = useRef<
-    | {
-        pointerId: number;
-        startY: number;
-        startHeight: number;
-        lastHeight: number;
-      }
-    | undefined
-  >(undefined);
-  const [dragHeight, setDragHeight] = useState<number>();
-  const startDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (window.matchMedia?.("(min-width: 768px)").matches) return;
-    const viewportHeight = window.innerHeight;
-    const startHeight =
-      pane === "collapsed" ? PEEK_HEIGHT : pane === "split" ? viewportHeight / 2 : viewportHeight;
-    dragRef.current = {
-      pointerId: event.pointerId,
-      startY: event.clientY,
-      startHeight,
-      lastHeight: startHeight,
-    };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  };
-  const moveDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    const height = Math.max(
-      PEEK_HEIGHT,
-      Math.min(window.innerHeight, drag.startHeight + drag.startY - event.clientY),
-    );
-    drag.lastHeight = height;
-    setDragHeight(height);
-  };
-  const finishDrag = (event: React.PointerEvent<HTMLButtonElement>, cancelled = false) => {
-    const drag = dragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    if (!cancelled) setPane(paneStateAtHeight(drag.lastHeight, window.innerHeight));
-    dragRef.current = undefined;
-    setDragHeight(undefined);
-  };
   return (
     <div className="relative h-full overflow-hidden" data-testid="app-shell" data-pane-state={pane}>
       {/* The persistent canvas: always mounted, never navigates. */}
@@ -167,41 +69,21 @@ function RootLayout() {
         data-testid="map-viewport"
         data-map-layout={pane === "split" ? "beside-pane" : "full-bleed"}
       >
-        <MapCanvas
-          readOnly={readOnly}
-          routeViewport={routeViewport}
-          onRouteViewportChange={(next) => {
-            if (
-              routeViewport.lat === next.lat &&
-              routeViewport.lng === next.lng &&
-              routeViewport.zoom === next.zoom
-            ) {
-              return;
-            }
-            void replaceRouteViewport({
-              replace: true,
-              resetScroll: false,
-              search: (current) => ({ ...current, ...next }),
-            });
-          }}
-        />
+        <MapCanvas readOnly={readOnly} />
       </div>
 
       {/* The content pane: where routes render. */}
-      <div
-        className={paneClasses(pane)}
-        data-testid="content-pane"
-        style={dragHeight === undefined ? undefined : { height: `${dragHeight.toString()}px` }}
-      >
+      <div className={paneClasses(pane)} data-testid="content-pane">
+        {/* One detent per tap. A hand-rolled pointer-drag re-implemented what a
+            sheet library does, in ~70 lines of arithmetic, for a gesture whose
+            whole job is to pick one of three states — and a button is keyboard
+            operable, which the drag never was. */}
         <button
           type="button"
-          aria-label="Drag content pane"
+          aria-label={pane === "expanded" ? "Show the map" : "Show more content"}
           data-testid="pane-drag-handle"
-          className="flex h-5 shrink-0 touch-none items-center justify-center md:hidden"
-          onPointerDown={startDrag}
-          onPointerMove={moveDrag}
-          onPointerUp={(event) => finishDrag(event)}
-          onPointerCancel={(event) => finishDrag(event, true)}
+          className="flex h-5 shrink-0 items-center justify-center md:hidden"
+          onClick={() => (pane === "expanded" ? collapse() : expand())}
         >
           <span aria-hidden="true" className="h-1 w-10 rounded-full bg-stone-300" />
         </button>
@@ -286,10 +168,6 @@ function RootLayout() {
 
 const rootRoute = createRootRoute({
   component: RootLayout,
-  validateSearch: validateViewportSearch,
-  search: {
-    middlewares: [retainSearchParams(["lat", "lng", "zoom"])],
-  },
 });
 
 // The Lists home is the pane's `/` route and launch state (spec/src/map-view.md).

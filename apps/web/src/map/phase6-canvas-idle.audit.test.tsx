@@ -168,16 +168,13 @@ vi.mock("../features/search/SearchBar", () => ({
 vi.mock("../features/picker/CandidatePicker", () => ({ CandidatePicker: () => null }));
 vi.mock("../features/picker/ManualPinDialog", () => ({ ManualPinDialog: () => null }));
 
-function renderCanvas(
-  readOnly = false,
-  routeViewport?: { lat: number; lng: number; zoom: number },
-) {
+function renderCanvas(readOnly = false) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return {
     queryClient,
     view: render(
       <QueryClientProvider client={queryClient}>
-        <MapCanvas readOnly={readOnly} routeViewport={routeViewport} />
+        <MapCanvas readOnly={readOnly} />
       </QueryClientProvider>,
     ),
   };
@@ -205,26 +202,27 @@ beforeEach(() => {
 });
 
 describe("Phase 6 canvas idling at full scale", () => {
-  it("restores typed route cameras initially and after navigation without remounting", () => {
+  it("starts from the persisted viewport and survives navigation without remounting", () => {
     usePaneStore.setState({ pane: "split" });
     fixture.reportViewport = false;
-    const first = { lat: 51.5, lng: -0.12, zoom: 12 };
-    const second = { lat: 48.86, lng: 2.35, zoom: 14 };
-    const { queryClient, view } = renderCanvas(false, first);
+    // The start camera comes from the persisted last viewport (or a
+    // timezone-derived approximation). There is no URL camera to arbitrate
+    // against — it duplicated this and forced a hand-ranked three-way ladder.
+    const { queryClient, view } = renderCanvas();
     try {
-      expect(fixture.captured?.initialCenter).toEqual({ lat: first.lat, lng: first.lng });
-      expect(fixture.captured?.initialZoom).toBe(first.zoom);
-      expect(fixture.captured?.routeCamera ?? null).toBeNull();
+      const started = fixture.captured;
+      expect(started?.initialCenter).toBeDefined();
+      expect(typeof started?.initialZoom).toBe("number");
 
       view.rerender(
         <QueryClientProvider client={queryClient}>
-          <MapCanvas routeViewport={second} />
+          <MapCanvas />
         </QueryClientProvider>,
       );
-      expect(fixture.captured?.routeCamera).toEqual({
-        ...second,
-        key: "48.86,2.35,14",
-      });
+      // The singleton keeps its camera across navigation: same construction
+      // arguments, no remount.
+      expect(fixture.captured?.initialCenter).toEqual(started?.initialCenter);
+      expect(fixture.captured?.initialZoom).toBe(started?.initialZoom);
     } finally {
       view.unmount();
       queryClient.clear();

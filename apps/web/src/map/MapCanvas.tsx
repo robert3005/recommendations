@@ -65,15 +65,9 @@ function boundsOf(points: { lat: number; lng: number }[]): BBox | undefined {
 
 export interface MapCanvasProps {
   readOnly?: boolean;
-  routeViewport?: { lat?: number; lng?: number; zoom?: number };
-  onRouteViewportChange?: (viewport: { lat: number; lng: number; zoom: number }) => void;
 }
 
-export function MapCanvas({
-  readOnly = false,
-  routeViewport = {},
-  onRouteViewportChange,
-}: MapCanvasProps) {
+export function MapCanvas({ readOnly = false }: MapCanvasProps) {
   const repo = useRepo();
   const dexieRepo = useDexieRepo();
   const queryClient = useQueryClient();
@@ -128,28 +122,11 @@ export function MapCanvas({
    * Cleared on pan, so the answer never silently belongs to a different place.
    */
   const [showNearby, setShowNearby] = useState(false);
-  // The starting camera: last viewport, else a timezone-derived approximation
-  // (spec/src/map-view.md — no permission prompt, nothing leaves the device).
-  const routeCamera =
-    routeViewport.lat !== undefined &&
-    routeViewport.lng !== undefined &&
-    routeViewport.zoom !== undefined
-      ? { lat: routeViewport.lat, lng: routeViewport.lng, zoom: routeViewport.zoom }
-      : undefined;
-  const routeCameraKey = routeCamera
-    ? `${routeCamera.lat.toString()},${routeCamera.lng.toString()},${routeCamera.zoom.toString()}`
-    : undefined;
-  // A route camera present at mount is consumed by MapLibre's constructor.
-  // Later values that did not originate from this canvas are back/forward or
-  // bookmark navigation and must move the retained instance.
-  const lastReportedRouteCameraKey = useRef(routeCameraKey);
-  const [startViewport] = useState(() => {
-    return routeCamera ?? initialViewport();
-  });
-  const restoredRouteCamera =
-    routeCamera && routeCameraKey && routeCameraKey !== lastReportedRouteCameraKey.current
-      ? { ...routeCamera, key: routeCameraKey }
-      : null;
+  // The starting camera: the last viewport, else a timezone-derived
+  // approximation (spec/src/map-view.md — no permission prompt, nothing leaves
+  // the device). There is no URL camera: it duplicated this, and forced a
+  // hand-ranked three-way arbitration against fly-to and fit-to.
+  const [startViewport] = useState(() => initialViewport());
   const privateMapProjection =
     projection.kind === "all" || projection.kind === "list" || projection.kind === "post";
   const interactiveChrome = privateMapProjection && !readOnly && !idle;
@@ -385,7 +362,6 @@ export function MapCanvas({
         styleUrl={mapStyleProvider.style().styleUrl}
         initialCenter={{ lat: startViewport.lat, lng: startViewport.lng }}
         initialZoom={startViewport.zoom}
-        routeCamera={restoredRouteCamera}
         placePins={placePins}
         poiPins={poiPins}
         markPins={shownMarkPins}
@@ -505,11 +481,6 @@ export function MapCanvas({
             zoom: Math.round(view.zoom * 100) / 100,
           };
           persistViewport(nextViewport);
-          lastReportedRouteCameraKey.current = `${nextViewport.lat.toString()},${nextViewport.lng.toString()},${nextViewport.zoom.toString()}`;
-          // The singleton map survives this replace-navigation; typed route
-          // search makes the current view restorable/bookmarkable without
-          // adding one history entry per pan gesture.
-          onRouteViewportChange?.(nextViewport);
         }}
       />
       {!idle && !readOnly && placingImportItemId ? (
