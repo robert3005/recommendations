@@ -41,8 +41,8 @@ A responsive web app with:
   wearing its list's marker. See [The Notebook & the Map](./map-view.md).
 - **The split post editor** — the Markdown editor beside the canvas projecting the post's
   places; tapping a pin inserts a mention at the cursor.
-- **The list page's posts sidebar** — a list displays on the map, its posts sit in a sidebar,
-  and selecting one opens it split-view with the map.
+- **Posts on the list page** — a list displays on the map; its posts are reachable from a
+  quiet toggle on the list page, and selecting one opens it split-view with the map.
 - **Visual direction** — instrument-panel retrofuturism: the deep-green console around a light
   map plate, eight bright accents, clean lines. See [Visual Design](./design.md).
 - **Read-only share links** — publish a list or post to a named public page. Nothing leaves the

@@ -1,8 +1,8 @@
 /**
  * Home (spec/src/map-view.md §Home): the notebook opens on the lists — each
- * row shows the list's marker, name, place count, and a posts indicator when
- * posts exist. The home carries the actions that feed lists: New list, Import,
- * and the add-a-place field. The canvas overlays every list's places.
+ * row is marker, name, place count, nothing else. The home body carries the
+ * actions that feed lists: New list and Import; the add-a-place field lives
+ * in the shell's top bar. The canvas overlays every list's places.
  */
 import { markerKey } from "@placemarks/domain";
 import { Link } from "@tanstack/react-router";
@@ -10,7 +10,6 @@ import { useState } from "react";
 import { useListPreviews } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import { useCanvasProjection } from "../../state/projection";
-import { AddPlaceField } from "../search/AddPlaceField";
 import { MarkerGlyph } from "./MarkerGlyph";
 import { NewListForm } from "./NewListForm";
 
@@ -59,13 +58,6 @@ export function ListsPage() {
         </div>
       </div>
 
-      {/* The add-a-place field sits on the home (spec/src/map-view.md §The
-          add-a-place field): paste a map link, or search — both end in
-          "pick a list". */}
-      <div className="mt-3">
-        <AddPlaceField />
-      </div>
-
       {creating ? (
         <div className="mt-3">
           <NewListForm
@@ -80,7 +72,7 @@ export function ListsPage() {
         </div>
       ) : null}
       <ul className="mt-4 divide-y divide-hairline">
-        {(rows ?? []).map(({ list, placeCount, postCount }) => (
+        {(rows ?? []).map(({ list, placeCount }) => (
           <li key={list.id} data-testid="list-row">
             <div className="flex items-center gap-3 px-1 py-3 hover:bg-ink/5">
               <MarkerGlyph
@@ -98,23 +90,12 @@ export function ListsPage() {
                   {placeCount} {placeCount === 1 ? "place" : "places"}
                 </span>
               </Link>
-              {postCount > 0 ? (
-                <Link
-                  to="/list/$listId"
-                  params={{ listId: list.id }}
-                  hash="posts"
-                  className="shrink-0 rounded-crisp px-2 py-0.5 text-xs font-medium text-ink underline"
-                  data-testid="list-posts-link"
-                >
-                  ▸ {postCount === 1 ? "post" : `${postCount.toString()} posts`}
-                </Link>
-              ) : null}
             </div>
           </li>
         ))}
         {rows !== undefined && rows.length === 0 && !creating ? (
           <li className="py-6 text-sm text-ink/60">
-            No lists yet. Create one, paste a map link above, or import your saved places.
+            No lists yet. Create one, paste a map link in the top bar, or import your saved places.
           </li>
         ) : null}
       </ul>

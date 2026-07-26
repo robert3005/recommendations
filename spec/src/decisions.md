@@ -16,6 +16,17 @@ produces a union-of-all-designs codebase: roughly 8,500 lines of it, removed ove
 
 ---
 
+## 2026-07-26 — search-first chrome
+
+The persistent Lists/Review/Settings nav is retired; search owns the top bar. The notebook
+header is now a small home affordance (the wordmark, back to `/`), the add-a-place field
+filling the remaining width, and the pane step buttons. Settings moved behind a small floating
+gear chip pinned bottom-left of the shell. Review is exposed only while an import batch is
+reviewing — a pill in the top bar carrying the review-queue count; `/review` stays
+deep-linkable. The list page's posts sidebar is demoted to a quiet alternate view behind a
+deliberately unaccented Places/Posts toggle, and the home rows drop their posts indicator —
+marker, name, count only (supersedes the sidebar reading of requirement 7 — owner's call).
+
 ## 2026-07-26 — the deep-green console
 
 The owner picked the design-review artifact's deep green over the near-white paper as the app's

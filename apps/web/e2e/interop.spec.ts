@@ -71,6 +71,10 @@ test("a Takeout archive imports through the ladder; review resolves on the canva
   await expect(report).toContainText("2 placed");
   await expect(report).toContainText("1 to review");
 
+  // While a batch is reviewing, the top bar carries the review pill with the
+  // queue count (2026-07-26 — search-first chrome).
+  await expect(page.getByTestId("review-pill")).toContainText("1");
+
   // The review queue is its own notebook route.
   await page.getByTestId("open-review-queue").click();
   await expect(page.getByTestId("review-page")).toBeVisible();
@@ -87,12 +91,11 @@ test("a Takeout archive imports through the ladder; review resolves on the canva
   if (!box) throw new Error("map canvas has no bounding box");
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   await expect(page.getByTestId("review-empty")).toBeVisible();
+  // The queue emptied, the batch closed — the pill leaves the top bar.
+  await expect(page.getByTestId("review-pill")).toHaveCount(0);
 
   // The list holds all three rows.
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Lists" })
-    .click();
+  await page.getByTestId("home-link").click();
   await page.getByRole("link", { name: /Lisbon trip/ }).click();
   await expect(page.getByTestId("place-item")).toHaveCount(3);
   await expect(page.getByTestId("list-page")).toContainText("Café Central");
@@ -125,10 +128,7 @@ test("a Takeout archive imports through the ladder; review resolves on the canva
   expect(kml).not.toContain("OpenStreetMap");
 
   // Home projects every import as a pin on the always-mounted canvas.
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Lists" })
-    .click();
+  await page.getByTestId("home-link").click();
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "3");
 });
 
@@ -145,10 +145,7 @@ test("re-importing the same archive converges; a Note becomes a post only once",
   // the report says so (local edits are canon).
   await expect(report).toContainText("notes dropped");
 
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Lists" })
-    .click();
+  await page.getByTestId("home-link").click();
   // One list, not two (sourceKey binding), and no duplicated members.
   await expect(page.getByRole("link", { name: /Lisbon trip/ })).toHaveCount(1);
   await page.getByRole("link", { name: /Lisbon trip/ }).click();
@@ -166,10 +163,7 @@ test("KMZ import goes straight to placed pins (coordinates included)", async ({ 
     buffer: Buffer.from(zipSync({ "doc.kml": strToU8(kml) })),
   });
   await expect(page.getByTestId("import-report")).toContainText("1 placed");
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Lists" })
-    .click();
+  await page.getByTestId("home-link").click();
   await expect(page.getByRole("link", { name: /Hike spots/ })).toBeVisible();
 });
 
@@ -186,10 +180,7 @@ test("a list exports as a real KMZ with the guided handoffs; CSV export is gone"
     buffer: Buffer.from(kml),
   });
   await expect(page.getByTestId("import-report")).toContainText("1 placed");
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Lists" })
-    .click();
+  await page.getByTestId("home-link").click();
   await page.getByRole("link", { name: /My Maps audit/ }).click();
   await expect(page.getByTestId("place-item")).toHaveCount(1);
 

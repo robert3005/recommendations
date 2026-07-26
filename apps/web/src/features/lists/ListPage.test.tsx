@@ -3,11 +3,14 @@
  * accessible menu button in front of every artefact download and the guided
  * handoffs — arrow keys move the roving focus, Escape and outside click
  * close, activation runs the item and hands focus back to the button.
+ * Plus the quiet Places/Posts view toggle (2026-07-26 — search-first
+ * chrome): pressed-state buttons, keyboard operable.
  */
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { ExportMenu, type ExportMenuItem } from "./ListPage";
+import { ExportMenu, type ExportMenuItem, type ListView, ListViewToggle } from "./ListPage";
 
 function items(run = vi.fn()): {
   artefacts: ExportMenuItem[];
@@ -91,5 +94,39 @@ describe("ExportMenu", () => {
     await userEvent.click(screen.getByTestId("elsewhere"));
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe("ListViewToggle", () => {
+  function Harness() {
+    const [view, setView] = useState<ListView>("places");
+    return <ListViewToggle view={view} onChange={setView} />;
+  }
+
+  it("defaults to Places and flips the pressed state on click", async () => {
+    render(<Harness />);
+    const places = screen.getByTestId("list-view-places");
+    const posts = screen.getByTestId("list-view-posts");
+    expect(screen.getByTestId("list-view-toggle")).toBeInTheDocument();
+    expect(places).toHaveAttribute("aria-pressed", "true");
+    expect(posts).toHaveAttribute("aria-pressed", "false");
+
+    await userEvent.click(posts);
+    expect(posts).toHaveAttribute("aria-pressed", "true");
+    expect(places).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("is keyboard operable: focus and Enter switch views", async () => {
+    render(<Harness />);
+    const posts = screen.getByTestId("list-view-posts");
+    posts.focus();
+    await userEvent.keyboard("{Enter}");
+    expect(posts).toHaveAttribute("aria-pressed", "true");
+
+    const places = screen.getByTestId("list-view-places");
+    places.focus();
+    await userEvent.keyboard(" ");
+    expect(places).toHaveAttribute("aria-pressed", "true");
+    expect(posts).toHaveAttribute("aria-pressed", "false");
   });
 });

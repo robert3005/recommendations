@@ -5,6 +5,11 @@
  * type to search: text in, geocoder results out, pick one. Both paths end in
  * "pick a list", because membership is existence (spec/src/data-model.md).
  *
+ * The field lives in the notebook's top bar (2026-07-26 — search-first
+ * chrome): a compact single-line input whose results, notices, and the
+ * confirm card all open as a floating panel below the header — nothing here
+ * may grow the header row.
+ *
  * An OSM element URL is the one network call at paste time: the geocoder's
  * exact `lookup` fetches that element's facts. Offline it fails politely —
  * nothing queues; the user retries online (spec/src/interop.md).
@@ -244,7 +249,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        className="w-full rounded-crisp border border-hairline bg-paper px-3 py-2 text-sm text-ink focus:border-ink focus:outline-none"
+        className="w-full rounded-crisp border border-hairline bg-paper px-3 py-1.5 text-sm text-ink focus:border-ink focus:outline-none"
       />
 
       {open && debouncedQuery.length >= 2 && pending === undefined ? (
@@ -292,9 +297,12 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
         )
       ) : null}
 
+      {/* Every pending state floats as one panel below the field: the header
+          row must never grow. Solid raised surfaces (bg-panel) so the panel
+          reads over whatever the notebook is showing. */}
       {pending?.mode === "notice" ? (
         <output
-          className="mt-2 block rounded-crisp border border-hairline p-2 text-xs text-ink"
+          className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel p-2 text-xs text-ink"
           data-testid="link-notice"
         >
           {pending.text}
@@ -310,14 +318,17 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
       ) : null}
 
       {pending?.mode === "lookup" ? (
-        <output className="mt-2 block text-xs text-ink/60" data-testid="osm-lookup-pending">
+        <output
+          className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel p-2 text-xs text-ink/60"
+          data-testid="osm-lookup-pending"
+        >
           Looking this up on OpenStreetMap…
         </output>
       ) : null}
 
       {pending?.mode === "lookup-error" ? (
         <output
-          className="mt-2 block rounded-crisp border border-hairline p-2 text-xs text-ink"
+          className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel p-2 text-xs text-ink"
           data-testid="osm-lookup-error"
         >
           {pending.message}
@@ -339,7 +350,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
 
       {pending?.mode === "confirm" ? (
         <div
-          className="mt-2 rounded-crisp border border-hairline p-3"
+          className="absolute top-full right-0 left-0 z-30 mt-1 rounded-crisp border border-hairline bg-panel p-3"
           data-testid="add-place-confirm"
         >
           <div className="flex items-start justify-between gap-2">

@@ -93,14 +93,10 @@ export function useLivePublications(): Publication[] | undefined {
   return useLiveQuery(() => repo.livePublications(), [repo]);
 }
 
-/**
- * Lists-home row data (spec/src/map-view.md): each list with its place count,
- * its posts indicator, and the first place names for the inline preview.
- */
+/** Lists-home row data (spec/src/map-view.md): each list with its place count. */
 export interface ListPreview {
   list: List;
   placeCount: number;
-  postCount: number;
 }
 
 export function useListPreviews(): ListPreview[] | undefined {
@@ -110,12 +106,7 @@ export function useListPreviews(): ListPreview[] | undefined {
     return Promise.all(
       lists.map(async (list): Promise<ListPreview> => {
         const entries = await repo.entriesOf(list.id);
-        const posts = await repo.postsFor({ kind: "list", listId: list.id });
-        return {
-          list,
-          placeCount: entries.length,
-          postCount: posts.length,
-        };
+        return { list, placeCount: entries.length };
       }),
     );
   }, [repo]);
@@ -135,6 +126,20 @@ export function useImportItems(batchId: string | undefined): ImportItem[] | unde
 export function useReviewItems(): ImportItem[] | undefined {
   const repo = useDexieRepo();
   return useLiveQuery(() => repo.db.importItems.where("status").equals("review").toArray(), [repo]);
+}
+
+/**
+ * The top bar's review pill (spec/src/map-view.md §The grammar): the count of
+ * import rows waiting in review, but only while some batch is still reviewing
+ * — 0 otherwise, and the pill does not render.
+ */
+export function useReviewingCount(): number | undefined {
+  const repo = useDexieRepo();
+  return useLiveQuery(async () => {
+    const reviewing = await repo.db.importBatches.where("status").equals("reviewing").count();
+    if (reviewing === 0) return 0;
+    return repo.db.importItems.where("status").equals("review").count();
+  }, [repo]);
 }
 
 export function useSetting<T>(key: string): T | undefined {

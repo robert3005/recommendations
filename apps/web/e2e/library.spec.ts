@@ -61,10 +61,7 @@ test.describe("places exist through lists", () => {
     await page.getByTestId("edit-list").click();
     await page.getByTestId("place-item").getByTestId("remove-from-list").click();
     await expect(page.getByTestId("place-item")).toHaveCount(0);
-    await page
-      .getByRole("navigation", { name: "Primary" })
-      .getByRole("link", { name: "Lists" })
-      .click();
+    await page.getByTestId("home-link").click();
     await expect(mapEl).toHaveAttribute("data-pins", "0");
   });
 
@@ -87,10 +84,7 @@ test.describe("places exist through lists", () => {
 
     // Teardown runs bottom-up: the last membership removal is refused while
     // the post exists, and the refusal names it (spec/src/data-model.md).
-    await page
-      .getByRole("navigation", { name: "Primary" })
-      .getByRole("link", { name: "Lists" })
-      .click();
+    await page.getByTestId("home-link").click();
     await page.getByRole("link", { name: /Rituals/ }).click();
     await page.getByTestId("edit-list").click();
     await page.getByTestId("place-item").getByTestId("remove-from-list").click();

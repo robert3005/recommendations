@@ -127,10 +127,7 @@ test("Edit mode reorders, renames, re-marks, and removes; reading stays read-onl
   await expect(items).toHaveCount(1);
   await page.getByTestId("edit-list").click();
   // Home projects every list's pins on the canvas beside the notebook.
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Lists" })
-    .click();
+  await page.getByTestId("home-link").click();
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "1");
 });
 

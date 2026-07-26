@@ -107,7 +107,10 @@ test("publish → public read-only page → update → unpublish tombstones the 
 test("a list post publishes as a standalone read-only page under /p/", async ({ page }) => {
   await seedList(page);
 
-  // New post from the list page's posts sidebar → the Markdown editor.
+  // Posts are the list page's quiet alternate view (spec/src/map-view.md §The
+  // list page): toggle to Posts, then New post → the Markdown editor.
+  await page.getByTestId("list-view-posts").click();
+  await expect(page.getByTestId("list-posts")).toBeVisible();
   await page.getByTestId("new-post").click();
   await expect(page.getByTestId("post-editor")).toBeVisible();
   const title = page.getByTestId("post-title-input");

@@ -140,7 +140,8 @@ test.describe("map display", () => {
     const locateButton = page.getByRole("button", { name: "Location not available" });
     await expect(locateButton).toBeDisabled();
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
+    await expect(page.getByTestId("home-link")).toBeVisible();
+    await expect(page.getByTestId("add-place-field")).toBeVisible();
     await context.close();
   });
 
@@ -162,7 +163,7 @@ test.describe("map display", () => {
     await context.close();
   });
 
-  test("navigation shell renders every notebook route; the map is one collapse away", async ({
+  test("the search-first shell reaches every notebook route; the map is one collapse away", async ({
     page,
   }) => {
     // Launch: the Lists home in the notebook beside the canvas.
@@ -171,26 +172,34 @@ test.describe("map display", () => {
     await expect(shell).toHaveAttribute("data-pane-state", "split");
     await expect(page.getByTestId("lists-page")).toBeVisible();
 
-    const nav = page.getByRole("navigation", { name: "Primary" });
-    await expect(nav.getByRole("link", { name: "Lists" })).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Review" })).toBeVisible();
-    await expect(nav.getByRole("link", { name: "Settings" })).toBeVisible();
-    // The map is not a tab — it is one collapse away.
-    await expect(nav.getByRole("link", { name: "Map" })).toHaveCount(0);
+    // The top bar is for search (2026-07-26 — search-first chrome): the
+    // wordmark home affordance and the add-a-place field — no persistent
+    // nav, no Map tab, and no review pill while nothing is reviewing.
+    await expect(page.getByTestId("home-link")).toBeVisible();
+    await expect(page.getByTestId("add-place-field")).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Map" })).toHaveCount(0);
+    await expect(page.getByTestId("review-pill")).toHaveCount(0);
 
     // Desktop widths: split ↔ collapsed, nothing else.
     await page.getByTestId("pane-collapse").click();
     await expect(shell).toHaveAttribute("data-pane-state", "collapsed");
-    // Collapsed hides the notebook; a floating reopen affordance appears.
+    // Collapsed hides the notebook; a floating reopen affordance appears —
+    // stacked above the settings gear in the same corner, never overlapping.
     await expect(page.getByTestId("content-pane")).toBeHidden();
+    const reopenBox = await page.getByTestId("pane-reopen").boundingBox();
+    const gearBox = await page.getByTestId("settings-gear").boundingBox();
+    if (!reopenBox || !gearBox) throw new Error("floating chips have no bounding boxes");
+    expect(gearBox.y).toBeGreaterThanOrEqual(reopenBox.y + reopenBox.height);
     await page.getByTestId("pane-reopen").click();
     await expect(shell).toHaveAttribute("data-pane-state", "split");
 
-    // Notebook routes render designed states, never blanks.
-    await nav.getByRole("link", { name: "Review" }).click();
+    // Notebook routes render designed states, never blanks: Settings behind
+    // the bottom-left gear chip, /review deep-linkable without a pill.
+    await page.goto("/review");
     await expect(page.getByTestId("review-page")).toBeVisible();
     await expect(page.getByTestId("review-empty")).toBeVisible();
-    await nav.getByRole("link", { name: "Settings" }).click();
+    await page.getByTestId("settings-gear").click();
     await expect(page.getByTestId("settings-page")).toBeVisible();
 
     // Public viewer routes too: unknown slugs are answers, not blank pages,

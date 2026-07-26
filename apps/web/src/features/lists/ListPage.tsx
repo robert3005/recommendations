@@ -3,7 +3,10 @@
  * centre of the page — full-width rows, the whole row one selection target —
  * with Edit mode for curation (reorder, rename, remove, marker swap within
  * free pairs), the publish entry point, and every export behind the one
- * Export menu. The canvas shows the list's places with the library dimmed.
+ * Export menu. Posts are the page's quiet alternate view: a deliberately
+ * unaccented Places/Posts toggle under the header swaps the entries for the
+ * list's posts (2026-07-26 — search-first chrome). The canvas shows the
+ * list's places with the library dimmed.
  */
 import type { List, ListEntry, Place, Post } from "@placemarks/domain";
 import { useNavigate, useParams } from "@tanstack/react-router";
@@ -192,6 +195,43 @@ export function ExportMenu({
   );
 }
 
+export type ListView = "places" | "posts";
+
+/**
+ * The quiet Places/Posts view toggle (spec/src/map-view.md §The list page):
+ * deliberately unaccented muted text tabs — pressed-state buttons, keyboard
+ * operable by nature. Exported for its unit tests.
+ */
+export function ListViewToggle({
+  view,
+  onChange,
+}: {
+  view: ListView;
+  onChange: (view: ListView) => void;
+}) {
+  const tab = (key: ListView, label: string) => (
+    <button
+      type="button"
+      aria-pressed={view === key}
+      data-testid={`list-view-${key}`}
+      onClick={() => onChange(key)}
+      className={
+        view === key
+          ? "text-ink underline decoration-hairline underline-offset-4"
+          : "text-ink/50 hover:text-ink"
+      }
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="mt-3 flex items-center gap-3 text-sm" data-testid="list-view-toggle">
+      {tab("places", "Places")}
+      {tab("posts", "Posts")}
+    </div>
+  );
+}
+
 export function ListPage() {
   const { listId } = useParams({ from: "/list/$listId" });
   const repo = useRepo();
@@ -207,6 +247,7 @@ export function ListPage() {
   // (spec/src/map-view.md §The grammar).
   useCanvasProjection({ kind: "list", listId });
   const [editing, setEditing] = useState(false);
+  const [view, setView] = useState<ListView>("places");
   const [name, setName] = useState<string>();
   const [refusal, setRefusal] = useState<{ title: string; blockers: Blocker[] }>();
   const [exportError, setExportError] = useState<string>();
@@ -405,6 +446,11 @@ export function ListPage() {
         </div>
       </div>
 
+      {/* Posts are a quiet ALTERNATE VIEW of the list (spec/src/map-view.md
+          §The list page): muted tabs, no accent — the entries stay the
+          default centre of the page. */}
+      <ListViewToggle view={view} onChange={setView} />
+
       {/* Publish entry point (spec/src/sharing.md). */}
       <PublishControls listId={list.id} />
 
@@ -424,75 +470,77 @@ export function ListPage() {
 
       {/* The entries are the visual centre: full-width rows, the whole row one
           selection target (spec/src/map-view.md §The list page). */}
-      <ul className="mt-5 divide-y divide-hairline border-y border-hairline">
-        {entries.map((row) => (
-          <li key={row.entry.id} className="flex items-stretch gap-1" data-testid="place-item">
-            {/* Selection is bidirectional (spec/src/map-view.md): activate the
+      {view === "places" ? (
+        <ul className="mt-5 divide-y divide-hairline border-y border-hairline">
+          {entries.map((row) => (
+            <li key={row.entry.id} className="flex items-stretch gap-1" data-testid="place-item">
+              {/* Selection is bidirectional (spec/src/map-view.md): activate the
                 row in the notebook → the canvas highlights and flies. */}
-            <button
-              type="button"
-              className="min-w-0 flex-1 px-2 py-3 text-left hover:bg-ink/5"
-              data-testid="select-place"
-              onClick={() => focusPlace(row.place.id)}
-            >
-              <span className="font-medium text-ink">{row.place.name}</span>
-              {row.place.category ? (
-                <span className="ml-2 text-xs text-ink/60 capitalize">{row.place.category}</span>
+              <button
+                type="button"
+                className="min-w-0 flex-1 px-2 py-3 text-left hover:bg-ink/5"
+                data-testid="select-place"
+                onClick={() => focusPlace(row.place.id)}
+              >
+                <span className="font-medium text-ink">{row.place.name}</span>
+                {row.place.category ? (
+                  <span className="ml-2 text-xs text-ink/60 capitalize">{row.place.category}</span>
+                ) : null}
+                {row.place.address ? (
+                  <span className="mt-0.5 block text-sm text-ink/70">{row.place.address}</span>
+                ) : null}
+              </button>
+              {editing ? (
+                <span className="flex shrink-0 items-center gap-1 pr-1">
+                  <button
+                    type="button"
+                    aria-label="Move up"
+                    className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      move(row, -1);
+                    }}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Move down"
+                    className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      move(row, 1);
+                    }}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-crisp px-1.5 py-0.5 text-xs text-accent-vermilion-deep hover:bg-ink/5"
+                    data-testid="remove-from-list"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Last membership deletes the place — refused while
+                      // posts target it (spec/src/data-model.md §Teardown).
+                      guarded("Can’t remove this place yet", () => repo.removeEntry(row.entry.id));
+                    }}
+                  >
+                    Remove
+                  </button>
+                </span>
               ) : null}
-              {row.place.address ? (
-                <span className="mt-0.5 block text-sm text-ink/70">{row.place.address}</span>
-              ) : null}
-            </button>
-            {editing ? (
-              <span className="flex shrink-0 items-center gap-1 pr-1">
-                <button
-                  type="button"
-                  aria-label="Move up"
-                  className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    move(row, -1);
-                  }}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  aria-label="Move down"
-                  className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    move(row, 1);
-                  }}
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  className="rounded-crisp px-1.5 py-0.5 text-xs text-accent-vermilion-deep hover:bg-ink/5"
-                  data-testid="remove-from-list"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Last membership deletes the place — refused while
-                    // posts target it (spec/src/data-model.md §Teardown).
-                    guarded("Can’t remove this place yet", () => repo.removeEntry(row.entry.id));
-                  }}
-                >
-                  Remove
-                </button>
-              </span>
-            ) : null}
-          </li>
-        ))}
-        {rows !== undefined && entries.length === 0 ? (
-          <li className="px-2 py-4 text-sm text-ink/60">
-            Nothing here yet — paste a link or search on the home page, or import a Takeout archive
-            in Settings.
-          </li>
-        ) : null}
-      </ul>
+            </li>
+          ))}
+          {rows !== undefined && entries.length === 0 ? (
+            <li className="px-2 py-4 text-sm text-ink/60">
+              Nothing here yet — paste a link or search in the top bar, or import a Takeout archive
+              in Settings.
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
 
-      {editing ? (
+      {view === "places" && editing ? (
         <div className="mt-6">
           <button
             type="button"
@@ -511,44 +559,46 @@ export function ListPage() {
         </div>
       ) : null}
 
-      {/* The posts sidebar (spec/src/map-view.md §The list page) follows the
-          entries: this list's posts, with New post — a list post about this
-          list. */}
-      <section className="mt-6 border-t border-hairline pt-3" id="posts" data-testid="list-posts">
-        <div className="flex items-center justify-between">
-          <h2 className="font-display text-sm font-semibold text-ink">Posts</h2>
-          <button
-            type="button"
-            className="rounded-crisp border border-hairline px-2.5 py-1 text-xs font-medium text-ink"
-            data-testid="new-post"
-            onClick={newPost}
-          >
-            + New post
-          </button>
-        </div>
-        {(posts ?? []).length > 0 ? (
-          <ul className="mt-1.5 space-y-1">
-            {(posts ?? []).map((post: Post) => (
-              <li key={post.id}>
-                <button
-                  type="button"
-                  className="text-sm font-medium text-ink underline"
-                  data-testid="list-post-link"
-                  onClick={() =>
-                    void navigate({ to: "/post/$postId", params: { postId: post.id } })
-                  }
-                >
-                  ✍ {post.title}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-1 text-xs text-ink/60">
-            No posts yet — a post is the article about this list.
-          </p>
-        )}
-      </section>
+      {/* The Posts view (spec/src/map-view.md §The list page): this list's
+          posts, with New post — a list post about this list. Selecting one
+          still opens the split reading view. */}
+      {view === "posts" ? (
+        <section className="mt-5 border-y border-hairline py-3" data-testid="list-posts">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display text-sm font-semibold text-ink">Posts</h2>
+            <button
+              type="button"
+              className="rounded-crisp border border-hairline px-2.5 py-1 text-xs font-medium text-ink"
+              data-testid="new-post"
+              onClick={newPost}
+            >
+              + New post
+            </button>
+          </div>
+          {(posts ?? []).length > 0 ? (
+            <ul className="mt-1.5 space-y-1">
+              {(posts ?? []).map((post: Post) => (
+                <li key={post.id}>
+                  <button
+                    type="button"
+                    className="text-sm font-medium text-ink underline"
+                    data-testid="list-post-link"
+                    onClick={() =>
+                      void navigate({ to: "/post/$postId", params: { postId: post.id } })
+                    }
+                  >
+                    ✍ {post.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-ink/60">
+              No posts yet — a post is the article about this list.
+            </p>
+          )}
+        </section>
+      ) : null}
 
       {refusal ? (
         <BlockerDialog

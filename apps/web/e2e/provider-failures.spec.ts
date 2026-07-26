@@ -26,8 +26,9 @@ test("basemap and geocoder failures keep the shell usable with designed states",
 
   await page.goto("/");
 
-  // The notebook is fully usable.
-  await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
+  // The notebook is fully usable: the search-first top bar and the home page.
+  await expect(page.getByTestId("home-link")).toBeVisible();
+  await expect(page.getByTestId("add-place-field")).toBeVisible();
   await expect(page.getByTestId("lists-page")).toBeVisible();
 
   // The canvas mounts beside it at launch; its style request failed — the

@@ -18,6 +18,12 @@ DESKTOP — every route renders notebook + canvas      MOBILE — sheet over can
 └───────────────────┴───────────────────────┘        └─┴──────────────┴─┘
 ```
 
+- **The top bar is for search.** The notebook header is a small home affordance — the wordmark,
+  back to `/` — with the add-a-place field filling the remaining width, beside the pane step
+  buttons. There is no persistent nav: **Settings** hides behind a small floating gear chip
+  pinned bottom-left of the shell, and **Review** is exposed only while an import batch is
+  reviewing — a pill in the top bar carrying the review-queue count, gone when the queue
+  closes; `/review` itself stays deep-linkable. Public pages keep the read-only chrome.
 - **Two desktop widths.** The notebook is **split** (the default) or **collapsed** (full-bleed
   map); the map is one collapse away, never a tab switch.
 - **Three mobile detents.** The notebook is a sheet over the canvas with **peek**, **half**, and
@@ -57,21 +63,21 @@ Library pins cluster at low zoom so large lists stay responsive.
 ```text
 ┌─────────────────────────────────────────────┐
 │  Lists                                      │
-│  [ paste a link, or search for a place… ]   │
 │                                             │
-│  ◉ Lisbon eats           12 places  ▸ posts │
-│  ◆ Porto weekend          7 places          │
-│  ▲ Hikes to try           4 places  ▸ posts │
+│  ◉ Lisbon eats                    12 places │
+│  ◆ Porto weekend                   7 places │
+│  ▲ Hikes to try                    4 places │
 │                                             │
 │  + New list  ·  ⤓ Import                    │
 └─────────────────────────────────────────────┘
 ```
 
-The notebook opens on the lists: each row shows the list's **marker**, name, place count, and a
-posts indicator when posts exist. The home carries the actions that feed lists: **New list**,
-**Import** ([Import & Export](./interop.md)), and the add-a-place field. The canvas overlays
-every list's places, each pin wearing its list's marker; a **toggle row** over the overlay turns
-individual lists on and off — all on by default, the state persisted in the `settings` store.
+The notebook opens on the lists: each row is the list's **marker**, name, and place count —
+nothing else. The home body carries the actions that feed lists: **New list** and **Import**
+([Import & Export](./interop.md)); the add-a-place field sits in the top bar above. The canvas
+overlays every list's places, each pin wearing its list's marker; a **toggle row** over the
+overlay turns individual lists on and off — all on by default, the state persisted in the
+`settings` store.
 
 ## The list page (`/list/:id`)
 
@@ -85,9 +91,10 @@ opening an accessible menu of every artefact download plus the My Maps and uMap 
 rename the list, remove entries, and change the marker (swapping within free shape + colour
 pairs); its per-row controls are separate targets that never steal the row's selection. The
 share/publish entry point ([Sharing & Publishing](./sharing.md)) keeps its own place on the
-page, and the **posts sidebar** — the section listing this list's posts, with **New post**,
-which creates a list post and opens the editor; selecting a post navigates to its reading
-view — follows the entries.
+page. **Posts are the page's quiet alternate view**: a small, deliberately unaccented
+Places/Posts toggle under the header — muted text tabs, no accent colour. **Places** (the
+default) is the entries list; **Posts** shows this list's posts with **New post**, which
+creates a list post and opens the editor; selecting a post still opens its split reading view.
 
 ## Reading a post (`/post/:id`)
 
@@ -127,8 +134,9 @@ One field, two behaviours, both deliberately minimal: paste a Google Maps / Appl
 search: text in, geocoder results out, pick one, pick a list. Both end in "pick a list" because
 membership is existence. That sentence is the whole search spec; there is no ranking or discovery
 UX beyond it. Link parsing lives in [Import & Export](./interop.md), the geocoder in
-[Map Data & Providers](./data-sources.md). The field sits on the home and behind a global add
-affordance, so it is reachable anywhere.
+[Map Data & Providers](./data-sources.md). The field owns the shell's top bar, so it is
+reachable on every private route: a compact single-line input whose results, notices, and the
+confirm card open as a panel below the header.
 
 ## Import review
 

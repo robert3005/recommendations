@@ -14,12 +14,14 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { useReviewingCount } from "./data/hooks";
 import { ReviewPage } from "./features/interop/ReviewPage";
 import { ListPage } from "./features/lists/ListPage";
 import { ListsPage } from "./features/lists/ListsPage";
 import { PlaceColumn, PlaceSheet } from "./features/place/PlaceSheet";
 import { PostEditorPage } from "./features/posts/PostEditorPage";
 import { PostPage } from "./features/posts/PostPage";
+import { AddPlaceField } from "./features/search/AddPlaceField";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { PublishedListView } from "./features/share/PublishedListView";
 import { PublishedPostView } from "./features/share/PublishedPostView";
@@ -52,6 +54,9 @@ export function isPublicViewerPath(pathname: string): boolean {
 function RootLayout() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const readOnly = isPublicViewerPath(pathname);
+  // Review is exposed only while an import needs it (2026-07-26 —
+  // search-first chrome): the pill renders exactly while a batch is reviewing.
+  const reviewCount = useReviewingCount() ?? 0;
   const mode = usePaneStore((s) => s.mode);
   const desktop = usePaneStore((s) => s.desktop);
   const sheet = usePaneStore((s) => s.sheet);
@@ -117,7 +122,11 @@ function RootLayout() {
         >
           <span aria-hidden="true" className="h-1 w-10 rounded-full bg-hairline" />
         </button>
-        <header className="flex shrink-0 items-center gap-1 border-b border-hairline px-3 py-2">
+        {/* The top bar is for SEARCH (2026-07-26 — search-first chrome): the
+            wordmark home affordance, the add-a-place field filling the rest,
+            and — only while an import batch is reviewing — the review pill.
+            There is no persistent nav; Settings hides behind the gear chip. */}
+        <header className="flex shrink-0 items-center gap-2 border-b border-hairline px-3 py-2">
           {readOnly ? (
             <div
               className="min-w-0 flex-1 font-display text-sm font-medium text-ink"
@@ -126,26 +135,27 @@ function RootLayout() {
               Placemarks · Shared page
             </div>
           ) : (
-            <nav aria-label="Primary" className="flex min-w-0 flex-1 items-center gap-1">
+            <>
               <Link
                 to="/"
-                className="rounded-crisp px-2.5 py-1 text-sm font-medium text-ink [&.active]:bg-ink/10"
+                data-testid="home-link"
+                className="shrink-0 font-display text-sm font-semibold tracking-tight text-ink"
               >
-                Lists
+                Placemarks
               </Link>
-              <Link
-                to="/review"
-                className="rounded-crisp px-2.5 py-1 text-sm font-medium text-ink [&.active]:bg-ink/10"
-              >
-                Review
-              </Link>
-              <Link
-                to="/settings"
-                className="rounded-crisp px-2.5 py-1 text-sm font-medium text-ink [&.active]:bg-ink/10"
-              >
-                Settings
-              </Link>
-            </nav>
+              <div className="min-w-0 flex-1">
+                <AddPlaceField />
+              </div>
+              {reviewCount > 0 ? (
+                <Link
+                  to="/review"
+                  data-testid="review-pill"
+                  className="shrink-0 rounded-full border border-hairline bg-panel px-2.5 py-1 text-xs font-medium text-ink"
+                >
+                  Review {reviewCount}
+                </Link>
+              ) : null}
+            </>
           )}
           {/* One step toward the map / toward the content — the map is one
               collapse away, never a tab switch. */}
@@ -183,6 +193,21 @@ function RootLayout() {
           canvas, present even while the notebook is collapsed; on mobile a
           bottom sheet that stays visible when the sheet covers the map. */}
       {!readOnly ? mode === "desktop" ? <PlaceColumn /> : <PlaceSheet /> : null}
+
+      {/* Settings is hidden (2026-07-26 — search-first chrome): a floating
+          deep-chip gear pinned bottom-left of the shell. The collapsed
+          notebook's reopen chip sits at bottom-16 in the same corner, so the
+          two stack — gear below, reopen above — and never overlap. */}
+      {!readOnly ? (
+        <Link
+          to="/settings"
+          aria-label="Settings"
+          data-testid="settings-gear"
+          className="absolute bottom-3 left-3 z-30 rounded-crisp border border-hairline bg-paper px-2.5 py-1.5 text-sm text-ink"
+        >
+          <span aria-hidden="true">⚙</span>
+        </Link>
+      ) : null}
     </div>
   );
 }

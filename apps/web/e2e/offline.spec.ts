@@ -28,18 +28,19 @@ test.describe("offline shell", () => {
     await context.setOffline(true);
     await page.reload();
 
-    // The shell renders from the SW cache: nav, map (precached local style),
+    // The shell renders from the SW cache: the search-first top bar (home
+    // affordance + add-a-place field), map (precached local style),
     // attribution.
-    await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
+    await expect(page.getByTestId("home-link")).toBeVisible();
+    await expect(page.getByTestId("add-place-field")).toBeVisible();
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
     await expect(page.getByTestId("map-attribution")).toContainText("© OpenStreetMap contributors");
 
-    // Client-side notebook routes work offline too.
-    await page.getByRole("link", { name: "Review" }).click();
-    await expect(page.getByTestId("review-page")).toBeVisible();
-    await page.getByRole("link", { name: "Settings" }).click();
+    // Client-side notebook routes work offline too: Settings behind the
+    // bottom-left gear chip, home behind the wordmark.
+    await page.getByTestId("settings-gear").click();
     await expect(page.getByTestId("settings-page")).toBeVisible();
-    await page.getByRole("link", { name: "Lists" }).click();
+    await page.getByTestId("home-link").click();
     await expect(page.getByTestId("lists-page")).toBeVisible();
 
     await context.setOffline(false);
