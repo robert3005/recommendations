@@ -246,11 +246,11 @@ export async function projectPost(
       stats.omittedPlaces += 1;
       continue;
     }
-    // Posts carry explicitly attached notes and selected tags — the durable
-    // edges, not everything shareable on the place.
+    // Posts carry explicitly attached notes — the durable edges, not
+    // everything shareable on the place. Tags stay private: the shipped list
+    // projection never shared them either (spec/src/sharing.md).
     const attachedNotes = (view.attachments ?? []).map((a) => a.note).filter((n) => n.shareable);
     for (const shared of attachedNotes) noteImages(shared.body);
-    const selectedTags = (view.tagSelections ?? []).map((s) => s.tag.name);
     stats.places += 1;
     stats.sharedNotes += attachedNotes.length;
     sharedBlocks.push({
@@ -258,7 +258,6 @@ export async function projectPost(
       type: "place",
       place: anchor,
       ...(attachedNotes.length > 0 ? { notes: attachedNotes.map(toSharedNote) } : {}),
-      ...(selectedTags.length > 0 ? { tags: selectedTags } : {}),
     });
   }
 

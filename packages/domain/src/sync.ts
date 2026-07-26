@@ -163,7 +163,6 @@ export const SYNCED_TABLES = [
   "posts",
   "postBlocks",
   "blockNoteAttachments",
-  "blockTagSelections",
 ] as const;
 
 export type SyncedTable = (typeof SYNCED_TABLES)[number];

@@ -32,7 +32,6 @@ describe("Phase 6 backup export/import resource compatibility", () => {
         posts: emptyTable,
         postBlocks: emptyTable,
         blockNoteAttachments: emptyTable,
-        blockTagSelections: emptyTable,
         mediaBlobs: {
           get: async () => ({
             blob: {
@@ -85,7 +84,6 @@ describe("Phase 6 backup export/import resource compatibility", () => {
       posts: [],
       postBlocks: [],
       blockNoteAttachments: [],
-      blockTagSelections: [],
     };
     const dataBytes = new TextEncoder().encode(JSON.stringify(dataShape)).byteLength;
     const mediaBytes = new Uint8Array(INFLATED_BYTE_LIMIT - dataBytes);
@@ -101,7 +99,6 @@ describe("Phase 6 backup export/import resource compatibility", () => {
         posts: emptyTable,
         postBlocks: emptyTable,
         blockNoteAttachments: emptyTable,
-        blockTagSelections: emptyTable,
         mediaBlobs: {
           get: async () => ({
             blob: {

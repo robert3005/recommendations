@@ -187,7 +187,6 @@ async function seedRich(repo: DexieRepository): Promise<void> {
   await repo.attachNoteToPostBlock(embed.id, "place-note", NOW);
   const coffee = (await repo.listTags()).find((tag) => tag.name === "coffee");
   if (!coffee) throw new Error("tag fixture missing");
-  await repo.selectTagForPostBlock(embed.id, coffee.id, NOW);
   await seedSimple(repo, "list-b", "202");
   await repo.createPost({
     id: "post-b",

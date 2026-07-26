@@ -182,18 +182,6 @@ export function PostPage() {
                 <span className="ml-2 text-xs text-stone-500 capitalize">{facts.category}</span>
               ) : null}
               {facts.address ? <p className="text-sm text-stone-600">{facts.address}</p> : null}
-              {(view.tagSelections ?? []).length > 0 ? (
-                <p className="mt-1 flex flex-wrap gap-1">
-                  {(view.tagSelections ?? []).map(({ tag }) => (
-                    <span
-                      key={tag.id}
-                      className="rounded-full bg-stone-200 px-2 py-0.5 text-[11px] text-stone-700"
-                    >
-                      {tag.name}
-                    </span>
-                  ))}
-                </p>
-              ) : null}
               {(view.attachments ?? []).map(({ attachment, note }) => (
                 <div key={attachment.id} className="mt-2 border-t border-stone-200 pt-2 text-sm">
                   {note.title ? <p className="font-medium text-stone-800">{note.title}</p> : null}

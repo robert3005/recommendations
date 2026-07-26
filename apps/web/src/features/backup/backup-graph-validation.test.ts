@@ -183,38 +183,6 @@ describe("Backup replace-mode graph validation", () => {
     }
   });
 
-  it("rejects a tag selection whose tag has no live assignment on the embed's place", async () => {
-    const source = freshRepo("pivot-unbacked-selection-source");
-    const target = freshRepo("pivot-unbacked-selection-target");
-    try {
-      const placeA = await seedList(source, "list-a", "101");
-      await source.assignTag(placeA, "coffee", NOW);
-      const coffee = (await source.listTags()).find((tag) => tag.name === "coffee");
-      if (!coffee) throw new Error("tag fixture missing");
-      await source.createPost({
-        id: "post-a",
-        title: "list-a",
-        listId: "list-a",
-        createdAt: NOW,
-        updatedAt: NOW,
-      });
-      const embed = await source.embedPlaceInPost("post-a", placeA, NOW);
-      await source.selectTagForPostBlock(embed.id, coffee.id, NOW);
-      const archive = await rewriteArchive(await exportBackup(source, NOW), (data) => {
-        // The assignment disappears; the selection must not survive it.
-        data.tagAssignments = [];
-      });
-
-      await expect(importBackup(target, archive, "replace", LATER)).rejects.toThrow(
-        /not assigned|assignment/i,
-      );
-      expect(await target.listTags()).toEqual([]);
-    } finally {
-      source.db.close();
-      target.db.close();
-    }
-  });
-
   it("rejects a live note whose target kind is not one the model defines", async () => {
     const source = freshRepo("pivot-list-note-source");
     const target = freshRepo("pivot-list-note-target");

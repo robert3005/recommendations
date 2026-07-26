@@ -218,50 +218,6 @@ describe("attachments and tag selections", () => {
     await repo.createNote(placeNote("n1", place.id, true));
     await expect(repo.attachNoteToPostBlock(section.id, "n1", NOW)).rejects.toThrow(/place block/);
   });
-
-  it("selectTagForPostBlock requires the tag to be assigned to the embed's place", async () => {
-    await repo.createList(list("l1"));
-    const a = (await repo.addToList("l1", { kind: "poi", poi: poi("101") }, NOW)).place;
-    const b = (await repo.addToList("l1", { kind: "poi", poi: poi("102") }, NOW)).place;
-    await repo.createPost(post("p1", "l1"));
-    const blockA = await repo.embedPlaceInPost("p1", a.id, NOW);
-    await repo.assignTag(b.id, "riverside", NOW);
-    const unassigned = (await repo.listTags())[0];
-    if (!unassigned) throw new Error("no tag");
-
-    await expect(repo.selectTagForPostBlock(blockA.id, unassigned.id, NOW)).rejects.toThrow(
-      /not assigned/,
-    );
-
-    await repo.assignTag(a.id, "coffee", NOW);
-    const coffee = (await repo.listTags()).find((t) => t.name === "coffee");
-    if (!coffee) throw new Error("no coffee tag");
-    const selection = await repo.selectTagForPostBlock(blockA.id, coffee.id, NOW);
-    // Unique per (block, tag): reselecting returns the existing live edge.
-    expect((await repo.selectTagForPostBlock(blockA.id, coffee.id, LATER)).id).toBe(selection.id);
-    expect((await repo.getPostBlocks("p1"))[0]?.tagSelections?.map(({ tag }) => tag.name)).toEqual([
-      "coffee",
-    ]);
-
-    await repo.deselectTagForPostBlock(blockA.id, coffee.id, LATER);
-    expect((await repo.getPostBlocks("p1"))[0]?.tagSelections).toHaveLength(0);
-  });
-
-  it("removeTagAssignment cascades the dependent tag selections (pure edges cascade)", async () => {
-    await repo.createList(list("l1"));
-    const place = (await repo.addToList("l1", { kind: "poi", poi: poi("101") }, NOW)).place;
-    await repo.createPost(post("p1", "l1"));
-    const block = await repo.embedPlaceInPost("p1", place.id, NOW);
-    await repo.assignTag(place.id, "coffee", NOW);
-    const tag = (await repo.listTags())[0];
-    if (!tag) throw new Error("no tag");
-    await repo.selectTagForPostBlock(block.id, tag.id, NOW);
-
-    await repo.removeTagAssignment(place.id, tag.id, LATER);
-
-    expect((await repo.getPostBlocks("p1"))[0]?.tagSelections).toHaveLength(0);
-    expect((await repo.db.blockTagSelections.toArray()).filter((s) => !s.deleted)).toHaveLength(0);
-  });
 });
 
 describe("bottom-up teardown", () => {
@@ -371,7 +327,6 @@ describe("bottom-up teardown", () => {
     await repo.addPostSection("p1", "Intro", NOW);
     const embed = await repo.embedPlaceInPost("p1", place.id, NOW);
     await repo.attachNoteToPostBlock(embed.id, "place-note", NOW);
-    await repo.selectTagForPostBlock(embed.id, tag.id, NOW);
     const postPub = hostedPublication("pub-post", { kind: "post", id: "p1" });
     const listPub = hostedPublication("pub-list", { kind: "list", id: "l1" });
     await repo.db.publications.bulkPut([postPub, listPub]);
@@ -387,7 +342,6 @@ describe("bottom-up teardown", () => {
     expect((await repo.db.blockNoteAttachments.toArray()).filter((a) => !a.deleted)).toHaveLength(
       0,
     );
-    expect((await repo.db.blockTagSelections.toArray()).filter((s) => !s.deleted)).toHaveLength(0);
     // NEVER the list, its places, their notes, or their tag assignments.
     expect(await repo.getList("l1")).toBeDefined();
     expect(await repo.getPlaceView(place.id)).toBeDefined();

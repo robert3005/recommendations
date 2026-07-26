@@ -16,7 +16,6 @@ export const SYNCED_TABLE_NAMES = [
   "posts",
   "postBlocks",
   "blockNoteAttachments",
-  "blockTagSelections",
 ] as const;
 
 const idSchema = z.string().min(1).max(120);
@@ -261,14 +260,6 @@ const blockNoteAttachmentSchema = z
   })
   .strict();
 
-const blockTagSelectionSchema = z
-  .object({
-    ...baseEntityShape,
-    blockId: idSchema,
-    tagId: idSchema,
-  })
-  .strict();
-
 /** Complete domain validation for every full-row sync snapshot. */
 export const syncEntityRowSchemas = {
   places: placeSchema,
@@ -280,7 +271,6 @@ export const syncEntityRowSchemas = {
   posts: postSchema,
   postBlocks: postBlockSchema,
   blockNoteAttachments: blockNoteAttachmentSchema,
-  blockTagSelections: blockTagSelectionSchema,
 } as const;
 
 const hlcSchema = z

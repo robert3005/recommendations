@@ -60,9 +60,6 @@ const dataSchema = z.object({
   blockNoteAttachments: z.array(
     z.object({ ...entityBase, blockId: z.string(), noteId: z.string() }).loose(),
   ),
-  blockTagSelections: z
-    .array(z.object({ ...entityBase, blockId: z.string(), tagId: z.string() }).loose())
-    .default([]),
 });
 
 export type BackupData = z.infer<typeof dataSchema>;
@@ -161,7 +158,6 @@ export async function exportBackup(repo: DexieRepository, exportedAt: string): P
     posts: await db.posts.toArray(),
     postBlocks: await db.postBlocks.toArray(),
     blockNoteAttachments: await db.blockNoteAttachments.toArray(),
-    blockTagSelections: await db.blockTagSelections.toArray(),
   } as unknown as BackupData;
   const dataBytes = strToU8(JSON.stringify(data));
 
@@ -606,35 +602,6 @@ function validateGraph(
         );
       }
     }
-    // Tag selections: a post place block, and a tag actually assigned to that
-    // block's place; one live selection per (block, tag).
-    const selectionPairs = new Set<string>();
-    for (const selection of data.blockTagSelections) {
-      const row = selection as unknown as {
-        id: string;
-        deleted?: boolean;
-        blockId: string;
-        tagId: string;
-      };
-      if (row.deleted) continue;
-      const pair = `${row.blockId}::${row.tagId}`;
-      if (selectionPairs.has(pair)) {
-        throw new Error(`duplicate live tag selection for block ${row.blockId} — graph refused`);
-      }
-      selectionPairs.add(pair);
-      const block = postBlocksById.get(row.blockId);
-      if (block?.content?.type !== "place") {
-        throw new Error(`tag selection ${row.id} names no live post place block — graph refused`);
-      }
-      if (!liveTags.has(row.tagId)) {
-        throw new Error(`tag selection ${row.id} references a missing tag — graph refused`);
-      }
-      if (!assignmentPairs.has(`${block.content.placeId ?? ""}::${row.tagId}`)) {
-        throw new Error(
-          `tag selection ${row.id} selects a tag not assigned to the embed's place — graph refused`,
-        );
-      }
-    }
   }
 
   for (const asset of data.mediaAssets) {
@@ -1009,31 +976,6 @@ async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData):
       );
     }
   }
-
-  // Tag selections survive only on live post place blocks whose place still
-  // carries the selected tag's live assignment.
-  const finalAssignmentPairs = new Set<string>();
-  for (const edge of assignments.values()) {
-    if (!edge.deleted) finalAssignmentPairs.add(`${edge.placeId}::${edge.tagId}`);
-  }
-  type SelectionLike = Aged & { blockId: string; tagId: string };
-  const selectionById = lww(
-    (await repo.db.blockTagSelections.toArray()) as unknown as SelectionLike[],
-    data.blockTagSelections as unknown as SelectionLike[],
-  );
-  for (const selection of selectionById.values()) {
-    if (selection.deleted) continue;
-    const block = postBlockById.get(selection.blockId);
-    const blockPlace =
-      block && !block.deleted && block.content?.type === "place"
-        ? block.content.placeId
-        : undefined;
-    if (!blockPlace || !finalAssignmentPairs.has(`${blockPlace}::${selection.tagId}`)) {
-      throw new Error(
-        `merging would leave tag selection ${selection.id} without its assignment — refusing`,
-      );
-    }
-  }
 }
 
 /** Structural zod checks pass `.loose()` fields through; coordinates get their own gate. */
@@ -1193,7 +1135,6 @@ export async function importBackup(
     ["posts", db.posts],
     ["postBlocks", db.postBlocks],
     ["blockNoteAttachments", db.blockNoteAttachments],
-    ["blockTagSelections", db.blockTagSelections],
   ] as const;
 
   let imported = 0;
@@ -1469,28 +1410,6 @@ export async function importBackup(
                   .equals([row.placeId, row.tagId])
                   .toArray();
                 const clash = pairs.find((a) => !a.deleted && a.id !== row.id);
-                if (clash) continue;
-              }
-            }
-            if (key === "blockTagSelections") {
-              const row = incoming as unknown as {
-                id: string;
-                blockId: string;
-                tagId: string;
-                deleted?: boolean;
-              };
-              // Follow a skipped duplicate embed onto its retained block.
-              const retainedBlock = skippedPostBlockTargets.get(row.blockId);
-              if (retainedBlock) row.blockId = retainedBlock;
-              if (!row.deleted) {
-                const edges = await db.blockTagSelections.toArray();
-                const clash = edges.find(
-                  (edge) =>
-                    !edge.deleted &&
-                    edge.blockId === row.blockId &&
-                    edge.tagId === row.tagId &&
-                    edge.id !== row.id,
-                );
                 if (clash) continue;
               }
             }

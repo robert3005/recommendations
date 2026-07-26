@@ -126,7 +126,7 @@ describe("sync graph repair protocol regressions", () => {
     }
   });
 
-  it("recomputes tag normalization and leaves no dangling assignment or selection", async () => {
+  it("recomputes tag normalization and leaves no dangling assignment", async () => {
     const repo = repoFor("edge-cleanup");
     try {
       await repo.createList({
@@ -171,7 +171,6 @@ describe("sync graph repair protocol regressions", () => {
         updatedAt: NOW,
       });
       const embed = await repo.embedPlaceInPost("post-1", place.id, NOW);
-      const selection = await repo.selectTagForPostBlock(embed.id, "tag-1", NOW);
       const membership = (await repo.db.listBlocks.toArray()).find(
         (row) => !row.deleted && row.kind === "place" && row.refId === place.id,
       );
@@ -204,15 +203,10 @@ describe("sync graph repair protocol regressions", () => {
         (row) => row.placeId === place.id && row.tagId === "tag-1",
       );
       expect(assignment).toMatchObject({ deleted: true });
-      expect(await repo.db.blockTagSelections.get(selection.id)).toMatchObject({ deleted: true });
       const liveAssignments = (await repo.db.tagAssignments.toArray()).filter(
         (row) => !row.deleted,
       );
-      const liveSelections = (await repo.db.blockTagSelections.toArray()).filter(
-        (row) => !row.deleted,
-      );
       expect(liveAssignments).toEqual([]);
-      expect(liveSelections).toEqual([]);
     } finally {
       repo.db.close();
     }

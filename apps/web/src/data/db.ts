@@ -8,7 +8,6 @@
  */
 import type {
   BlockNoteAttachment,
-  BlockTagSelection,
   EditorCredential,
   List,
   ListBlock,
@@ -184,7 +183,6 @@ export class PlacemarksDb extends Dexie {
   posts!: EntityTable<Post, "id">;
   postBlocks!: EntityTable<PostBlockRow, "id">;
   blockNoteAttachments!: EntityTable<BlockNoteAttachment, "id">;
-  blockTagSelections!: EntityTable<BlockTagSelection, "id">;
   importBatches!: EntityTable<ImportBatchRow, "id">;
   importItems!: EntityTable<ImportItemRow, "id">;
   importSources!: EntityTable<ImportSourceRow, "sourceKey">;
@@ -210,7 +208,6 @@ export class PlacemarksDb extends Dexie {
       posts: "id, listId, updatedAt",
       postBlocks: "id, postId, kind, refId, updatedAt",
       blockNoteAttachments: "id, blockId, noteId, [blockId+noteId], updatedAt",
-      blockTagSelections: "id, blockId, tagId, [blockId+tagId], updatedAt",
       importBatches: "id, status, startedAt",
       importItems: "id, batchId, status",
       importSources: "sourceKey",

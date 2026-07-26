@@ -22,7 +22,6 @@ import {
   type AddToListSource,
   allRefKeys,
   type BlockNoteAttachment,
-  type BlockTagSelection,
   compareByRank,
   createImportedPlace,
   createManualPlace,
@@ -270,7 +269,6 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.posts,
         this.db.postBlocks,
         this.db.blockNoteAttachments,
-        this.db.blockTagSelections,
         this.db.mutationOutbox,
         this.db.syncRevs,
         this.db.syncState,
@@ -293,7 +291,6 @@ export class DexieRepository implements PlacemarksRepository {
           "tagAssignments",
           "postBlocks",
           "blockNoteAttachments",
-          "blockTagSelections",
         ];
         for (const tableName of order) {
           const rows = await (
@@ -379,7 +376,6 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.posts,
         this.db.postBlocks,
         this.db.blockNoteAttachments,
-        this.db.blockTagSelections,
         this.db.syncRevs,
         this.db.syncConflicts,
         this.db.mutationOutbox,
@@ -551,7 +547,6 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.posts,
         this.db.postBlocks,
         this.db.blockNoteAttachments,
-        this.db.blockTagSelections,
         this.db.syncRevs,
         this.db.syncConflicts,
         this.db.mutationOutbox,
@@ -835,15 +830,6 @@ export class DexieRepository implements PlacemarksRepository {
               updatedAt: now,
             });
           }
-          for (const selection of (await this.db.blockTagSelections.toArray()).filter(
-            (edge) => !edge.deleted && edge.tagId === tag.id,
-          )) {
-            await this.syncedPut("blockTagSelections", {
-              ...selection,
-              tagId: winner.id,
-              updatedAt: now,
-            });
-          }
           await tombstone("tags", tag);
         }
 
@@ -929,28 +915,6 @@ export class DexieRepository implements PlacemarksRepository {
           }
         }
 
-        const selectionWinner = new Map<string, string>();
-        for (const selection of (await this.db.blockTagSelections.toArray())
-          .filter((row) => !row.deleted)
-          .sort((a, b) => a.id.localeCompare(b.id))) {
-          const block = live(await this.db.postBlocks.get(selection.blockId));
-          const tag = live(await this.db.tags.get(selection.tagId));
-          const assigned =
-            block?.kind === "place" &&
-            (
-              await this.db.tagAssignments
-                .where("[placeId+tagId]")
-                .equals([block.refId, selection.tagId])
-                .toArray()
-            ).some((edge) => !edge.deleted);
-          const pair = `${selection.blockId}\0${selection.tagId}`;
-          if (!block || !tag || !assigned || selectionWinner.has(pair)) {
-            await tombstone("blockTagSelections", selection);
-          } else {
-            selectionWinner.set(pair, selection.id);
-          }
-        }
-
         // Membership is existence. At the final cursor, a live place with no
         // live membership is not allowed to remain as a hidden orphan.
         for (const place of (await this.db.places.toArray()).filter((row) => !row.deleted)) {
@@ -978,21 +942,6 @@ export class DexieRepository implements PlacemarksRepository {
             await tombstone("tagAssignments", assignment);
           }
         }
-        for (const selection of (await this.db.blockTagSelections.toArray()).filter(
-          (row) => !row.deleted,
-        )) {
-          const block = live(await this.db.postBlocks.get(selection.blockId));
-          const assigned =
-            block?.kind === "place" &&
-            (
-              await this.db.tagAssignments
-                .where("[placeId+tagId]")
-                .equals([block.refId, selection.tagId])
-                .toArray()
-            ).some((edge) => !edge.deleted);
-          if (!assigned) await tombstone("blockTagSelections", selection);
-        }
-
         if (options.publicationImpact) await this.reconcileHostedPublicationsAfterSync(now);
 
         const state = await this.db.syncState.get("sync");
@@ -1473,7 +1422,6 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.notes,
         this.db.listBlocks,
         this.db.blockNoteAttachments,
-        this.db.blockTagSelections,
         this.db.lists,
         this.db.posts,
         this.db.postBlocks,
@@ -1558,7 +1506,6 @@ export class DexieRepository implements PlacemarksRepository {
       "rw",
       [
         this.db.tagAssignments,
-        this.db.blockTagSelections,
         this.db.postBlocks,
         this.db.posts,
         this.db.publications,
@@ -1574,20 +1521,9 @@ export class DexieRepository implements PlacemarksRepository {
         const existing = pair.find((a) => !a.deleted);
         if (!existing) return;
         await this.syncedPut("tagAssignments", { ...existing, deleted: true, updatedAt: now });
-        const selections = (
-          await this.db.blockTagSelections.where("tagId").equals(tagId).toArray()
-        ).filter((s) => !s.deleted);
         const touchedPosts = new Set<string>();
-        for (const selection of selections) {
-          const block = live(await this.db.postBlocks.get(selection.blockId));
-          if (block && block.kind === "place" && block.refId === placeId) {
-            await this.syncedPut("blockTagSelections", {
-              ...selection,
-              deleted: true,
-              updatedAt: now,
-            });
-            touchedPosts.add(block.postId);
-          }
+        for (const embed of await this.liveEmbedsOfPlace(placeId)) {
+          touchedPosts.add(embed.post.id);
         }
         for (const postId of touchedPosts) {
           await this.dirtyPostPublications(postId, now);
@@ -2310,7 +2246,6 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.postBlocks,
         this.db.notes,
         this.db.blockNoteAttachments,
-        this.db.blockTagSelections,
         this.db.publications,
         this.db.publicationOutbox,
         this.db.mutationOutbox,
@@ -2345,12 +2280,6 @@ export class DexieRepository implements PlacemarksRepository {
     ).filter((a) => !a.deleted);
     for (const a of attachments) {
       await this.syncedPut("blockNoteAttachments", { ...a, deleted: true, updatedAt: now });
-    }
-    const selections = (
-      await this.db.blockTagSelections.where("blockId").equals(block.id).toArray()
-    ).filter((s) => !s.deleted);
-    for (const s of selections) {
-      await this.syncedPut("blockTagSelections", { ...s, deleted: true, updatedAt: now });
     }
   }
 
@@ -2387,22 +2316,7 @@ export class DexieRepository implements PlacemarksRepository {
             ),
           )
         ).filter((x): x is { attachment: BlockNoteAttachment; note: Note } => x !== undefined);
-        const selectionRows = (
-          await this.db.blockTagSelections.where("blockId").equals(block.id).toArray()
-        ).filter((s) => !s.deleted);
-        const tagSelections = (
-          await Promise.all(
-            selectionRows.map(
-              async (
-                selection,
-              ): Promise<{ selection: BlockTagSelection; tag: Tag } | undefined> => {
-                const tag = live(await this.db.tags.get(selection.tagId));
-                return tag ? { selection, tag } : undefined;
-              },
-            ),
-          )
-        ).filter((x): x is { selection: BlockTagSelection; tag: Tag } => x !== undefined);
-        return { block, ...(place ? { place } : {}), attachments, tagSelections };
+        return { block, ...(place ? { place } : {}), attachments };
       }),
     );
   }
@@ -2538,7 +2452,6 @@ export class DexieRepository implements PlacemarksRepository {
         this.db.posts,
         this.db.notes,
         this.db.blockNoteAttachments,
-        this.db.blockTagSelections,
         this.db.publications,
         this.db.publicationOutbox,
         this.db.mutationOutbox,
@@ -2647,86 +2560,6 @@ export class DexieRepository implements PlacemarksRepository {
           deleted: true,
           updatedAt: now,
         });
-        const block = await this.db.postBlocks.get(blockId);
-        if (block && !block.deleted) {
-          await this.dirtyPostPublications(block.postId, now);
-        }
-      },
-    );
-  }
-
-  async selectTagForPostBlock(
-    blockId: string,
-    tagId: string,
-    now: string,
-  ): Promise<BlockTagSelection> {
-    return this.db.transaction(
-      "rw",
-      [
-        this.db.postBlocks,
-        this.db.posts,
-        this.db.tags,
-        this.db.tagAssignments,
-        this.db.blockTagSelections,
-        this.db.publications,
-        this.db.publicationOutbox,
-        this.db.mutationOutbox,
-        this.db.syncRevs,
-      ],
-      async () => {
-        const block = live(await this.db.postBlocks.get(blockId));
-        if (block?.content.type !== "place") {
-          throw new Error("tag selections require a post place block");
-        }
-        if (!live(await this.db.tags.get(tagId))) throw new Error("tag not found");
-        // The invariant: a selected tag is actually assigned to the block's place.
-        const pairAssignment = await this.db.tagAssignments
-          .where("[placeId+tagId]")
-          .equals([block.content.placeId, tagId])
-          .toArray();
-        if (!pairAssignment.find((a) => !a.deleted)) {
-          throw new Error("tag is not assigned to this block's place");
-        }
-        const pair = await this.db.blockTagSelections
-          .where("[blockId+tagId]")
-          .equals([blockId, tagId])
-          .toArray();
-        const existing = pair.find((s) => !s.deleted);
-        if (existing) return existing;
-        const selection: BlockTagSelection = {
-          id: newId(),
-          blockId,
-          tagId,
-          createdAt: now,
-          updatedAt: now,
-        };
-        await this.syncedPut("blockTagSelections", selection);
-        await this.dirtyPostPublications(block.postId, now);
-        return selection;
-      },
-    );
-  }
-
-  async deselectTagForPostBlock(blockId: string, tagId: string, now: string): Promise<void> {
-    await this.db.transaction(
-      "rw",
-      [
-        this.db.postBlocks,
-        this.db.blockTagSelections,
-        this.db.publications,
-        this.db.publicationOutbox,
-        this.db.posts,
-        this.db.mutationOutbox,
-        this.db.syncRevs,
-      ],
-      async () => {
-        const pair = await this.db.blockTagSelections
-          .where("[blockId+tagId]")
-          .equals([blockId, tagId])
-          .toArray();
-        const existing = pair.find((s) => !s.deleted);
-        if (!existing) return;
-        await this.syncedPut("blockTagSelections", { ...existing, deleted: true, updatedAt: now });
         const block = await this.db.postBlocks.get(blockId);
         if (block && !block.deleted) {
           await this.dirtyPostPublications(block.postId, now);

@@ -25,7 +25,6 @@
  */
 import type {
   BlockNoteAttachment,
-  BlockTagSelection,
   List,
   ListBlock,
   MediaAsset,
@@ -59,7 +58,6 @@ export interface PostBlockView {
   /** Shareable place notes attached to a place embed, in rank order. */
   attachments?: { attachment: BlockNoteAttachment; note: Note }[];
   /** Tags explicitly selected for publication on a place embed. */
-  tagSelections?: { selection: BlockTagSelection; tag: Tag }[];
 }
 
 /**
@@ -223,7 +221,4 @@ export interface PlacemarksRepository {
   removePostBlock(blockId: string, now: string): Promise<void>;
   attachNoteToPostBlock(blockId: string, noteId: string, now: string): Promise<BlockNoteAttachment>;
   detachNoteFromPostBlock(blockId: string, noteId: string, now: string): Promise<void>;
-  /** Selects a tag (assigned to the embed's place) for publication on the block. */
-  selectTagForPostBlock(blockId: string, tagId: string, now: string): Promise<BlockTagSelection>;
-  deselectTagForPostBlock(blockId: string, tagId: string, now: string): Promise<void>;
 }

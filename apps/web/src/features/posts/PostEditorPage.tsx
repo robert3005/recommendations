@@ -23,7 +23,6 @@ function EmbedEdges({ view }: { view: PostBlockView }) {
   const notes = useNotesForPlace(placeId);
   const shareable = (notes ?? []).filter((n) => n.shareable);
   const attachedIds = new Set((view.attachments ?? []).map((a) => a.note.id));
-  const selectedTagIds = new Set((view.tagSelections ?? []).map((s) => s.tag.id));
   const [error, setError] = useState<string>();
   const place = view.place;
   if (!placeId || !place) return null;
@@ -58,71 +57,7 @@ function EmbedEdges({ view }: { view: PostBlockView }) {
           })}
         </div>
       ) : null}
-      {/* Tags publish only through explicit selection (spec/src/data-model.md). */}
-      <TagSelections
-        view={view}
-        placeId={placeId}
-        selectedTagIds={selectedTagIds}
-        onError={setError}
-      />
       {error ? <p className="text-red-700">{error}</p> : null}
-    </div>
-  );
-}
-
-function TagSelections({
-  view,
-  placeId,
-  selectedTagIds,
-  onError,
-}: {
-  view: PostBlockView;
-  placeId: string;
-  selectedTagIds: Set<string>;
-  onError: (message: string) => void;
-}) {
-  const repo = useRepo();
-  const [tags, setTags] = useState<{ id: string; name: string }[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    repo
-      .getPlaceView(placeId)
-      .then((placeView) => {
-        if (!cancelled && placeView) setTags(placeView.tags);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [repo, placeId]);
-  if (tags.length === 0) return null;
-  return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-stone-500">Share tags:</span>
-      {tags.map((tag) => {
-        const selected = selectedTagIds.has(tag.id);
-        return (
-          <button
-            key={tag.id}
-            type="button"
-            aria-pressed={selected}
-            data-testid={`select-tag-${tag.id}`}
-            className={`rounded-full px-2 py-0.5 font-medium ${
-              selected ? "bg-stone-800 text-white" : "bg-stone-200 text-stone-700"
-            }`}
-            onClick={() => {
-              const action = selected
-                ? repo.deselectTagForPostBlock(view.block.id, tag.id, nowIso())
-                : repo.selectTagForPostBlock(view.block.id, tag.id, nowIso()).then(() => {});
-              action.catch((err: unknown) =>
-                onError(err instanceof Error ? err.message : String(err)),
-              );
-            }}
-          >
-            {tag.name}
-          </button>
-        );
-      })}
     </div>
   );
 }

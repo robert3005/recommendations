@@ -101,12 +101,6 @@ export interface BlockNoteAttachment extends BaseEntity {
   rank: string;
 }
 
-/** Explicit durable edge: a tag selected for publication on a post place block. */
-export interface BlockTagSelection extends BaseEntity {
-  blockId: string; // must identify a post place block
-  tagId: string; // tag assigned to that block's place
-}
-
 /** Deterministic ordering: rank, then id as the tiebreaker. */
 export function compareByRank<T extends { rank: string; id: string }>(a: T, b: T): number {
   return a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
