@@ -1,11 +1,7 @@
 /** Every public map must expose linked OSM attribution, not inert credit text. */
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MapView } from "./MapView";
-
-const maplibre = vi.hoisted(() => ({
-  attributionOptions: [] as Array<{ customAttribution?: string | string[] }>,
-}));
 
 vi.mock("maplibre-gl", () => {
   class MockMap {
@@ -34,13 +30,11 @@ vi.mock("maplibre-gl", () => {
     }
 
     remove() {}
+    resize() {}
+    triggerRepaint() {}
   }
 
-  class MockAttributionControl {
-    constructor(options: { customAttribution?: string | string[] }) {
-      maplibre.attributionOptions.push(options);
-    }
-  }
+  class MockAttributionControl {}
 
   class MockControl {
     on() {
@@ -59,7 +53,7 @@ vi.mock("maplibre-gl", () => {
 });
 
 describe("Phase 0 map attribution", () => {
-  it("gives MapLibre an OpenStreetMap copyright link", () => {
+  it("keeps an OpenStreetMap copyright link on the map before its style loads", () => {
     const view = render(
       <MapView
         styleUrl="/map-style.json"
@@ -71,14 +65,7 @@ describe("Phase 0 map attribution", () => {
     );
 
     try {
-      const custom = maplibre.attributionOptions.at(-1)?.customAttribution;
-      const html = Array.isArray(custom) ? custom.join(" ") : (custom ?? "");
-      const holder = document.createElement("div");
-      holder.innerHTML = html;
-      const link = holder.querySelector("a");
-
-      expect(link, "MapLibre custom attribution must contain a real link").not.toBeNull();
-      if (!link) return;
+      const link = screen.getByTestId("map-attribution");
       expect(link).toHaveTextContent(/© OpenStreetMap contributors/i);
       expect(link).toHaveAttribute(
         "href",
@@ -86,7 +73,6 @@ describe("Phase 0 map attribution", () => {
       );
     } finally {
       view.unmount();
-      maplibre.attributionOptions.length = 0;
     }
   });
 });

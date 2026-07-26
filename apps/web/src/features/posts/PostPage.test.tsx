@@ -6,7 +6,7 @@
  * editor is open.
  */
 import { markerAt } from "@placemarks/domain";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
@@ -72,7 +72,11 @@ async function seed(repo: DexieRepository): Promise<{ placeA: string; placeB: st
 
 beforeEach(() => {
   navigation.navigate.mockClear();
-  useProjectionStore.setState({ projection: { kind: "all" } });
+  useProjectionStore.setState({
+    projection: { kind: "all" },
+    postSelectHandler: null,
+    sharedSelectHandler: null,
+  });
   useUiStore.setState({ selection: null, embedTargetPostId: null });
 });
 
@@ -94,7 +98,7 @@ describe("post reading page", () => {
       const embed = await screen.findByTestId("post-embed");
       expect(embed).toHaveTextContent("Café Central");
       // The post page links back to its list (list ↔ posts in both directions).
-      expect(screen.getByTestId("post-list-link")).toHaveTextContent("Lisbon Weekend");
+      expect(await screen.findByTestId("post-list-link")).toHaveTextContent("Lisbon Weekend");
       // The route published its projection: the canvas shows the post's embeds.
       expect(useProjectionStore.getState().projection).toMatchObject({
         kind: "post",
@@ -118,6 +122,118 @@ describe("post reading page", () => {
       expect(useUiStore.getState().selection).toEqual({ kind: "place", placeId: placeA });
       expect(useUiStore.getState().flyTo).toMatchObject({ lat: 38.7139, lng: -9.1394 });
     } finally {
+      repo.db.close();
+    }
+  });
+
+  it("uses the retained exact Google listing even when another external ref comes first", async () => {
+    const repo = new DexieRepository(`post-google-ref-${crypto.randomUUID()}`);
+    const googleUrl = "https://www.google.com/maps/place/?q=place_id:ChIJExact";
+    try {
+      const { placeA } = await seed(repo);
+      const row = await repo.db.places.get(placeA);
+      if (!row) throw new Error("seeded place missing");
+      await repo.db.places.put({
+        ...row,
+        externalRefs: [
+          { provider: "web", url: "https://example.com/place", importedAt: NOW },
+          { provider: "google-maps", url: googleUrl, importedAt: NOW },
+        ],
+      });
+
+      render(
+        <RepoProvider repo={repo}>
+          <PostPage />
+        </RepoProvider>,
+      );
+
+      expect(await screen.findByTestId("open-google-maps")).toHaveAttribute("href", googleUrl);
+    } finally {
+      repo.db.close();
+    }
+  });
+
+  it("observes asynchronously loaded embeds and scrolls/highlights them from a map tap", async () => {
+    const repo = new DexieRepository(`post-map-sync-${crypto.randomUUID()}`);
+    const observed: Element[] = [];
+    let intersectionCallback: IntersectionObserverCallback | undefined;
+    const scrollIntoView = vi.fn();
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          intersectionCallback = callback;
+        }
+        observe(element: Element) {
+          observed.push(element);
+        }
+        disconnect() {}
+        unobserve() {}
+        takeRecords() {
+          return [];
+        }
+        root = null;
+        rootMargin = "";
+        thresholds = [0.4];
+      },
+    );
+    const previousScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    try {
+      const { placeA } = await seed(repo);
+      render(
+        <RepoProvider repo={repo}>
+          <PostPage />
+        </RepoProvider>,
+      );
+      const section = await screen.findByTestId("post-section");
+      const embed = await screen.findByTestId("post-embed");
+      await waitFor(() => expect(observed).toContain(section));
+      await waitFor(() => expect(observed).toContain(embed));
+
+      // Prose frames the consecutive embeds it introduces, not just cards.
+      act(() => {
+        intersectionCallback?.(
+          [{ target: section, isIntersecting: true } as unknown as IntersectionObserverEntry],
+          {} as IntersectionObserver,
+        );
+      });
+      await waitFor(() =>
+        expect(useProjectionStore.getState().projection).toMatchObject({
+          kind: "post",
+          focusPlaceIds: [placeA],
+        }),
+      );
+
+      act(() => {
+        intersectionCallback?.(
+          [{ target: embed, isIntersecting: true } as unknown as IntersectionObserverEntry],
+          {} as IntersectionObserver,
+        );
+      });
+      await waitFor(() =>
+        expect(useProjectionStore.getState().projection).toMatchObject({
+          kind: "post",
+          focusPlaceIds: [placeA],
+        }),
+      );
+
+      act(() => useProjectionStore.getState().postSelectHandler?.(placeA));
+      expect(scrollIntoView).toHaveBeenCalled();
+      expect(embed).toHaveAttribute("data-selected", "true");
+    } finally {
+      vi.unstubAllGlobals();
+      if (previousScrollIntoView) {
+        Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+          configurable: true,
+          value: previousScrollIntoView,
+        });
+      } else {
+        Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+      }
       repo.db.close();
     }
   });

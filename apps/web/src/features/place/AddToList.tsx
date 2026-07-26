@@ -6,6 +6,7 @@
  */
 import type { List, ListMarker } from "@placemarks/domain";
 import { useState } from "react";
+import { MarkerGlyph } from "../lists/MarkerGlyph";
 import { NewListForm } from "../lists/NewListForm";
 
 export type AddToListTarget =
@@ -20,48 +21,76 @@ export interface AddToListProps {
 
 export function AddToList({ lists, memberListIds, onPick }: AddToListProps) {
   const [creating, setCreating] = useState(false);
+  const currentLists = (lists ?? []).filter((list) => memberListIds.includes(list.id));
 
   if (creating) {
     return (
-      <NewListForm
-        lists={lists}
-        submitLabel="Create & add"
-        submitTestId="create-list-and-add"
-        radioName="list-marker"
-        onCreate={(name, marker) => {
-          setCreating(false);
-          onPick({ kind: "new", name, marker });
-        }}
-        onCancel={() => setCreating(false)}
-      />
+      <div>
+        <CurrentLists lists={currentLists} />
+        <NewListForm
+          lists={lists}
+          submitLabel="Create & add"
+          submitTestId="create-list-and-add"
+          radioName="list-marker"
+          onCreate={(name, marker) => {
+            setCreating(false);
+            onPick({ kind: "new", name, marker });
+          }}
+          onCancel={() => setCreating(false)}
+        />
+      </div>
     );
   }
 
   return (
-    <select
-      aria-label="Add to list"
-      className="mt-1 w-full rounded border border-stone-200 px-2 py-1 text-sm"
-      value=""
-      data-testid="add-to-list"
-      onChange={(e) => {
-        const value = e.target.value;
-        if (value === "__new__") {
-          setCreating(true);
-          return;
-        }
-        const list = (lists ?? []).find((l) => l.id === value);
-        if (list) onPick({ kind: "existing", list });
-      }}
+    <div>
+      <CurrentLists lists={currentLists} />
+      <select
+        aria-label="Add to list"
+        className="mt-1 w-full rounded border border-stone-200 px-2 py-1 text-sm"
+        value=""
+        data-testid="add-to-list"
+        onChange={(e) => {
+          const value = e.target.value;
+          if (value === "__new__") {
+            setCreating(true);
+            return;
+          }
+          const list = (lists ?? []).find((l) => l.id === value);
+          if (list) onPick({ kind: "existing", list });
+        }}
+      >
+        <option value="">Add to list…</option>
+        {(lists ?? [])
+          .filter((l) => !memberListIds.includes(l.id))
+          .map((list) => (
+            <option key={list.id} value={list.id}>
+              {list.name}
+            </option>
+          ))}
+        <option value="__new__">+ New list…</option>
+      </select>
+    </div>
+  );
+}
+
+function CurrentLists({ lists }: { lists: List[] }) {
+  if (lists.length === 0) return null;
+  return (
+    <ul
+      className="mb-1 flex flex-wrap gap-1.5 text-xs text-stone-600"
+      aria-label="Current lists"
+      data-testid="current-list-memberships"
     >
-      <option value="">Add to list…</option>
-      {(lists ?? [])
-        .filter((l) => !memberListIds.includes(l.id))
-        .map((list) => (
-          <option key={list.id} value={list.id}>
-            {list.name}
-          </option>
-        ))}
-      <option value="__new__">+ New list…</option>
-    </select>
+      {lists.map((list) => (
+        <li
+          key={list.id}
+          className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-0.5"
+        >
+          <MarkerGlyph marker={list.marker} size={12} />
+          {list.name}
+        </li>
+      ))}
+    </ul>
   );
 }

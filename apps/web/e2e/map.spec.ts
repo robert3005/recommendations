@@ -24,9 +24,7 @@ test.describe("map display", () => {
     expect(box?.width ?? 0).toBeGreaterThan(200);
     expect(box?.height ?? 0).toBeGreaterThan(200);
     // Licensing requirement: attribution is visible on the map surface.
-    await expect(page.locator(".maplibregl-ctrl-attrib")).toContainText(
-      "© OpenStreetMap contributors",
-    );
+    await expect(page.getByTestId("map-attribution")).toContainText("© OpenStreetMap contributors");
   });
 
   test("map pans on drag", async ({ page }) => {

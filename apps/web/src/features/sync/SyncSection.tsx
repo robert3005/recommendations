@@ -7,7 +7,7 @@
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
 import { useDexieRepo } from "../../data/RepoContext";
-import { completeLogin, requestLoginCode, signOut, syncNow } from "./engine";
+import { completeLogin, requestLoginCode, signOut, signOutOtherDevices, syncNow } from "./engine";
 
 export function SyncSection() {
   const repo = useDexieRepo();
@@ -80,16 +80,24 @@ export function SyncSection() {
                 className="shrink-0 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
                 data-testid="sync-complete-login"
                 onClick={() => {
+                  setPhase("busy");
                   setMessage(undefined);
                   completeLogin(repo, email.trim(), code.trim())
                     .then(async () => {
                       setMessage("Signed in — syncing…");
-                      await syncNow(repo).catch(() => undefined);
-                      setMessage("Signed in.");
+                      try {
+                        await syncNow(repo);
+                        setMessage("Signed in and synced.");
+                      } catch (err) {
+                        const detail = err instanceof Error ? err.message : String(err);
+                        setMessage(`Signed in, but the first sync failed: ${detail}`);
+                      }
+                      setPhase("idle");
                     })
-                    .catch((err: unknown) =>
-                      setMessage(err instanceof Error ? err.message : String(err)),
-                    );
+                    .catch((err: unknown) => {
+                      setPhase("code-sent");
+                      setMessage(err instanceof Error ? err.message : String(err));
+                    });
                 }}
               >
                 Sign in
@@ -111,7 +119,7 @@ export function SyncSection() {
           <p data-testid="sync-pending">
             {pending ?? 0} local {pending === 1 ? "change" : "changes"} waiting to sync
           </p>
-          <div className="flex gap-2 pt-1">
+          <div className="flex flex-wrap gap-2 pt-1">
             <button
               type="button"
               disabled={phase === "busy"}
@@ -136,13 +144,39 @@ export function SyncSection() {
             </button>
             <button
               type="button"
+              disabled={phase === "busy"}
               className="rounded border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700"
               data-testid="sync-sign-out"
               onClick={() => {
-                void signOut(repo).then(() => setMessage("Signed out — local data unchanged."));
+                setPhase("busy");
+                setMessage(undefined);
+                void signOut(repo)
+                  .then(() => setMessage("Signed out — local data unchanged."))
+                  .catch((err: unknown) =>
+                    setMessage(err instanceof Error ? err.message : String(err)),
+                  )
+                  .finally(() => setPhase("idle"));
               }}
             >
               Sign out
+            </button>
+            <button
+              type="button"
+              disabled={phase === "busy"}
+              className="rounded border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700"
+              data-testid="sync-sign-out-others"
+              onClick={() => {
+                setPhase("busy");
+                setMessage(undefined);
+                void signOutOtherDevices(repo)
+                  .then(() => setMessage("Other device sessions were signed out."))
+                  .catch((err: unknown) =>
+                    setMessage(err instanceof Error ? err.message : String(err)),
+                  )
+                  .finally(() => setPhase("idle"));
+              }}
+            >
+              Sign out other devices
             </button>
           </div>
         </div>

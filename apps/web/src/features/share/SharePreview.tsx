@@ -90,10 +90,12 @@ export function SharePreview({
         address: anchor.kind === "osm" ? anchor.lastVerified.address : undefined,
         manual: anchor.kind === "manual",
         notes: block.notes ?? [],
+        tags: block.tags ?? [],
         lines,
       },
     ];
   });
+  const selectedTagCount = placeRows.reduce((total, row) => total + row.tags.length, 0);
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: backdrop dismiss is supplementary; the Close button is the accessible path
     <div
@@ -143,7 +145,13 @@ export function SharePreview({
               facts to share) and will be skipped
             </li>
           ) : null}
-          <li>Tags and non-shareable notes never leave the device</li>
+          <li>
+            {selectedTagCount > 0
+              ? `${selectedTagCount.toString()} explicitly selected ${
+                  selectedTagCount === 1 ? "tag leaves" : "tags leave"
+                } the device and ${selectedTagCount === 1 ? "is" : "are"} named below; unselected tags stay private`
+              : "No tags leave the device; non-shareable notes stay private"}
+          </li>
         </ul>
 
         {/* The exact payload, not a summary: every name, address, and shared sentence. */}
@@ -174,6 +182,11 @@ export function SharePreview({
                     {line}
                   </span>
                 ))}
+                {row.tags.length > 0 ? (
+                  <span className="block text-[10px] text-stone-500">
+                    Selected tags: {row.tags.join(", ")}
+                  </span>
+                ) : null}
                 {row.notes.map((note, index) => (
                   <blockquote
                     key={`${row.id}-n-${index.toString()}`}

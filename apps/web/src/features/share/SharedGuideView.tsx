@@ -7,8 +7,10 @@
  * read-only chrome — and offers "Add these places to my library". No editing
  * controls exist here.
  */
+import type { OsmElementRef } from "@placemarks/domain";
 import type { SharedGuide } from "@placemarks/schemas";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDexieRepo } from "../../data/RepoContext";
 import { DEFAULT_PIN_COLOR } from "../../lib/markers";
 import { nowIso } from "../../lib/time";
@@ -17,6 +19,9 @@ import { poiResolver } from "../../providers";
 import { usePaneStore } from "../../state/pane";
 import { useCanvasProjection, useProjectionStore } from "../../state/projection";
 import { useUiStore } from "../../state/ui";
+import { NavLinks } from "../place/NavLinks";
+import { OsmLink } from "../place/OsmLink";
+import { articleFollowGroups } from "../posts/articleFollow";
 import { resolveAllAnchors, type SharedResolution } from "./resolveShared";
 import { type SaveSharedResult, saveSharedGuide } from "./saveSharedGuide";
 
@@ -32,8 +37,10 @@ interface DisplayRow {
   lat?: number;
   lng?: number;
   manual?: boolean;
+  osmRef?: OsmElementRef;
   observedAt?: string;
   notes?: { title?: string; body: string }[];
+  tags?: string[];
 }
 
 function rowsOf(guide: SharedGuide): DisplayRow[] {
@@ -62,8 +69,10 @@ function rowsOf(guide: SharedGuide): DisplayRow[] {
       lat: facts.lat,
       lng: facts.lng,
       manual: anchor.kind === "manual",
+      ...(anchor.kind === "osm" ? { osmRef: anchor.currentOsmRef } : {}),
       ...(anchor.kind === "osm" ? { observedAt: anchor.lastVerified.observedAt } : {}),
       ...(block.notes ? { notes: block.notes } : {}),
+      ...(block.tags ? { tags: block.tags } : {}),
     };
   });
 }
@@ -98,29 +107,45 @@ export function SharedGuideView({
 }) {
   const repo = useDexieRepo();
   const rows = useMemo(() => rowsOf(guide), [guide]);
-  const [resolutions, setResolutions] = useState<Record<string, SharedResolution>>({});
+  const [resolutionState, setResolutionState] = useState<{
+    document: SharedGuide;
+    values: Record<string, SharedResolution>;
+  }>(() => ({ document: guide, values: {} }));
+  // Never render one document with another document's live facts while the
+  // replacement effect is waiting to run after commit.
+  const resolutions = resolutionState.document === guide ? resolutionState.values : {};
   const [saved, setSaved] = useState<SaveSharedResult>();
   const [saving, setSaving] = useState(false);
-  const startedRef = useRef(false);
   // The map and the article are one synchronized view: a pin selects its
   // article entry; activating an entry selects and recentres its pin.
+  const articleRef = useRef<HTMLElement>(null);
   const entryRefs = useRef(new Map<string, HTMLLIElement>());
   const [selectedBlockId, setSelectedBlockId] = useState<string>();
-  const selectFromMap = (blockId: string) => {
+  const [visiblePinKeys, setVisiblePinKeys] = useState<string[]>([]);
+  const followGroups = useMemo(
+    () =>
+      articleFollowGroups(
+        rows.map((row) => ({
+          blockId: row.blockId,
+          ...(row.kind === "place" ? { placeId: row.blockId } : {}),
+        })),
+      ),
+    [rows],
+  );
+  const selectFromMap = useCallback((blockId: string) => {
     setSelectedBlockId(blockId);
     entryRefs.current.get(blockId)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  };
+  }, []);
   const requestFlyTo = useUiStore((s) => s.requestFlyTo);
   const setSharedSelectHandler = useProjectionStore((s) => s.setSharedSelectHandler);
   const setPane = usePaneStore((s) => s.setPane);
   // The article lands beside its map: the viewer opens at split, and canvas
   // pin taps select article entries for as long as this viewer is mounted.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: registers once per mount; the handler closes over stable refs/setters
   useEffect(() => {
     setPane("split");
     setSharedSelectHandler(selectFromMap);
     return () => setSharedSelectHandler(null);
-  }, []);
+  }, [selectFromMap, setPane, setSharedSelectHandler]);
   const shownCoords = (row: DisplayRow): { lat: number; lng: number } | undefined => {
     // A successful live resolve moves the pin — selection and recentring
     // follow the resolved coordinates, never stale copied ones.
@@ -138,16 +163,31 @@ export function SharedGuideView({
   };
 
   useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
+    // The same viewer instance can receive a newer hosted revision or slug.
+    // Reset document-scoped state and ignore late callbacks from the prior
+    // document so its coordinates/selection can never leak into the next.
+    let currentDocument = true;
+    setResolutionState({ document: guide, values: {} });
+    setSelectedBlockId(undefined);
+    setVisiblePinKeys([]);
     const anchors = new Map(
       guide.blocks.flatMap((block) =>
         block.type === "place" ? [[block.id, block.place] as const] : [],
       ),
     );
     void resolveAllAnchors(poiResolver, anchors, (blockId, resolution) => {
-      setResolutions((current) => ({ ...current, [blockId]: resolution }));
+      if (!currentDocument) return;
+      setResolutionState((current) => ({
+        document: guide,
+        values: {
+          ...(current.document === guide ? current.values : {}),
+          [blockId]: resolution,
+        },
+      }));
     });
+    return () => {
+      currentDocument = false;
+    };
   }, [guide]);
 
   // The shared places project onto the persistent canvas (the app's one
@@ -162,15 +202,67 @@ export function SharedGuideView({
         name: row.name ?? "Place",
         lat: coords.lat,
         lng: coords.lng,
+        ...(row.manual ? { unlinked: true } : {}),
         ...(row.blockId === selectedBlockId ? { selected: true } : {}),
       },
     ];
   });
-  useCanvasProjection({ kind: "shared", pins });
+
+  // Public posts/lists follow the article just like the private reader. The
+  // observer is installed after rendered rows exist and is recreated if live
+  // resolution moves their coordinates.
+  const pinKey = pins
+    .map((pin) => `${pin.key}:${pin.lat.toString()}:${pin.lng.toString()}`)
+    .join("|");
+  const followKey = [...followGroups.entries()]
+    .map(([blockId, placeIds]) => `${blockId}:${placeIds.join(",")}`)
+    .join("|");
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pinKey is the stable serialization of the pins consumed by this observer.
+  useEffect(() => {
+    if (!pinKey) return;
+    const root = articleRef.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const visibleBlocks = new Set<string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const blockId = (entry.target as HTMLElement).dataset.sharedFollow;
+          if (!blockId) continue;
+          if (entry.isIntersecting) visibleBlocks.add(blockId);
+          else visibleBlocks.delete(blockId);
+        }
+        const next = [
+          ...new Set([...visibleBlocks].flatMap((blockId) => followGroups.get(blockId) ?? [])),
+        ];
+        setVisiblePinKeys((current) =>
+          current.length === next.length && current.every((key, index) => key === next[index])
+            ? current
+            : next,
+        );
+
+        // Preserve the existing embed-highlight behavior; prose sections can
+        // frame several places without pretending that one card was selected.
+        const visiblePlace = entries.find(
+          (entry) =>
+            entry.isIntersecting && (entry.target as HTMLElement).dataset.sharedPlace !== undefined,
+        );
+        const placeBlockId = (visiblePlace?.target as HTMLElement | undefined)?.dataset.sharedPlace;
+        if (placeBlockId) setSelectedBlockId(placeBlockId);
+      },
+      { threshold: 0.4 },
+    );
+    for (const element of root.querySelectorAll("[data-shared-follow]")) observer.observe(element);
+    return () => observer.disconnect();
+  }, [followGroups, followKey, pinKey]);
+  useCanvasProjection({
+    kind: "shared",
+    pins,
+    ...(visiblePinKeys.length > 0 ? { focusKeys: visiblePinKeys } : {}),
+  });
 
   return (
     <div className="h-full" data-testid="shared-guide">
-      <article className="h-full min-h-0 overflow-y-auto p-4">
+      <article ref={articleRef} className="h-full min-h-0 overflow-y-auto p-4">
         <header className="flex items-start justify-between gap-3">
           <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-900">
             <span
@@ -191,7 +283,11 @@ export function SharedGuideView({
             className="shrink-0 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
             data-testid="save-shared-guide"
           >
-            {saved ? "Added to your library" : saving ? "Adding…" : "Add to my library"}
+            {saved
+              ? "Added to your library"
+              : saving
+                ? "Adding…"
+                : "Add these places to my library"}
           </button>
         </header>
         {guide.list ? (
@@ -215,7 +311,7 @@ export function SharedGuideView({
           </p>
         ) : null}
         <p className="mt-1 text-xs text-stone-500">
-          A shared, read-only {guide.kind === "post" ? "post" : "guide"}
+          A shared, read-only {guide.kind === "list" ? "list" : "post"}
           {mode === "snapshot" ? " (snapshot link)" : ""}. Map data © OpenStreetMap contributors.
         </p>
         {saved ? (
@@ -225,7 +321,15 @@ export function SharedGuideView({
           >
             Added {saved.added} places
             {saved.pending > 0 ? `, ${saved.pending} waiting for review in Settings` : ""}
-            {saved.duplicates > 0 ? `, ${saved.duplicates} already in your library` : ""}.
+            {saved.duplicates > 0 ? `, ${saved.duplicates} already in your library` : ""}.{" "}
+            <Link
+              to="/list/$listId"
+              params={{ listId: saved.listId }}
+              className="font-medium underline"
+              data-testid="open-saved-list"
+            >
+              Open list
+            </Link>
           </p>
         ) : null}
 
@@ -233,7 +337,11 @@ export function SharedGuideView({
           {rows.map((row) => {
             if (row.kind === "section") {
               return (
-                <li key={row.blockId} className="prose prose-sm prose-stone max-w-none">
+                <li
+                  key={row.blockId}
+                  data-shared-follow={row.blockId}
+                  className="prose prose-sm prose-stone max-w-none"
+                >
                   {row.title ? <h2>{row.title}</h2> : null}
                   <Markdown body={row.body ?? ""} />
                 </li>
@@ -267,6 +375,8 @@ export function SharedGuideView({
                   else entryRefs.current.delete(row.blockId);
                 }}
                 data-selected={selectedBlockId === row.blockId ? "true" : "false"}
+                data-shared-place={row.blockId}
+                data-shared-follow={row.blockId}
                 className={`rounded-lg border bg-stone-50 p-3 ${
                   selectedBlockId === row.blockId ? "border-stone-500" : "border-stone-200"
                 }`}
@@ -289,6 +399,18 @@ export function SharedGuideView({
                 ) : null}
                 {shown.address ? (
                   <span className="block text-sm text-stone-600">{shown.address}</span>
+                ) : null}
+                {(row.tags ?? []).length > 0 ? (
+                  <span className="mt-1 flex flex-wrap gap-1" data-testid="shared-place-tags">
+                    {(row.tags ?? []).map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-stone-200 px-2 py-0.5 text-[11px] text-stone-700"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </span>
                 ) : null}
                 {shown.website ? (
                   /^https?:\/\//i.test(shown.website) ? (
@@ -326,6 +448,21 @@ export function SharedGuideView({
                     <Markdown body={note.body} />
                   </div>
                 ))}
+                {(() => {
+                  const coords = shownCoords(row);
+                  if (!coords) return null;
+                  const osmRef = livePoi?.osmRef ?? row.osmRef;
+                  return (
+                    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <NavLinks
+                        lat={coords.lat}
+                        lng={coords.lng}
+                        {...(shown.name ? { name: shown.name } : {})}
+                      />
+                      {osmRef ? <OsmLink osmRef={osmRef} /> : null}
+                    </div>
+                  );
+                })()}
               </li>
             );
           })}

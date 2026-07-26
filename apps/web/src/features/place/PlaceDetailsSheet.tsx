@@ -105,7 +105,7 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
       tabIndex={-1}
       role="dialog"
       aria-label={facts?.name ?? "Place"}
-      className="absolute inset-x-0 bottom-0 z-20 max-h-[70%] overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-4 shadow-xl md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-2xl"
+      className="absolute inset-x-0 bottom-0 z-40 max-h-[70%] overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-4 shadow-xl md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-2xl"
       data-testid="place-details"
     >
       <button
@@ -190,6 +190,8 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
         <BlockerDialog
           title="Can’t remove this place yet"
           blockers={refusal}
+          placeNames={{ [view.place.id]: facts?.name ?? "Unnamed place" }}
+          onOpenPlace={() => setRefusal(undefined)}
           onClose={() => setRefusal(undefined)}
         />
       ) : null}

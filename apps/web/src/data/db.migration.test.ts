@@ -107,8 +107,10 @@ describe("v7 lists-and-posts pivot migration (spec/src/posts.md §Migration from
         id: "block-section",
         listId: "list-editorial",
         rank: "a0",
-        kind: "section",
-        refId: "note-section",
+        // Deliberately stale query indexes: the migration must derive only from
+        // canonical `content`, then rebuild these fields.
+        kind: "place",
+        refId: "place-2",
         content: { type: "section", noteId: "note-section" },
         createdAt: T0,
         updatedAt: T0,
@@ -117,8 +119,8 @@ describe("v7 lists-and-posts pivot migration (spec/src/posts.md §Migration from
         id: "block-place",
         listId: "list-editorial",
         rank: "a1",
-        kind: "place",
-        refId: "place-1",
+        kind: "section",
+        refId: "note-section",
         content: { type: "place", placeId: "place-1" },
         createdAt: T0,
         updatedAt: T0,
@@ -138,7 +140,7 @@ describe("v7 lists-and-posts pivot migration (spec/src/posts.md §Migration from
       {
         id: "note-section",
         target: { kind: "list", listId: "list-editorial" },
-        targetKey: "list:list-editorial",
+        targetKey: "place:forged-query-index",
         body: "Intro",
         mediaIds: [],
         shareable: false,
@@ -209,18 +211,22 @@ describe("v7 lists-and-posts pivot migration (spec/src/posts.md §Migration from
         id: "list-editorial:post",
         title: "City guide",
         listId: "list-editorial",
+        createdAt: T0,
+        updatedAt: T0,
       });
       const postBlocks = (await repo.db.postBlocks.toArray()).sort((a, b) =>
         a.rank < b.rank ? -1 : 1,
       );
       expect(
-        postBlocks.map(({ id, postId, rank, kind, refId, content }) => ({
+        postBlocks.map(({ id, postId, rank, kind, refId, content, createdAt, updatedAt }) => ({
           id,
           postId,
           rank,
           kind,
           refId,
           content,
+          createdAt,
+          updatedAt,
         })),
       ).toEqual([
         {
@@ -230,6 +236,8 @@ describe("v7 lists-and-posts pivot migration (spec/src/posts.md §Migration from
           kind: "section",
           refId: "note-section",
           content: { type: "section", noteId: "note-section" },
+          createdAt: T0,
+          updatedAt: T0,
         },
         {
           id: "block-place:pb",
@@ -238,12 +246,22 @@ describe("v7 lists-and-posts pivot migration (spec/src/posts.md §Migration from
           kind: "place",
           refId: "place-1",
           content: { type: "place", placeId: "place-1" },
+          createdAt: T0,
+          updatedAt: T0,
         },
       ]);
 
       // The list keeps only its place blocks; the section block tombstoned.
       await expect(repo.db.listBlocks.get("block-section")).resolves.toMatchObject({
+        kind: "section",
+        refId: "note-section",
         deleted: true,
+        updatedAt: "2026-07-01T00:00:00.001Z",
+      });
+      await expect(repo.db.listBlocks.get("block-place")).resolves.toMatchObject({
+        kind: "place",
+        refId: "place-1",
+        updatedAt: T0,
       });
       expect((await repo.db.listBlocks.get("block-place"))?.deleted).not.toBe(true);
 
@@ -252,12 +270,14 @@ describe("v7 lists-and-posts pivot migration (spec/src/posts.md §Migration from
       await expect(repo.db.notes.get("note-section")).resolves.toMatchObject({
         target: { kind: "post", postId: "list-editorial:post" },
         targetKey: "post:list-editorial:post",
+        updatedAt: "2026-07-01T00:00:00.001Z",
       });
       await expect(repo.db.notes.get("note-place")).resolves.toMatchObject({
         targetKey: "place:place-1",
       });
       await expect(repo.db.blockNoteAttachments.get("attachment-1")).resolves.toMatchObject({
         blockId: "block-place:pb",
+        updatedAt: "2026-07-01T00:00:00.001Z",
       });
 
       // The editorial list's publication follows the content to the post but
@@ -266,6 +286,7 @@ describe("v7 lists-and-posts pivot migration (spec/src/posts.md §Migration from
         target: { kind: "post", id: "list-editorial:post" },
         channel: "lists",
         slug: "city-guide",
+        updatedAt: "2026-07-01T00:00:00.001Z",
       });
       const plainPublication = await repo.db.publications.get("publication-plain");
       expect(plainPublication?.target).toEqual({ kind: "list", id: "list-plain" });

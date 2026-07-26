@@ -19,6 +19,8 @@ interface UiState {
   pickerAt: { lat: number; lng: number } | null;
   /** A review-queue item awaiting manual placement — the next long-press places it. */
   placingImportItemId: string | null;
+  /** Actionable feedback from a failed import-review placement attempt. */
+  importReviewError: { itemId: string; message: string } | null;
   /**
    * List toggles — the canvas's primary filter (spec/src/map-view.md §The
    * canvas): every list shows by default; toggling hides its points.
@@ -37,6 +39,8 @@ interface UiState {
   requestFlyTo: (target: { lat: number; lng: number; zoom?: number }) => void;
   startPlacingImportItem: (itemId: string) => void;
   stopPlacingImportItem: () => void;
+  setImportReviewError: (itemId: string, message: string) => void;
+  clearImportReviewError: () => void;
   toggleListVisibility: (listId: string) => void;
   setEmbedTargetPost: (postId: string | null) => void;
 }
@@ -46,6 +50,7 @@ export const useUiStore = create<UiState>((set) => ({
   flyTo: null,
   pickerAt: null,
   placingImportItemId: null,
+  importReviewError: null,
   hiddenListIds: [],
   embedTargetPostId: null,
   selectOsm: (ref, hint) => set({ selection: { kind: "osm", ref, ...(hint ? { hint } : {}) } }),
@@ -54,8 +59,10 @@ export const useUiStore = create<UiState>((set) => ({
   openPicker: (pos) => set({ pickerAt: pos }),
   closePicker: () => set({ pickerAt: null }),
   requestFlyTo: (target) => set({ flyTo: { ...target } }),
-  startPlacingImportItem: (itemId) => set({ placingImportItemId: itemId }),
+  startPlacingImportItem: (itemId) => set({ placingImportItemId: itemId, importReviewError: null }),
   stopPlacingImportItem: () => set({ placingImportItemId: null }),
+  setImportReviewError: (itemId, message) => set({ importReviewError: { itemId, message } }),
+  clearImportReviewError: () => set({ importReviewError: null }),
   toggleListVisibility: (listId) =>
     set((state) => ({
       hiddenListIds: state.hiddenListIds.includes(listId)

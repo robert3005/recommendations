@@ -72,24 +72,36 @@ export class PgSyncStorage implements SyncStorage {
     return this.toAccount(rows[0]);
   }
 
-  async hasMutation(accountId: string, mutationId: string): Promise<boolean> {
-    const { rows } = await this.db.query(
-      "SELECT 1 FROM changes WHERE account_id = $1 AND mutation_id = $2",
-      [accountId, mutationId],
-    );
-    return rows.length > 0;
+  async removeAccountToken(tokenHash: string): Promise<void> {
+    await this.db.query("DELETE FROM account_tokens WHERE token_hash = $1", [tokenHash]);
   }
 
-  async appendChange(change: Omit<ChangeRecord, "seq">): Promise<ChangeRecord> {
-    // The per-account sequence is assigned transactionally: the insert takes
-    // the next value under the account's advisory lock-free upsert pattern
-    // (a unique (account_id, seq) index makes a lost race retry).
-    const { rows } = await this.db.query(
-      `INSERT INTO changes (account_id, seq, mutation_id, actor_id, table_name, entity_id, hlc, row, recorded_at)
-       VALUES ($1,
-               COALESCE((SELECT MAX(seq) FROM changes WHERE account_id = $1), 0) + 1,
-               $2, $3, $4, $5, $6, $7::jsonb, $8)
-       RETURNING seq`,
+  async removeOtherAccountTokens(accountId: string, retainedTokenHash: string): Promise<void> {
+    await this.db.query("DELETE FROM account_tokens WHERE account_id = $1 AND token_hash <> $2", [
+      accountId,
+      retainedTokenHash,
+    ]);
+  }
+
+  async appendChange(change: Omit<ChangeRecord, "seq">): Promise<void> {
+    // One implicit Postgres transaction owns BOTH operations. The upsert takes
+    // a row lock on this account's counter, so concurrent statements receive
+    // distinct increasing cursors without depending on a pre-wait snapshot of
+    // MAX(seq). A replay is acknowledged by ON CONFLICT; it may consume a
+    // harmless cursor gap, but can never append twice or collide with a peer.
+    await this.db.query(
+      `WITH allocated AS MATERIALIZED (
+         INSERT INTO account_cursors (account_id, last_seq)
+         VALUES ($1, 1)
+         ON CONFLICT (account_id) DO UPDATE
+           SET last_seq = account_cursors.last_seq + 1
+         RETURNING last_seq
+       )
+       INSERT INTO changes
+         (account_id, seq, mutation_id, actor_id, table_name, entity_id, hlc, version, row, recorded_at)
+       SELECT $1, allocated.last_seq, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9
+       FROM allocated
+       ON CONFLICT (account_id, mutation_id) DO NOTHING`,
       [
         change.accountId,
         change.mutationId,
@@ -97,16 +109,16 @@ export class PgSyncStorage implements SyncStorage {
         change.table,
         change.entityId,
         change.hlc,
+        JSON.stringify(change.version),
         JSON.stringify(change.row),
         change.recordedAt,
       ],
     );
-    return { ...change, seq: Number(rows[0]?.seq ?? 0) };
   }
 
   async changesSince(accountId: string, after: number, limit: number): Promise<ChangeRecord[]> {
     const { rows } = await this.db.query(
-      `SELECT seq, account_id, mutation_id, actor_id, table_name, entity_id, hlc, row, recorded_at
+      `SELECT seq, account_id, mutation_id, actor_id, table_name, entity_id, hlc, version, row, recorded_at
        FROM changes WHERE account_id = $1 AND seq > $2 ORDER BY seq ASC LIMIT $3`,
       [accountId, after, limit],
     );
@@ -118,6 +130,10 @@ export class PgSyncStorage implements SyncStorage {
       table: String(row.table_name),
       entityId: String(row.entity_id),
       hlc: String(row.hlc),
+      version: (typeof row.version === "string" ? JSON.parse(row.version) : row.version) as Record<
+        string,
+        number
+      >,
       row: (typeof row.row === "string" ? JSON.parse(row.row) : row.row) as Record<string, unknown>,
       recordedAt: String(row.recorded_at),
     }));

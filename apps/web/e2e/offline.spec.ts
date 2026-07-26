@@ -31,9 +31,7 @@ test.describe("offline shell", () => {
     // The shell renders from the SW cache: nav, map (precached local style), attribution.
     await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
     await expect(page.locator(".maplibregl-canvas")).toBeVisible();
-    await expect(page.locator(".maplibregl-ctrl-attrib")).toContainText(
-      "© OpenStreetMap contributors",
-    );
+    await expect(page.getByTestId("map-attribution")).toContainText("© OpenStreetMap contributors");
 
     // Client-side routes work offline too.
     await page.getByRole("link", { name: "Lists" }).click();

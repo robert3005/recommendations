@@ -65,6 +65,8 @@ vi.mock("maplibre-gl", () => {
     remove() {}
     easeTo() {}
     flyTo() {}
+    resize() {}
+    triggerRepaint() {}
   }
 
   return {

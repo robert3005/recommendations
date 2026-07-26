@@ -132,7 +132,10 @@ export class D1Storage implements ShareStorage {
     // result is a fresh INSERT of the bare key — no UPDATE ever needed.
     const key = record.status >= 200 ? record.key : `pending:${record.key}`;
     await this.db
-      .prepare("INSERT OR IGNORE INTO idempotency (key, response, status) VALUES (?, ?, ?)")
+      .prepare(
+        "INSERT OR IGNORE INTO idempotency (key, response, status, createdAt) " +
+          "VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+      )
       .bind(key, record.response, record.status)
       .run();
   }
@@ -146,7 +149,10 @@ export class D1Storage implements ShareStorage {
   private idempotentStatement(record: IdempotencyRecord): D1PreparedStatement {
     const key = record.status >= 200 ? record.key : `pending:${record.key}`;
     return this.db
-      .prepare("INSERT OR IGNORE INTO idempotency (key, response, status) VALUES (?, ?, ?)")
+      .prepare(
+        "INSERT OR IGNORE INTO idempotency (key, response, status, createdAt) " +
+          "VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+      )
       .bind(key, record.response, record.status);
   }
 
@@ -213,7 +219,8 @@ export class D1Storage implements ShareStorage {
       )
       .bind(input.body, input.updatedAt, input.kind, input.slug, input.expectedRevision);
     const revisionGuard = this.db.prepare(
-      "INSERT INTO idempotency (key, response, status) SELECT NULL, '', 0 WHERE changes() = 0",
+      "INSERT INTO idempotency (key, response, status, createdAt) " +
+        "SELECT NULL, '', 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE changes() = 0",
     );
     try {
       await this.db.batch([

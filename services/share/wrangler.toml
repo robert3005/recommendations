@@ -1,5 +1,7 @@
 # Share service deployment (spec/src/tech-stack.md: Hono on Workers + D1).
-# Apply schema.sql with: wrangler d1 execute placemarks-share --file=schema.sql
+# Production schema changes run only through the ordered migrations/ workflow;
+# see `pnpm db:migrate:remote` and OPERATIONS.md. `schema.sql` is a snapshot,
+# not an upgrade command (CREATE TABLE IF NOT EXISTS cannot widen old CHECKs).
 name = "placemarks-share"
 main = "src/worker.ts"
 compatibility_date = "2026-07-01"
@@ -12,3 +14,4 @@ crons = ["0 4 * * *"]
 binding = "SHARE_DB"
 database_name = "placemarks-share"
 database_id = "REPLACE_WITH_REAL_ID"
+migrations_dir = "migrations"

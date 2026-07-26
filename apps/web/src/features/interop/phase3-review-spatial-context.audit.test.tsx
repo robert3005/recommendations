@@ -5,14 +5,22 @@
  * review projects lettered candidate marks onto the persistent map, while
  * the pane keeps a keyboard-accessible candidate picker.
  */
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useProjectionStore } from "../../state/projection";
 import { ReviewPage } from "./ReviewPage";
 
 const fixture = vi.hoisted(() => ({
   startPlacing: vi.fn(),
+  stopPlacing: vi.fn(),
+  setReviewError: vi.fn(),
+  clearReviewError: vi.fn(),
   setPane: vi.fn(),
+  resolveReviewItem: vi.fn(
+    async (): Promise<{ status: "resolved" } | { status: "pending"; reason: string }> => ({
+      status: "resolved",
+    }),
+  ),
   reviewItems: [
     {
       id: "review-1",
@@ -54,17 +62,40 @@ vi.mock("../../providers", () => ({
 }));
 vi.mock("../../state/ui", () => ({
   useUiStore: (
-    selector: (state: { startPlacingImportItem: typeof fixture.startPlacing }) => unknown,
-  ) => selector({ startPlacingImportItem: fixture.startPlacing }),
+    selector: (state: {
+      startPlacingImportItem: typeof fixture.startPlacing;
+      stopPlacingImportItem: typeof fixture.stopPlacing;
+      placingImportItemId: null;
+      importReviewError: null;
+      setImportReviewError: typeof fixture.setReviewError;
+      clearImportReviewError: typeof fixture.clearReviewError;
+    }) => unknown,
+  ) =>
+    selector({
+      startPlacingImportItem: fixture.startPlacing,
+      stopPlacingImportItem: fixture.stopPlacing,
+      placingImportItemId: null,
+      importReviewError: null,
+      setImportReviewError: fixture.setReviewError,
+      clearImportReviewError: fixture.clearReviewError,
+    }),
 }));
 vi.mock("../../state/pane", () => ({
   usePaneStore: (selector: (state: { setPane: typeof fixture.setPane }) => unknown) =>
     selector({ setPane: fixture.setPane }),
 }));
+vi.mock("./importer", () => ({ resolveReviewItem: fixture.resolveReviewItem }));
 
 describe("Phase 3 review-queue spatial context", () => {
   beforeEach(() => {
     useProjectionStore.setState({ projection: { kind: "all" } });
+    fixture.startPlacing.mockClear();
+    fixture.stopPlacing.mockClear();
+    fixture.setReviewError.mockClear();
+    fixture.clearReviewError.mockClear();
+    fixture.setPane.mockClear();
+    fixture.resolveReviewItem.mockReset();
+    fixture.resolveReviewItem.mockResolvedValue({ status: "resolved" });
   });
 
   it("projects the item under review onto the main canvas with lettered candidates", async () => {
@@ -84,5 +115,55 @@ describe("Phase 3 review-queue spatial context", () => {
       itemId: "review-1",
     });
     expect(review.querySelector('[data-testid="review-mini-map"]')).toBeNull();
+  });
+
+  it("offers keyboard coordinate placement and disarms map placement on route exit", async () => {
+    const view = render(<ReviewPage />);
+
+    fireEvent.change(screen.getByLabelText("Latitude for Central"), {
+      target: { value: "38.7139" },
+    });
+    fireEvent.change(screen.getByLabelText("Longitude for Central"), {
+      target: { value: "-9.1394" },
+    });
+    fireEvent.click(screen.getByTestId("review-place-at-coordinates"));
+
+    await waitFor(() =>
+      expect(fixture.resolveReviewItem).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        "review-1",
+        { kind: "coords", lat: 38.7139, lng: -9.1394 },
+        expect.any(String),
+      ),
+    );
+
+    fireEvent.click(screen.getByTestId("review-place-on-map"));
+    expect(fixture.startPlacing).toHaveBeenCalledWith("review-1");
+    expect(fixture.setPane).toHaveBeenCalledWith("split");
+    view.unmount();
+    expect(fixture.stopPlacing).toHaveBeenCalled();
+  });
+
+  it("surfaces a failed candidate verification and leaves an explicit retry control", async () => {
+    fixture.resolveReviewItem.mockResolvedValueOnce({
+      status: "pending",
+      reason: "The OSM candidate could not be verified. Check the connection and retry.",
+    });
+    render(<ReviewPage />);
+
+    fireEvent.change(screen.getByTestId("review-candidates"), {
+      target: { value: "node/101" },
+    });
+    const retry = screen.getByTestId("review-try-candidate");
+    fireEvent.click(retry);
+
+    await waitFor(() =>
+      expect(fixture.setReviewError).toHaveBeenCalledWith(
+        "review-1",
+        expect.stringMatching(/could not be verified/i),
+      ),
+    );
+    expect(retry).toBeEnabled();
   });
 });

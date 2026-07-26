@@ -8,7 +8,8 @@ import {
   allRefKeys,
   markerKey,
   type Note,
-  type OsmElementRef,
+  normalizeTagName,
+  noteTargetKey,
   type Place,
 } from "@placemarks/domain";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
@@ -81,7 +82,7 @@ export type BackupData = z.infer<typeof dataSchema>;
  * follow. Derived pivot ids make this converge with a library that migrated
  * locally — no duplicate posts on merge.
  */
-function pivotBackupData(data: BackupData, now: string): void {
+function pivotBackupData(data: BackupData): void {
   const changes = pivotGuideLayer({
     lists: data.lists as unknown as PivotListRow[],
     listBlocks: data.listBlocks as unknown as PivotBlockRow[],
@@ -97,50 +98,104 @@ function pivotBackupData(data: BackupData, now: string): void {
     }
   }
   for (const post of changes.posts) {
-    data.posts.push({ ...post, createdAt: now, updatedAt: now });
+    data.posts.push(post);
   }
   for (const block of changes.postBlocks) {
     data.postBlocks.push({
-      id: block.id,
-      postId: block.postId,
-      rank: block.rank,
-      kind: block.kind,
-      refId: block.refId,
-      content:
-        block.kind === "section"
-          ? { type: "section", noteId: block.refId }
-          : { type: "place", placeId: block.refId },
-      createdAt: now,
-      updatedAt: now,
+      ...block,
+      kind: block.content.type,
+      refId: block.content.type === "section" ? block.content.noteId : block.content.placeId,
     });
   }
-  const tombstoned = new Set(changes.tombstoneListBlockIds);
   for (const block of data.listBlocks as unknown as (PivotBlockRow & {
     updatedAt: string;
   })[]) {
-    if (tombstoned.has(block.id)) {
+    const updatedAt = changes.tombstoneListBlocks.get(block.id);
+    if (updatedAt) {
       block.deleted = true;
-      block.updatedAt = now;
+      block.updatedAt = updatedAt;
     }
   }
-  for (const note of data.notes as unknown as (PivotNoteRow & {
-    target?: unknown;
-    updatedAt: string;
-  })[]) {
-    const postId = changes.retargetNotes.get(note.id);
-    if (postId) {
-      note.target = { kind: "post", postId };
-      note.targetKey = `post:${postId}`;
-      note.updatedAt = now;
+  for (const note of data.notes as unknown as (PivotNoteRow & { targetKey: string })[]) {
+    const change = changes.retargetNotes.get(note.id);
+    if (change) {
+      note.target = { kind: "post", postId: change.postId };
+      note.targetKey = `post:${change.postId}`;
+      note.updatedAt = change.updatedAt;
     }
   }
   for (const attachment of data.blockNoteAttachments as unknown as (PivotAttachmentRow & {
     updatedAt: string;
   })[]) {
-    const blockId = changes.moveAttachments.get(attachment.id);
-    if (blockId) {
-      attachment.blockId = blockId;
-      attachment.updatedAt = now;
+    const change = changes.moveAttachments.get(attachment.id);
+    if (change) {
+      attachment.blockId = change.blockId;
+      attachment.updatedAt = change.updatedAt;
+    }
+  }
+}
+
+/**
+ * IndexedDB rows carry a handful of query-only fields beside their canonical
+ * domain shape.  An archive is allowed to carry those fields for round-trip
+ * compatibility, but it is never allowed to choose their values: doing so can
+ * make a row invisible to teardown and uniqueness queries even though its
+ * canonical edge/target says something else.
+ */
+function normalizeDerivedFields(data: BackupData): void {
+  for (const place of data.places) {
+    (place as { refKeys?: string[] }).refKeys = allRefKeys(place as unknown as Place);
+  }
+  for (const tag of data.tags) {
+    (tag as { nameNorm: string }).nameNorm = normalizeTagName(tag.name);
+  }
+  for (const note of data.notes) {
+    const row = note as unknown as Note & { targetKey: string };
+    const target = (row as unknown as { target?: Record<string, unknown> }).target;
+    if (
+      target &&
+      ((target.kind === "place" && typeof target.placeId === "string") ||
+        (target.kind === "post" && typeof target.postId === "string"))
+    ) {
+      row.targetKey = noteTargetKey(row.target);
+      continue;
+    }
+    throw new Error(`note ${row.id} targets no live row — its target shape is invalid`);
+  }
+  for (const block of data.listBlocks) {
+    const row = block as unknown as {
+      id: string;
+      kind?: string;
+      refId?: string;
+      content?: { type?: string; placeId?: string; noteId?: string };
+    };
+    if (row.content?.type === "place" && typeof row.content.placeId === "string") {
+      row.kind = "place";
+      row.refId = row.content.placeId;
+    } else if (row.content?.type === "section" && typeof row.content.noteId === "string") {
+      // Only a tombstoned pre-pivot residue may reach storage with this shape;
+      // graph validation below rejects a live section on a list.
+      row.kind = "section";
+      row.refId = row.content.noteId;
+    } else {
+      throw new Error(`list block ${row.id} has no valid content — graph refused`);
+    }
+  }
+  for (const block of data.postBlocks) {
+    const row = block as unknown as {
+      id: string;
+      kind?: string;
+      refId?: string;
+      content?: { type?: string; placeId?: string; noteId?: string };
+    };
+    if (row.content?.type === "place" && typeof row.content.placeId === "string") {
+      row.kind = "place";
+      row.refId = row.content.placeId;
+    } else if (row.content?.type === "section" && typeof row.content.noteId === "string") {
+      row.kind = "section";
+      row.refId = row.content.noteId;
+    } else {
+      throw new Error(`post block ${row.id} has no valid content — graph refused`);
     }
   }
 }
@@ -313,11 +368,29 @@ function validateGraph(
       }
     }
     if (row.deleted) continue;
+    const origin = (place as { origin?: string }).origin;
+    const resolutionState = (place as { resolutionState?: string }).resolutionState;
     // Linkage only ever gains OSM identity: an OSM-origin place always keeps
     // a current binding — evidence without one is a malformed identity.
-    if ((place as { origin?: string }).origin === "osm" && !row.currentOsmRef) {
+    if (origin === "osm" && !row.currentOsmRef) {
       throw new Error(
         `place ${row.id} claims OSM origin but has no current binding — refusing to import`,
+      );
+    }
+    if (origin === "osm" && resolutionState === "unlinked") {
+      throw new Error(`place ${row.id} claims OSM origin but is unlinked — refusing to import`);
+    }
+    if (row.currentOsmRef && resolutionState === "unlinked") {
+      throw new Error(
+        `place ${row.id} has a current OSM binding but claims to be unlinked — refusing to import`,
+      );
+    }
+    if (
+      row.currentOsmRef &&
+      typeof (place as { currentOsmLinkedAt?: unknown }).currentOsmLinkedAt !== "string"
+    ) {
+      throw new Error(
+        `place ${row.id} has a current OSM binding with no linked-at timestamp — refusing to import`,
       );
     }
     // A linked place without its copied evidence cannot render offline or
@@ -329,10 +402,31 @@ function validateGraph(
     }
     // An OSM-origin place always has copied evidence from its creation; a row
     // claiming the origin without any binding or evidence is malformed.
-    if ((place as { origin?: string }).origin === "osm" && (!row.firstSeen || !row.lastVerified)) {
+    if (origin === "osm" && (!row.firstSeen || !row.lastVerified)) {
       throw new Error(
         `place ${row.id} claims OSM origin without binding or copied evidence — refusing to import`,
       );
+    }
+    // Manual/import pins need their owner/imported fallback for as long as
+    // they are unlinked.  Without it the app has neither renderable facts nor
+    // a resolver identity, even though the row superficially validates.
+    const manual = (place as { manual?: CoordinateFacts & { name?: unknown } }).manual;
+    if (!row.currentOsmRef && origin !== "osm") {
+      if (
+        !manual ||
+        typeof manual.name !== "string" ||
+        manual.name.trim() === "" ||
+        !coordinatesInRange(manual)
+      ) {
+        throw new Error(
+          `place ${row.id} is unlinked but carries no valid manual facts — refusing to import`,
+        );
+      }
+      if (resolutionState !== "unlinked") {
+        throw new Error(
+          `place ${row.id} has no current binding but claims ${resolutionState ?? "no"} resolution state — refusing to import`,
+        );
+      }
     }
     // Copied evidence always states its true provenance; anything else is a
     // false source/licence/attribution claim.
@@ -386,6 +480,17 @@ function validateGraph(
     const liveTags = new Set(
       data.tags.filter((t) => !(t as { deleted?: boolean }).deleted).map((t) => t.id),
     );
+    const liveTagNames = new Set<string>();
+    for (const tag of data.tags as { id: string; deleted?: boolean; nameNorm: string }[]) {
+      if (tag.deleted) continue;
+      if (tag.nameNorm === "") {
+        throw new Error(`tag ${tag.id} has an empty normalized name — graph refused`);
+      }
+      if (liveTagNames.has(tag.nameNorm)) {
+        throw new Error(`two live tags normalize to ${tag.nameNorm} — tags are unique; refused`);
+      }
+      liveTagNames.add(tag.nameNorm);
+    }
     const assignmentPairs = new Set<string>();
     for (const assignment of data.tagAssignments) {
       const row = assignment as { id: string; deleted?: boolean; tagId: string; placeId: string };
@@ -626,6 +731,79 @@ function canonicalKeys(row: {
   ];
 }
 
+const historyIdentity = (entry: Place["osmRefHistory"][number]): string =>
+  `${entry.ref.type}/${entry.ref.id}@${entry.linkedAt}`;
+
+const externalIdentity = (entry: NonNullable<Place["externalRefs"]>[number]): string =>
+  entry.fid ? `${entry.provider}:fid:${entry.fid}` : `${entry.provider}:url:${entry.url}`;
+
+/**
+ * Place metadata is not ordinary LWW data. `origin`, `createdAt`, and
+ * `firstSeen` are immutable; link history and external provenance only grow.
+ * Mutable resolver/manual state still follows the winning row.
+ */
+function mergePlaceVersions(
+  base: Place,
+  donor: Place,
+  donorWins: boolean,
+  preserveBaseFirstSeen = true,
+): Place {
+  let winner = donorWins ? donor : base;
+  const history = new Map(base.osmRefHistory.map((entry) => [historyIdentity(entry), entry]));
+  for (const entry of donor.osmRefHistory) {
+    const key = historyIdentity(entry);
+    const current = history.get(key);
+    // A completed interval contains strictly more immutable history than the
+    // same open interval, so retain its end/reason when one side has it.
+    if (!current || (!current.unlinkedAt && entry.unlinkedAt)) history.set(key, entry);
+  }
+  const externalRefs = new Map(
+    (base.externalRefs ?? []).map((entry) => [externalIdentity(entry), entry]),
+  );
+  for (const entry of donor.externalRefs ?? []) {
+    if (!externalRefs.has(externalIdentity(entry))) {
+      externalRefs.set(externalIdentity(entry), entry);
+    }
+  }
+  const latestEvidence =
+    !base.lastVerified ||
+    (donor.lastVerified && donor.lastVerified.observedAt > base.lastVerified.observedAt)
+      ? donor.lastVerified
+      : base.lastVerified;
+  const earliestEvidence = preserveBaseFirstSeen
+    ? (base.firstSeen ?? donor.firstSeen)
+    : !base.firstSeen || (donor.firstSeen && donor.firstSeen.observedAt < base.firstSeen.observedAt)
+      ? donor.firstSeen
+      : base.firstSeen;
+  const refKeyOf = (ref: Place["currentOsmRef"]): string | undefined =>
+    ref ? `${ref.type}/${ref.id}` : undefined;
+  const baseCurrent = refKeyOf(base.currentOsmRef);
+  const donorCurrent = refKeyOf(donor.currentOsmRef);
+  let conflictingRelink = false;
+  if (baseCurrent && donorCurrent && baseCurrent !== donorCurrent) {
+    const donorObservedBase = donor.osmRefHistory.some(
+      (entry) => refKeyOf(entry.ref) === baseCurrent,
+    );
+    const baseObservedDonor = base.osmRefHistory.some(
+      (entry) => refKeyOf(entry.ref) === donorCurrent,
+    );
+    if (donorObservedBase && !baseObservedDonor) winner = donor;
+    else if (baseObservedDonor && !donorObservedBase) winner = base;
+    else conflictingRelink = true;
+  }
+  return {
+    ...winner,
+    id: base.id,
+    origin: base.origin,
+    createdAt: base.createdAt,
+    firstSeen: earliestEvidence,
+    ...(latestEvidence ? { lastVerified: latestEvidence } : {}),
+    osmRefHistory: [...history.values()],
+    ...(externalRefs.size > 0 ? { externalRefs: [...externalRefs.values()] } : {}),
+    ...(conflictingRelink ? { resolutionState: "needs-review" } : {}),
+  };
+}
+
 async function validateMergeIdentities(repo: DexieRepository, data: BackupData): Promise<void> {
   const keysOf = canonicalKeys;
   for (const place of data.places) {
@@ -636,9 +814,18 @@ async function validateMergeIdentities(repo: DexieRepository, data: BackupData):
       currentOsmRef?: { type: string; id: string };
       osmRefHistory?: { ref: { type: string; id: string } }[];
     };
-    if (row.deleted) continue;
-    const existing = await repo.getPlace(row.id);
+    const existing = await repo.db.places.get(row.id);
     if (!existing) continue;
+    const incomingPlace = row as unknown as Place;
+    if (existing.origin !== incomingPlace.origin) {
+      throw new Error(`incoming PlaceId ${row.id} changes immutable origin — refusing to merge`);
+    }
+    if (existing.createdAt !== incomingPlace.createdAt) {
+      throw new Error(
+        `incoming PlaceId ${row.id} changes immutable creation identity — refusing to merge`,
+      );
+    }
+    if (row.deleted) continue;
     const incomingKeys = new Set(keysOf(row));
     const existingKeys = new Set(keysOf(existing as typeof row & { refKeys?: string[] }));
     // A manual pin reusing an OSM place's UUID is a different place — an id
@@ -741,7 +928,18 @@ async function validateMergeFinalGraph(repo: DexieRepository, data: BackupData):
     data.tags as unknown as Aged[],
   );
   const liveTags = new Map<string, boolean>();
-  for (const tag of tagById.values()) liveTags.set(tag.id, !tag.deleted);
+  const finalTagNames = new Set<string>();
+  for (const tag of tagById.values()) {
+    liveTags.set(tag.id, !tag.deleted);
+    if (tag.deleted) continue;
+    const nameNorm = (tag as { nameNorm?: string }).nameNorm ?? "";
+    if (nameNorm === "" || finalTagNames.has(nameNorm)) {
+      throw new Error(
+        `merging would leave duplicate or empty normalized tag ${nameNorm} — refusing`,
+      );
+    }
+    finalTagNames.add(nameNorm);
+  }
   type AssignmentLike = Aged & { tagId: string; placeId: string };
   const assignments = lww(
     (await repo.db.tagAssignments.toArray()) as unknown as AssignmentLike[],
@@ -1044,8 +1242,12 @@ export async function importBackup(
       throw new Error(`manifest count for ${table} does not match data.json — refusing to import`);
     }
   }
-  // A pre-pivot archive restores into the post-pivot model losslessly.
-  if (manifest.schemaVersion === 2) pivotBackupData(data, now);
+  // A pre-pivot archive restores into the post-pivot model losslessly. Every
+  // generated/rewritten row derives its timestamps from the exact source row:
+  // export or restore wall time must never manufacture a newer post, overwrite
+  // a real edit, or resurrect a locally deleted generated row.
+  if (manifest.schemaVersion === 2) pivotBackupData(data);
+  normalizeDerivedFields(data);
   validateCoordinates(data);
   validateGraph(data, entries, mode);
   if (mode === "merge") {
@@ -1077,25 +1279,86 @@ export async function importBackup(
 
   await db.transaction(
     "rw",
-    [...tables.map(([, t]) => t), db.mediaBlobs, db.mutationOutbox, db.syncRevs],
+    [
+      ...tables.map(([, t]) => t),
+      db.mediaBlobs,
+      db.mutationOutbox,
+      db.syncRevs,
+      db.publications,
+      db.publicationOutbox,
+    ],
     async () => {
       if (mode === "replace") {
+        // Replacing the private graph invalidates every document projected
+        // from it, even when an imported target happens to reuse the same id.
+        // Preserve hosted-publication credentials long enough to queue a
+        // durable DELETE; never leave the previous public guide/note serving
+        // stale content after "Replace everything".
+        for (const publication of await db.publications.toArray()) {
+          const jobs = await db.publicationOutbox
+            .where("publicationId")
+            .equals(publication.id)
+            .toArray();
+          if (publication.mode !== "hosted") {
+            for (const job of jobs) await db.publicationOutbox.delete(job.id);
+            await db.publications.delete(publication.id);
+            continue;
+          }
+          for (const job of jobs) {
+            if (job.action === "publish") await db.publicationOutbox.delete(job.id);
+          }
+          if (publication.status === "revoked") {
+            for (const job of jobs) await db.publicationOutbox.delete(job.id);
+            continue;
+          }
+          await db.publications.put({ ...publication, status: "revoking", updatedAt: now });
+          if (!jobs.some((job) => job.action === "revoke")) {
+            await db.publicationOutbox.put({
+              id: newId(),
+              publicationId: publication.id,
+              action: "revoke",
+              localRevision: publication.localRevision,
+              createdAt: now,
+              attempts: 0,
+            });
+          }
+        }
+        // Capture the old graph before clearing it.  Rows omitted by the
+        // replacement are removals, not absence: synced peers need a durable
+        // tombstone or their older live snapshot can return on the next pull.
+        const previousRows = new Map<
+          string,
+          { id: string; updatedAt: string; deleted?: boolean }[]
+        >();
+        for (const [key, table] of tables) {
+          previousRows.set(
+            key,
+            (await table.toArray()) as {
+              id: string;
+              updatedAt: string;
+              deleted?: boolean;
+            }[],
+          );
+        }
         for (const [, table] of tables) await table.clear();
         await db.mediaBlobs.clear();
+        // Pending mutations and their revision stamps describe the graph that
+        // was just replaced.  Clear both, then rebuild one coherent outbox and
+        // revision set from the restored rows plus removal tombstones in this
+        // same transaction.
+        await db.mutationOutbox.clear();
+        await db.syncRevs.clear();
         for (const [key, table] of tables) {
-          // Derived index fields are recomputed, never trusted: stale refKeys in
-          // an archive could fork the same exact OSM identity after restore.
-          const rows =
-            key === "places"
-              ? data[key].map((row) => ({
-                  ...row,
-                  refKeys: allRefKeys(row as unknown as Place),
-                }))
-              : data[key];
+          const archiveRows = data[key] as { id: string; updatedAt: string; deleted?: boolean }[];
+          const restoredIds = new Set(archiveRows.map((row) => row.id));
+          const removalTombstones = (previousRows.get(key) ?? [])
+            .filter((row) => !restoredIds.has(row.id))
+            .map((row) => ({ ...row, deleted: true, updatedAt: now }));
+          const rows = [...archiveRows, ...removalTombstones];
           // biome-ignore lint/suspicious/noExplicitAny: structural rows validated by zod
           await (table as any).bulkPut(rows as any[]);
           for (const row of rows as { id: string }[]) written.push({ table: key, row });
-          imported += data[key].length;
+          imported += archiveRows.length;
         }
       } else {
         // Identity merge (spec/src/place-identity.md): the same exact OSM element —
@@ -1109,71 +1372,65 @@ export async function importBackup(
         }
         const remap = new Map<string, string>();
         const incomingByRefKey = new Map<string, string>();
-        type EvidenceLike = { observedAt: string };
-        type PlaceShape = {
-          id: string;
-          deleted?: boolean;
-          currentOsmRef?: OsmElementRef;
-          osmRefHistory?: { ref: OsmElementRef }[];
-          firstSeen?: EvidenceLike;
-          lastVerified?: EvidenceLike;
-        };
-        const evidenceDonors: { retainedId: string; donor: PlaceShape }[] = [];
-        data.places = data.places.filter((place) => {
-          const row = place as unknown as PlaceShape;
-          if (row.deleted) return true;
-          const keys = canonicalKeys(row);
-          // The same exact OSM element must not arrive twice under two ids —
-          // nor collide with a different retained local place.
-          const retained =
-            keys.map((key) => existingByRefKey.get(key)).find((id) => id && id !== row.id) ??
-            keys.map((key) => incomingByRefKey.get(key)).find((id) => id && id !== row.id);
-          if (!retained) {
-            for (const key of keys) incomingByRefKey.set(key, row.id);
-            return true;
-          }
-          remap.set(row.id, retained);
-          evidenceDonors.push({ retainedId: retained, donor: row });
-          return false;
-        });
-        // Coalescing must never discard the dropped row's newer observation —
-        // the retained place keeps the earliest firstSeen and latest lastVerified.
+        const evidenceDonors: { retainedId: string; donor: Place }[] = [];
+        // Process the best-connected identity rows first. Registering every
+        // key of a dropped bridge against its retained id makes transitive
+        // chains (node/1 ↔ bridge ↔ way/2) converge independently of archive
+        // order instead of leaving the far endpoint as a duplicate place.
+        data.places = [...data.places]
+          .sort((left, right) => {
+            const keyDelta =
+              canonicalKeys(right as unknown as Place).length -
+              canonicalKeys(left as unknown as Place).length;
+            return keyDelta !== 0 ? keyDelta : left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
+          })
+          .filter((place) => {
+            const row = place as unknown as Place;
+            if (row.deleted) return true;
+            const keys = canonicalKeys(row);
+            // The same exact OSM element must not arrive twice under two ids —
+            // nor collide with a different retained local place.
+            const retained =
+              keys.map((key) => existingByRefKey.get(key)).find((id) => id && id !== row.id) ??
+              keys.map((key) => incomingByRefKey.get(key)).find((id) => id && id !== row.id);
+            if (!retained) {
+              for (const key of keys) incomingByRefKey.set(key, row.id);
+              return true;
+            }
+            remap.set(row.id, retained);
+            for (const key of keys) incomingByRefKey.set(key, retained);
+            evidenceDonors.push({ retainedId: retained, donor: row });
+            return false;
+          });
+        // Coalescing never discards immutable history, external provenance, or
+        // a newer verified observation from the dropped identity.
         for (const { retainedId, donor } of evidenceDonors) {
-          const graft = (target: PlaceShape): boolean => {
-            let changed = false;
-            if (
-              donor.lastVerified &&
-              (!target.lastVerified ||
-                donor.lastVerified.observedAt > target.lastVerified.observedAt)
-            ) {
-              target.lastVerified = donor.lastVerified;
-              changed = true;
-            }
-            if (
-              donor.firstSeen &&
-              (!target.firstSeen || donor.firstSeen.observedAt < target.firstSeen.observedAt)
-            ) {
-              target.firstSeen = donor.firstSeen;
-              changed = true;
-            }
-            return changed;
-          };
           const incomingRetained = data.places.find((p) => p.id === retainedId) as
-            | PlaceShape
+            | (Place & { refKeys?: string[] })
             | undefined;
           if (incomingRetained) {
-            graft(incomingRetained);
+            const merged = mergePlaceVersions(
+              incomingRetained,
+              donor,
+              donor.updatedAt > incomingRetained.updatedAt,
+              false,
+            );
+            Object.assign(incomingRetained, merged, { refKeys: allRefKeys(merged) });
             continue;
           }
-          const existingRetained = (await db.places.get(retainedId)) as unknown as
-            | (PlaceShape & Place)
-            | undefined;
-          if (existingRetained && !existingRetained.deleted && graft(existingRetained)) {
+          const existingRetained = await db.places.get(retainedId);
+          if (existingRetained && !existingRetained.deleted) {
+            const merged = mergePlaceVersions(
+              existingRetained,
+              donor,
+              donor.updatedAt > existingRetained.updatedAt,
+              false,
+            );
             const grafted = {
-              ...existingRetained,
-              refKeys: allRefKeys(existingRetained as unknown as Place),
+              ...merged,
+              refKeys: allRefKeys(merged),
             };
-            await db.places.put(grafted as never);
+            await db.places.put(grafted);
             written.push({ table: "places", row: grafted as { id: string } });
           }
         }
@@ -1207,9 +1464,30 @@ export async function importBackup(
           }
         }
 
-        const skippedBlockTargets = new Map<string, string>();
+        // Dependents point only at post blocks.  IDs are table-scoped, so a
+        // skipped list membership with the same string id must never retarget
+        // an attachment or tag selection meant for a post block.
+        const skippedPostBlockTargets = new Map<string, string>();
         for (const [key, table] of tables) {
-          for (const incoming of data[key]) {
+          // Apply winning tombstones before potential logical replacements.
+          // Otherwise archive order `replacement, old-tombstone` sees the old
+          // live edge, skips the replacement as a duplicate, then deletes the
+          // old edge — committing a different (broken) graph from validation.
+          const incomingRows = [...data[key]].sort((left, right) => {
+            const leftDeleted = (left as { deleted?: boolean }).deleted === true;
+            const rightDeleted = (right as { deleted?: boolean }).deleted === true;
+            if (leftDeleted !== rightDeleted) return leftDeleted ? -1 : 1;
+            return left.updatedAt < right.updatedAt
+              ? -1
+              : left.updatedAt > right.updatedAt
+                ? 1
+                : left.id < right.id
+                  ? -1
+                  : left.id > right.id
+                    ? 1
+                    : 0;
+          });
+          for (const incoming of incomingRows) {
             // Rewritten edges must not violate repository uniqueness invariants:
             // one live block per (listId, placeId), one live (placeId, tagId) pair.
             if (key === "listBlocks") {
@@ -1228,9 +1506,8 @@ export async function importBackup(
                 );
                 if (clash) {
                   // The membership already exists locally — the incoming
-                  // duplicate is skipped and its dependents follow the retained
-                  // block instead of dangling.
-                  skippedBlockTargets.set(row.id, clash.id);
+                  // duplicate is skipped.  List membership ids do not share a
+                  // namespace with post block ids.
                   continue;
                 }
               }
@@ -1253,7 +1530,7 @@ export async function importBackup(
                   // The embed already exists (possibly via identity remapping) —
                   // the incoming duplicate is skipped and its dependents follow
                   // the retained block instead of dangling.
-                  skippedBlockTargets.set(row.id, clash.id);
+                  skippedPostBlockTargets.set(row.id, clash.id);
                   continue;
                 }
               }
@@ -1282,7 +1559,7 @@ export async function importBackup(
                 deleted?: boolean;
               };
               // Follow a skipped duplicate embed onto its retained block.
-              const retainedBlock = skippedBlockTargets.get(row.blockId);
+              const retainedBlock = skippedPostBlockTargets.get(row.blockId);
               if (retainedBlock) row.blockId = retainedBlock;
               if (!row.deleted) {
                 const edges = await db.blockTagSelections.toArray();
@@ -1303,8 +1580,8 @@ export async function importBackup(
                 noteId: string;
                 deleted?: boolean;
               };
-              // Follow a skipped duplicate membership onto its retained block.
-              const retainedBlock = skippedBlockTargets.get(row.blockId);
+              // Follow a skipped duplicate embed onto its retained post block.
+              const retainedBlock = skippedPostBlockTargets.get(row.blockId);
               if (retainedBlock) row.blockId = retainedBlock;
               if (!row.deleted) {
                 // One live edge per (block, note) — a re-identified duplicate
@@ -1336,6 +1613,37 @@ export async function importBackup(
               imported += 1;
               continue;
             }
+            if (key === "places" && incoming.deleted) {
+              if (incoming.updatedAt > existing.updatedAt) {
+                const tombstone = {
+                  ...(existing as unknown as Place),
+                  deleted: true,
+                  updatedAt: incoming.updatedAt,
+                  refKeys: allRefKeys(existing as unknown as Place),
+                };
+                await db.places.put(tombstone);
+                written.push({ table: "places", row: tombstone });
+                imported += 1;
+              }
+              continue;
+            }
+            if (key === "places") {
+              const merged = mergePlaceVersions(
+                existing as unknown as Place,
+                incoming as unknown as Place,
+                incoming.updatedAt > existing.updatedAt,
+              );
+              const mergedRow = { ...merged, refKeys: allRefKeys(merged) };
+              // Even an older archive may carry an append-only history entry
+              // or external provenance the newer LWW row has not observed.
+              // Preserve it without letting mutable/immutable fields roll back.
+              if (JSON.stringify(mergedRow) !== JSON.stringify(existing)) {
+                await db.places.put(mergedRow);
+                written.push({ table: "places", row: mergedRow });
+                imported += 1;
+              }
+              continue;
+            }
             if (incoming.updatedAt <= existing.updatedAt) {
               // A conflicting note body is NEVER silently discarded — even when
               // the incoming side loses last-write-wins, its body survives as a
@@ -1352,6 +1660,8 @@ export async function importBackup(
                   ...(incoming as unknown as Note & { targetKey: string }),
                   id: newId(),
                   title: `(conflict copy) ${(incoming as { title?: string }).title ?? ""}`.trim(),
+                  shareable: false,
+                  createdAt: now,
                   updatedAt: now,
                 };
                 await db.notes.put(copy);
@@ -1359,12 +1669,6 @@ export async function importBackup(
                 conflictCopies += 1;
               }
               continue;
-            }
-            // Same derived-index rule as replace mode: recompute, never trust.
-            if (key === "places") {
-              (incoming as { refKeys?: string[] }).refKeys = allRefKeys(
-                incoming as unknown as Place,
-              );
             }
             // Never silently discard a conflicting note body.
             if (
@@ -1378,6 +1682,9 @@ export async function importBackup(
                 ...(existing as unknown as Note & { targetKey: string }),
                 id: newId(),
                 title: `(conflict copy) ${(existing as { title?: string }).title ?? ""}`.trim(),
+                shareable: false,
+                targetKey: noteTargetKey((existing as unknown as Note).target),
+                createdAt: now,
                 updatedAt: now,
               };
               await db.notes.put(copy);

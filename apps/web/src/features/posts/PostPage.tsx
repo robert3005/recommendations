@@ -7,14 +7,15 @@
  */
 import { displayFacts } from "@placemarks/domain";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useList, usePost, usePostBlocks } from "../../data/hooks";
 import { Markdown } from "../../markdown/Markdown";
-import { useCanvasProjection } from "../../state/projection";
+import { useCanvasProjection, useProjectionStore } from "../../state/projection";
 import { useUiStore } from "../../state/ui";
 import { MarkerGlyph } from "../lists/MarkerGlyph";
 import { NavLinks } from "../place/NavLinks";
 import { PostPublishControls } from "../publish/PostPublishControls";
+import { articleFollowGroups } from "./articleFollow";
 
 export function PostPage() {
   const { postId } = useParams({ from: "/post/$postId" });
@@ -25,24 +26,45 @@ export function PostPage() {
   const requestFlyTo = useUiStore((s) => s.requestFlyTo);
   const navigate = useNavigate();
 
-  // The camera follows the article: the embeds currently in view become the
-  // canvas focus (coalesced while the pane fully occludes the canvas).
+  // The camera follows both prose and embeds. A prose block owns the
+  // consecutive embeds that follow it up to the next prose block.
   const [visibleEmbeds, setVisibleEmbeds] = useState<string[]>([]);
+  const [selectedEmbed, setSelectedEmbed] = useState<string>();
   const articleRef = useRef<HTMLDivElement>(null);
+  const embedRefs = useRef(new Map<string, HTMLElement>());
+  const followGroups = useMemo(
+    () =>
+      articleFollowGroups(
+        (blocks ?? []).map((view) => ({
+          blockId: view.block.id,
+          ...(view.block.content.type === "place" && view.place ? { placeId: view.place.id } : {}),
+        })),
+      ),
+    [blocks],
+  );
+  const followKey = [...followGroups.entries()]
+    .map(([blockId, placeIds]) => `${blockId}:${placeIds.join(",")}`)
+    .join("|");
   useEffect(() => {
+    if (!followKey) {
+      setVisibleEmbeds([]);
+      return;
+    }
     const root = articleRef.current;
     if (!root || typeof IntersectionObserver === "undefined") return;
     const visible = new Set<string>();
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          const placeId = (entry.target as HTMLElement).dataset.embedPlace;
-          if (!placeId) continue;
-          if (entry.isIntersecting) visible.add(placeId);
-          else visible.delete(placeId);
+          const blockId = (entry.target as HTMLElement).dataset.postFollow;
+          if (!blockId) continue;
+          if (entry.isIntersecting) visible.add(blockId);
+          else visible.delete(blockId);
         }
         setVisibleEmbeds((current) => {
-          const next = [...visible].sort();
+          const next = [
+            ...new Set([...visible].flatMap((blockId) => followGroups.get(blockId) ?? [])),
+          ].sort();
           return current.length === next.length && current.every((id, i) => id === next[i])
             ? current
             : next;
@@ -50,9 +72,21 @@ export function PostPage() {
       },
       { threshold: 0.4 },
     );
-    for (const el of root.querySelectorAll("[data-embed-place]")) observer.observe(el);
+    for (const el of root.querySelectorAll("[data-post-follow]")) observer.observe(el);
     return () => observer.disconnect();
+  }, [followGroups, followKey]);
+
+  const setPostSelectHandler = useProjectionStore((state) => state.setPostSelectHandler);
+  const selectFromMap = useCallback((placeId: string) => {
+    const entry = embedRefs.current.get(placeId);
+    if (!entry) return;
+    setSelectedEmbed(placeId);
+    entry.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, []);
+  useEffect(() => {
+    setPostSelectHandler(selectFromMap);
+    return () => setPostSelectHandler(null);
+  }, [selectFromMap, setPostSelectHandler]);
 
   useCanvasProjection({
     kind: "post",
@@ -99,7 +133,11 @@ export function PostPage() {
             const note = view.sectionNote;
             if (!note) return null;
             return (
-              <section key={view.block.id} data-testid="post-section">
+              <section
+                key={view.block.id}
+                data-testid="post-section"
+                data-post-follow={view.block.id}
+              >
                 {note.title ? (
                   <h2 className="mb-1 text-lg font-semibold text-stone-900">{note.title}</h2>
                 ) : null}
@@ -113,9 +151,19 @@ export function PostPage() {
           return (
             <section
               key={view.block.id}
+              ref={(element) => {
+                if (element) embedRefs.current.set(place.id, element);
+                else embedRefs.current.delete(place.id);
+              }}
               data-testid="post-embed"
               data-embed-place={place.id}
-              className="rounded-lg border border-stone-200 bg-stone-50 p-3"
+              data-post-follow={view.block.id}
+              data-selected={selectedEmbed === place.id ? "true" : "false"}
+              className={`rounded-lg border bg-stone-50 p-3 ${
+                selectedEmbed === place.id
+                  ? "border-stone-500 ring-2 ring-stone-300"
+                  : "border-stone-200"
+              }`}
             >
               {/* Selection is bidirectional: the embed card selects and flies. */}
               <button
@@ -123,6 +171,7 @@ export function PostPage() {
                 className="text-left text-base font-semibold text-stone-900 hover:underline"
                 data-testid="post-embed-select"
                 onClick={() => {
+                  setSelectedEmbed(place.id);
                   selectPlace(place.id);
                   requestFlyTo({ lat: facts.lat, lng: facts.lng, zoom: 16 });
                 }}
@@ -156,9 +205,12 @@ export function PostPage() {
                   lat={facts.lat}
                   lng={facts.lng}
                   {...(facts.name ? { name: facts.name } : {})}
-                  {...(place.externalRefs?.[0]?.url
-                    ? { externalUrl: place.externalRefs[0].url }
-                    : {})}
+                  {...(() => {
+                    const preferred =
+                      place.externalRefs?.find((ref) => ref.provider === "google-maps") ??
+                      place.externalRefs?.[0];
+                    return preferred?.url ? { externalUrl: preferred.url } : {};
+                  })()}
                 />
               </div>
             </section>

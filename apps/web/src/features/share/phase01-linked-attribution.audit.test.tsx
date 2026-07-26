@@ -8,6 +8,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
 import { DexieRepository } from "../../data/repo";
+import { useProjectionStore } from "../../state/projection";
 import { NoteViewerPage } from "./NoteViewerPage";
 import { SharedGuideView } from "./SharedGuideView";
 
@@ -74,6 +75,12 @@ describe("linked public OSM attribution", () => {
         "href",
         expect.stringMatching(/^https:\/\/(www\.)?openstreetmap\.org\/copyright/),
       );
+      expect(screen.getByTestId("osm-link")).toHaveAttribute(
+        "href",
+        "https://www.openstreetmap.org/node/101",
+      );
+      expect(screen.getByTestId("open-google-maps")).toBeInTheDocument();
+      expect(screen.getByTestId("open-apple-maps")).toBeInTheDocument();
     } finally {
       view.unmount();
       repo.db.close();
@@ -96,6 +103,7 @@ describe("linked public OSM attribution", () => {
       "fetch",
       vi.fn(async () => Response.json(note)),
     );
+    useProjectionStore.setState({ projection: { kind: "all" }, sharedSelectHandler: null });
 
     try {
       render(
@@ -112,6 +120,17 @@ describe("linked public OSM attribution", () => {
         "href",
         expect.stringMatching(/^https:\/\/(www\.)?openstreetmap\.org\/copyright/),
       );
+      expect(useProjectionStore.getState().projection).toEqual({
+        kind: "shared",
+        pins: [
+          {
+            key: "note-place",
+            name: "Café",
+            lat: 51.5,
+            lng: -0.12,
+          },
+        ],
+      });
     } finally {
       queryClient.clear();
       vi.unstubAllGlobals();

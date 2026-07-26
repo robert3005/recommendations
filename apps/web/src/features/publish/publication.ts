@@ -61,14 +61,17 @@ export async function publishNote(
     contentHash: note.updatedAt,
     publishedAt: now,
   };
+  let newCredential:
+    | { id: string; token: string; createdAt: string; updatedAt: string }
+    | undefined;
   if (!publication) {
     const credentialId = newId();
-    await repo.db.credentials.put({
+    newCredential = {
       id: credentialId,
       token: newEditorToken(),
       createdAt: now,
       updatedAt: now,
-    });
+    };
     publication = {
       id: newId(),
       target: { kind: "note", id: note.id },
@@ -88,8 +91,21 @@ export async function publishNote(
       updatedAt: now,
     };
   }
-  await repo.db.publications.put(publication);
-  await enqueuePublish(repo, publication.id, document.contentHash, JSON.stringify(document), now);
+  await repo.db.transaction(
+    "rw",
+    [repo.db.credentials, repo.db.publications, repo.db.publicationOutbox],
+    async () => {
+      if (newCredential) await repo.db.credentials.put(newCredential);
+      await repo.db.publications.put(publication);
+      await enqueuePublish(
+        repo,
+        publication.id,
+        document.contentHash,
+        JSON.stringify(document),
+        now,
+      );
+    },
+  );
   await runPublicationOutbox(repo, fetcher);
   return (await repo.db.publications.get(publication.id)) ?? publication;
 }
@@ -176,15 +192,18 @@ export async function publishList(
   // A revoked slug is tombstoned forever — publishing again means a fresh
   // publication with a fresh claim, never an update to the tombstone.
   if (publication?.status === "revoked") publication = undefined;
+  let newCredential:
+    | { id: string; token: string; createdAt: string; updatedAt: string }
+    | undefined;
   if (!publication) {
     // The token exists durably before the first network request ever fires.
     const credentialId = newId();
-    await repo.db.credentials.put({
+    newCredential = {
       id: credentialId,
       token: newEditorToken(),
       createdAt: now,
       updatedAt: now,
-    });
+    };
     publication = {
       id: newId(),
       target: { kind: "list", id: listId },
@@ -204,8 +223,15 @@ export async function publishList(
       updatedAt: now,
     };
   }
-  await repo.db.publications.put(publication);
-  await enqueuePublish(repo, publication.id, document.revision, document.body, now);
+  await repo.db.transaction(
+    "rw",
+    [repo.db.credentials, repo.db.publications, repo.db.publicationOutbox],
+    async () => {
+      if (newCredential) await repo.db.credentials.put(newCredential);
+      await repo.db.publications.put(publication);
+      await enqueuePublish(repo, publication.id, document.revision, document.body, now);
+    },
+  );
   await runPublicationOutbox(repo, fetcher);
   return (await repo.db.publications.get(publication.id)) ?? publication;
 }
@@ -233,14 +259,17 @@ export async function publishPost(
   // A revoked slug is tombstoned forever — publishing again means a fresh
   // publication with a fresh claim, never an update to the tombstone.
   if (publication?.status === "revoked") publication = undefined;
+  let newCredential:
+    | { id: string; token: string; createdAt: string; updatedAt: string }
+    | undefined;
   if (!publication) {
     const credentialId = newId();
-    await repo.db.credentials.put({
+    newCredential = {
       id: credentialId,
       token: newEditorToken(),
       createdAt: now,
       updatedAt: now,
-    });
+    };
     publication = {
       id: newId(),
       target: { kind: "post", id: postId },
@@ -261,8 +290,15 @@ export async function publishPost(
       updatedAt: now,
     };
   }
-  await repo.db.publications.put(publication);
-  await enqueuePublish(repo, publication.id, document.revision, document.body, now);
+  await repo.db.transaction(
+    "rw",
+    [repo.db.credentials, repo.db.publications, repo.db.publicationOutbox],
+    async () => {
+      if (newCredential) await repo.db.credentials.put(newCredential);
+      await repo.db.publications.put(publication);
+      await enqueuePublish(repo, publication.id, document.revision, document.body, now);
+    },
+  );
   await runPublicationOutbox(repo, fetcher);
   return (await repo.db.publications.get(publication.id)) ?? publication;
 }
@@ -322,42 +358,41 @@ export async function revokePublication(
   now: string,
   fetcher: typeof fetch = fetch,
 ): Promise<void> {
-  const prior = await repo.db.publications.get(publicationId);
-  if (!prior) return;
-  // The revocation state and its durable DELETE job are one local transition.
-  // Sequential writes with explicit compensation keep that guarantee without
-  // a multi-table transaction (which can deadlock under live-query zones): a
-  // failed write restores the prior publication state and any publish marker.
-  const jobs = await repo.db.publicationOutbox.toArray();
-  const priorJobs = jobs.filter((job) => job.publicationId === publicationId);
-  try {
-    // An explicit revocation supersedes any unsent update — a failed draft
-    // publish must never strand the unpublish.
-    for (const job of priorJobs) {
-      if (job.action === "publish") await repo.db.publicationOutbox.delete(job.id);
-    }
-    await repo.db.publications.put({ ...prior, status: "revoking", updatedAt: now });
-    // A failed earlier revocation retries under its original idempotency key.
-    if (!priorJobs.some((job) => job.action === "revoke")) {
-      await repo.db.publicationOutbox.put({
-        id: newId(),
-        publicationId,
-        action: "revoke",
-        localRevision: prior.localRevision,
-        createdAt: now,
-        attempts: 0,
-      });
-    }
-  } catch (err) {
-    // Best-effort restoration of the pre-revocation state.
-    try {
-      await repo.db.publications.put(prior);
-      for (const job of priorJobs) await repo.db.publicationOutbox.put(job);
-    } catch {
-      // The original failure is the one to surface.
-    }
-    throw err;
-  }
+  // The state change, publish-job supersession, and durable DELETE job are one
+  // IndexedDB commit. Process death at any await boundary therefore leaves
+  // either the complete old state or the complete revocation transition.
+  const scheduled = await repo.db.transaction(
+    "rw",
+    [repo.db.publications, repo.db.publicationOutbox],
+    async () => {
+      const prior = await repo.db.publications.get(publicationId);
+      if (!prior) return false;
+      const priorJobs = await repo.db.publicationOutbox
+        .where("publicationId")
+        .equals(publicationId)
+        .toArray();
+
+      // An explicit revocation supersedes any unsent update — a failed draft
+      // publish must never strand the unpublish.
+      for (const job of priorJobs) {
+        if (job.action === "publish") await repo.db.publicationOutbox.delete(job.id);
+      }
+      await repo.db.publications.put({ ...prior, status: "revoking", updatedAt: now });
+      // A failed earlier revocation retries under its original idempotency key.
+      if (!priorJobs.some((job) => job.action === "revoke")) {
+        await repo.db.publicationOutbox.put({
+          id: newId(),
+          publicationId,
+          action: "revoke",
+          localRevision: prior.localRevision,
+          createdAt: now,
+          attempts: 0,
+        });
+      }
+      return true;
+    },
+  );
+  if (!scheduled) return;
   await runPublicationOutbox(repo, fetcher);
 }
 

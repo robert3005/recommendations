@@ -1,34 +1,42 @@
 /**
  * Standalone read-only note page `/n/:slug` (spec/src/notes.md §Publishing a
- * note page): the same bearer-token/revision model as guides; public, noindex.
+ * note page): the same bearer-token/revision model as other shared pages;
+ * public, noindex.
  */
-import { sharedNoteSchema } from "@placemarks/schemas";
+import { type SharedNote, sharedNoteSchema } from "@placemarks/schemas";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SHARE_API_URL } from "../../config";
 import { Markdown } from "../../markdown/Markdown";
 import { poiResolver } from "../../providers";
+import { usePaneStore } from "../../state/pane";
+import { useCanvasProjection, useProjectionStore } from "../../state/projection";
+import { useUiStore } from "../../state/ui";
 import { resolveSharedAnchor, type SharedResolution } from "./resolveShared";
 import { useNoindex } from "./useNoindex";
+
+export function noteContextLabel(context: SharedNote["context"]): string {
+  switch (context.kind) {
+    case "post":
+      return `From the post "${context.postTitle}"`;
+    case "list":
+      return `From the list "${context.listTitle}"`;
+    case "place":
+      return "About a shared place";
+  }
+}
 
 /** The note's place: copied evidence first, live OSM facts when they resolve. */
 function NotePlaceContext({
   anchor,
+  resolution,
+  onSelect,
 }: {
   anchor: Extract<ReturnType<typeof sharedNoteSchema.parse>["context"], { kind: "place" }>["place"];
+  resolution: SharedResolution;
+  onSelect: () => void;
 }) {
-  const [resolution, setResolution] = useState<SharedResolution>({ state: "pending" });
-  useEffect(() => {
-    let cancelled = false;
-    void resolveSharedAnchor(poiResolver, anchor).then((result) => {
-      if (!cancelled) setResolution(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [anchor]);
-
   const live =
     resolution.state === "live" || resolution.state === "recovered" ? resolution.poi : undefined;
   const copied = anchor.kind === "osm" ? anchor.lastVerified : undefined;
@@ -36,7 +44,13 @@ function NotePlaceContext({
   const address = live?.address ?? copied?.address;
   return (
     <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-3 text-sm">
-      <span className="font-medium text-stone-900">{name}</span>
+      <button
+        type="button"
+        className="font-medium text-stone-900 hover:underline"
+        onClick={onSelect}
+      >
+        {name}
+      </button>
       {address ? <span className="block text-stone-600">{address}</span> : null}
       {anchor.kind === "manual" ? (
         <span className="mt-1 block text-[11px] text-stone-400">
@@ -81,6 +95,56 @@ export function NoteViewerPage() {
     },
     retry: 1,
   });
+  const [resolution, setResolution] = useState<SharedResolution>({ state: "pending" });
+  const [selected, setSelected] = useState(false);
+  const placeContextRef = useRef<HTMLDivElement>(null);
+  const setSharedSelectHandler = useProjectionStore((state) => state.setSharedSelectHandler);
+  const requestFlyTo = useUiStore((state) => state.requestFlyTo);
+  const setPane = usePaneStore((state) => state.setPane);
+  useEffect(() => setPane("split"), [setPane]);
+  const anchor =
+    noteQuery.data?.context.kind === "place" ? noteQuery.data.context.place : undefined;
+  useEffect(() => {
+    setResolution({ state: "pending" });
+    if (!anchor) return;
+    let cancelled = false;
+    void resolveSharedAnchor(poiResolver, anchor).then((result) => {
+      if (!cancelled) setResolution(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [anchor]);
+
+  const live =
+    resolution.state === "live" || resolution.state === "recovered" ? resolution.poi : undefined;
+  const copied = anchor?.kind === "osm" ? anchor.lastVerified : anchor;
+  const pin =
+    anchor && copied
+      ? {
+          key: "note-place",
+          name: live?.name ?? copied.name ?? "Shared place",
+          lat: live?.lat ?? copied.lat,
+          lng: live?.lng ?? copied.lng,
+          ...(anchor.kind === "manual" ? { unlinked: true } : {}),
+          ...(selected ? { selected: true } : {}),
+        }
+      : undefined;
+  useCanvasProjection({ kind: "shared", pins: pin ? [pin] : [] });
+  useEffect(() => {
+    setSharedSelectHandler((key) => {
+      if (key !== "note-place") return;
+      setSelected(true);
+      placeContextRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+    return () => setSharedSelectHandler(null);
+  }, [setSharedSelectHandler]);
+
+  const selectPlaceContext = () => {
+    if (!pin) return;
+    setSelected(true);
+    requestFlyTo({ lat: pin.lat, lng: pin.lng, zoom: 16 });
+  };
 
   if (noteQuery.isPending) return <p className="p-6 text-sm text-stone-500">Loading note…</p>;
   if (noteQuery.isError) {
@@ -101,12 +165,17 @@ export function NoteViewerPage() {
     <article className="mx-auto max-w-2xl p-6" data-testid="shared-note">
       {note.title ? <h1 className="text-2xl font-semibold text-stone-900">{note.title}</h1> : null}
       <p className="mt-1 text-xs text-stone-500">
-        {note.context.kind === "list"
-          ? `From the guide "${note.context.listTitle}"`
-          : "About a shared place"}{" "}
-        · read-only shared page
+        {noteContextLabel(note.context)} · read-only shared page
       </p>
-      {note.context.kind === "place" ? <NotePlaceContext anchor={note.context.place} /> : null}
+      {note.context.kind === "place" ? (
+        <div ref={placeContextRef} data-selected={selected ? "true" : "false"}>
+          <NotePlaceContext
+            anchor={note.context.place}
+            resolution={resolution}
+            onSelect={selectPlaceContext}
+          />
+        </div>
+      ) : null}
       <div className="prose prose-sm prose-stone mt-4 max-w-none">
         <Markdown body={note.body} />
       </div>

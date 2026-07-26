@@ -13,7 +13,7 @@ import {
   pushRequestSchema,
   SYNC_LIMITS,
 } from "@placemarks/schemas";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import type { SyncStorage } from "./storage";
 
 /** Delivers login codes — email in deployment, a recorder in tests/dev. */
@@ -62,6 +62,51 @@ function defaultCode(): string {
 
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 const CODE_TTL_MS = 15 * 60_000;
+const utf8 = new TextEncoder();
+
+type BoundedJson = { ok: true; value: unknown } | { ok: false; status: 400 | 413; message: string };
+
+/** Stream and count request bytes before retaining/parsing attacker input. */
+async function readBoundedJson(c: Context, maxBytes: number): Promise<BoundedJson> {
+  const contentLength = c.req.header("content-length");
+  if (contentLength && /^\d+$/.test(contentLength) && Number(contentLength) > maxBytes) {
+    return { ok: false, status: 413, message: "request too large" };
+  }
+  const stream = c.req.raw.body;
+  if (!stream) return { ok: false, status: 400, message: "invalid request" };
+  const reader = stream.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let bytes = 0;
+  let text = "";
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        return { ok: false, status: 413, message: "request too large" };
+      }
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+    text += decoder.decode();
+    return { ok: true, value: JSON.parse(text) as unknown };
+  } catch {
+    return { ok: false, status: 400, message: "invalid request" };
+  }
+}
+
+function wireChange(change: Awaited<ReturnType<SyncStorage["changesSince"]>>[number]) {
+  return {
+    seq: change.seq,
+    table: change.table,
+    entityId: change.entityId,
+    hlc: change.hlc,
+    actorId: change.actorId,
+    version: change.version,
+    row: change.row,
+  };
+}
 
 export function createSyncApp({
   storage,
@@ -102,7 +147,9 @@ export function createSyncApp({
   app.post("/sync/login", async (c) => {
     const hits = await storage.hit("login", 60_000, Date.now());
     if (hits > 20) return c.text("rate limited", 429, NO_STORE);
-    const parsed = loginRequestSchema.safeParse(await c.req.json().catch(() => undefined));
+    const body = await readBoundedJson(c, SYNC_LIMITS.loginRequestBytes);
+    if (!body.ok) return c.text(body.message, body.status, NO_STORE);
+    const parsed = loginRequestSchema.safeParse(body.value);
     if (!parsed.success) return c.text("invalid request", 400, NO_STORE);
     const email = parsed.data.email.toLowerCase();
     const code = newCode();
@@ -117,7 +164,9 @@ export function createSyncApp({
 
   // Step 2: complete the login — mints the bearer that names the sync scope.
   app.post("/sync/login/complete", async (c) => {
-    const parsed = loginCompleteRequestSchema.safeParse(await c.req.json().catch(() => undefined));
+    const body = await readBoundedJson(c, SYNC_LIMITS.loginRequestBytes);
+    if (!body.ok) return c.text(body.message, body.status, NO_STORE);
+    const parsed = loginCompleteRequestSchema.safeParse(body.value);
     if (!parsed.success) return c.text("invalid request", 400, NO_STORE);
     const email = parsed.data.email.toLowerCase();
     // Single-use: taking removes it — a failed guess burns the code.
@@ -140,38 +189,54 @@ export function createSyncApp({
     return c.json({ accountId: existing.id, token }, 200, NO_STORE);
   });
 
+  // Sign out this device only. Other device bearers for the same account stay
+  // valid so one browser cannot accidentally disconnect all peers.
+  app.post("/sync/logout", async (c) => {
+    const token = bearerToken(c.req.header("authorization"));
+    if (!token) return c.text("unauthorized", 401, NO_STORE);
+    const tokenHash = await sha256Hex(token);
+    if (!(await storage.findAccountByTokenHash(tokenHash))) {
+      return c.text("unauthorized", 401, NO_STORE);
+    }
+    await storage.removeAccountToken(tokenHash);
+    return c.body(null, 204, NO_STORE);
+  });
+
+  // A newly email-authenticated device can invalidate a lost/copied bearer
+  // without disrupting its own session.
+  app.post("/sync/logout/others", async (c) => {
+    const token = bearerToken(c.req.header("authorization"));
+    if (!token) return c.text("unauthorized", 401, NO_STORE);
+    const tokenHash = await sha256Hex(token);
+    const authed = await storage.findAccountByTokenHash(tokenHash);
+    if (!authed) return c.text("unauthorized", 401, NO_STORE);
+    await storage.removeOtherAccountTokens(authed.id, tokenHash);
+    return c.body(null, 204, NO_STORE);
+  });
+
   // Idempotent push: a re-sent mutation id acks without re-appending.
   app.post("/sync/push", async (c) => {
     const authed = await account(c.req.header("authorization"));
     if (!authed) return c.text("unauthorized", 401, NO_STORE);
-    const body = await c.req.text();
-    if (body.length > SYNC_LIMITS.requestBytes) {
-      return c.text("request too large", 413, NO_STORE);
-    }
-    const parsed = pushRequestSchema.safeParse(
-      (() => {
-        try {
-          return JSON.parse(body) as unknown;
-        } catch {
-          return undefined;
-        }
-      })(),
-    );
+    const body = await readBoundedJson(c, SYNC_LIMITS.requestBytes);
+    if (!body.ok) return c.text(body.message, body.status, NO_STORE);
+    const parsed = pushRequestSchema.safeParse(body.value);
     if (!parsed.success) return c.text("invalid request", 400, NO_STORE);
     const acked: string[] = [];
     for (const mutation of parsed.data.mutations) {
-      if (!(await storage.hasMutation(authed.id, mutation.id))) {
-        await storage.appendChange({
-          accountId: authed.id,
-          mutationId: mutation.id,
-          actorId: mutation.actorId,
-          table: mutation.table,
-          entityId: mutation.entityId,
-          hlc: mutation.hlc,
-          row: mutation.row,
-          recordedAt: now(),
-        });
-      }
+      // Storage owns the atomic idempotency check + sequence allocation. A
+      // separate has-then-insert race can collide under concurrent requests.
+      await storage.appendChange({
+        accountId: authed.id,
+        mutationId: mutation.id,
+        actorId: mutation.actorId,
+        table: mutation.table,
+        entityId: mutation.entityId,
+        hlc: mutation.hlc,
+        version: mutation.version ?? {},
+        row: mutation.row,
+        recordedAt: now(),
+      });
       acked.push(mutation.id);
     }
     return c.json({ acked }, 200, NO_STORE);
@@ -182,25 +247,35 @@ export function createSyncApp({
     const authed = await account(c.req.header("authorization"));
     if (!authed) return c.text("unauthorized", 401, NO_STORE);
     const rawCursor = c.req.query("cursor");
-    const after = rawCursor ? Number.parseInt(rawCursor, 10) : 0;
-    if (Number.isNaN(after) || after < 0) return c.text("invalid cursor", 400, NO_STORE);
-    const changes = await storage.changesSince(authed.id, after, SYNC_LIMITS.changesPerPull);
+    const after = rawCursor === undefined || !/^\d+$/.test(rawCursor) ? 0 : Number(rawCursor);
+    if (
+      (rawCursor !== undefined && !/^\d+$/.test(rawCursor)) ||
+      !Number.isSafeInteger(after) ||
+      after < 0
+    ) {
+      return c.text("invalid cursor", 400, NO_STORE);
+    }
+    const available = await storage.changesSince(authed.id, after, SYNC_LIMITS.changesPerPull);
+    const changes: ReturnType<typeof wireChange>[] = [];
+    const prefixBytes = utf8.encode('{"changes":[').byteLength;
+    let rowsBytes = 0;
+    for (const record of available) {
+      const change = wireChange(record);
+      const encoded = utf8.encode(JSON.stringify(change)).byteLength;
+      const nextRowsBytes = rowsBytes + encoded + (changes.length > 0 ? 1 : 0);
+      const nextCursor = record.seq.toString();
+      const suffixBytes = utf8.encode(`],"cursor":${JSON.stringify(nextCursor)}}`).byteLength;
+      if (prefixBytes + nextRowsBytes + suffixBytes > SYNC_LIMITS.pullResponseBytes) {
+        if (changes.length === 0) {
+          return c.text("stored change exceeds the pull response limit", 500, NO_STORE);
+        }
+        break;
+      }
+      changes.push(change);
+      rowsBytes = nextRowsBytes;
+    }
     const cursor = changes.length > 0 ? (changes[changes.length - 1]?.seq ?? after) : after;
-    return c.json(
-      {
-        changes: changes.map((change) => ({
-          seq: change.seq,
-          table: change.table,
-          entityId: change.entityId,
-          hlc: change.hlc,
-          actorId: change.actorId,
-          row: change.row,
-        })),
-        cursor: cursor.toString(),
-      },
-      200,
-      NO_STORE,
-    );
+    return c.json({ changes, cursor: cursor.toString() }, 200, NO_STORE);
   });
 
   return app;

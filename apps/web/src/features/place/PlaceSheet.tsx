@@ -32,7 +32,7 @@ function SheetShell({ children, label }: { children: React.ReactNode; label: str
       tabIndex={-1}
       role="dialog"
       aria-label={label}
-      className="absolute inset-x-0 bottom-0 z-20 max-h-[60%] overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-4 shadow-xl md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-2xl"
+      className="absolute inset-x-0 bottom-0 z-40 max-h-[60%] overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-4 shadow-xl md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-2xl"
       data-testid="place-sheet"
     >
       <button

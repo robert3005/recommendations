@@ -243,13 +243,17 @@ async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-async function v2Archive(): Promise<Blob> {
+async function v2Archive(
+  exportedAt = V2_NOW,
+  mutate?: (data: ReturnType<typeof v2Data>) => void,
+): Promise<Blob> {
   const data = v2Data();
+  mutate?.(data);
   const dataBytes = strToU8(JSON.stringify(data));
   const manifest = {
     app: "placemarks",
     schemaVersion: 2,
-    exportedAt: V2_NOW,
+    exportedAt,
     checksums: { "data.json": await sha256Hex(dataBytes) },
     counts: Object.fromEntries(Object.entries(data).map(([table, rows]) => [table, rows.length])),
     source: { attribution: "© OpenStreetMap contributors", license: "ODbL-1.0" },
@@ -306,6 +310,38 @@ describe("Phase 6 pre-pivot (v2) archive compatibility", () => {
     }
   });
 
+  it("pivots from canonical content and targets rather than forged query indexes", async () => {
+    const target = new DexieRepository(`phase6-v2-canonical-target-${crypto.randomUUID()}`);
+    try {
+      const archive = await v2Archive(V2_NOW, (data) => {
+        const section = data.listBlocks.find((block) => block.id === "block-section");
+        const place = data.listBlocks.find((block) => block.id === "block-place");
+        const note = data.notes.find((row) => row.id === "note-section");
+        if (!section || !place || !note) throw new Error("v2 fixture is incomplete");
+        section.kind = "place";
+        section.refId = "place-1";
+        place.kind = "section";
+        place.refId = "note-section";
+        note.targetKey = "place:forged-query-index";
+      });
+
+      await importBackup(target, archive, "replace", NOW);
+
+      await expectPivotedGuide(target);
+      await expect(target.db.listBlocks.get("block-section")).resolves.toMatchObject({
+        kind: "section",
+        refId: "note-section",
+        deleted: true,
+      });
+      await expect(target.db.listBlocks.get("block-place")).resolves.toMatchObject({
+        kind: "place",
+        refId: "place-1",
+      });
+    } finally {
+      target.db.close();
+    }
+  });
+
   it("merge-restores a v2 archive and converges on the derived pivot ids", async () => {
     const target = new DexieRepository(`phase6-v2-merge-target-${crypto.randomUUID()}`);
     try {
@@ -321,6 +357,40 @@ describe("Phase 6 pre-pivot (v2) archive compatibility", () => {
       ).resolves.toMatchObject({ mode: "merge" });
       expect(await repoPostCount(target)).toEqual({ posts: 1, postBlocks: 2 });
       await expectPivotedGuide(target);
+    } finally {
+      target.db.close();
+    }
+  });
+
+  it("uses source-row timestamps so a later export cannot overwrite edits or resurrect pivot rows", async () => {
+    const target = new DexieRepository(`phase6-v2-stable-time-target-${crypto.randomUUID()}`);
+    const editedAt = "2026-07-20T15:00:00.000Z";
+    try {
+      const archive = await v2Archive();
+      await importBackup(target, archive, "merge", NOW);
+      const post = await target.getPost("guide-list:post");
+      if (!post) throw new Error("pivot post fixture missing");
+      await target.updatePost({ ...post, title: "My later edit", updatedAt: editedAt });
+      await target.removePostBlock("block-place:pb", editedAt);
+
+      // Both the restore invocation AND a newly-created archive manifest are
+      // later. The unchanged source rows still derive the same pivot timestamps,
+      // so neither wall clock may roll back the real edit/tombstone.
+      await importBackup(
+        target,
+        await v2Archive("2026-07-21T16:00:00.000Z"),
+        "merge",
+        "2026-07-22T16:00:00.000Z",
+      );
+
+      await expect(target.getPost("guide-list:post")).resolves.toMatchObject({
+        title: "My later edit",
+        updatedAt: editedAt,
+      });
+      await expect(target.db.postBlocks.get("block-place:pb")).resolves.toMatchObject({
+        deleted: true,
+        updatedAt: editedAt,
+      });
     } finally {
       target.db.close();
     }

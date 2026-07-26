@@ -185,8 +185,11 @@ export function SettingsPage() {
             exact OSM element id (reference) of a place being verified, is sent to resolve places.
           </li>
           <li>
-            <strong>Never sent:</strong> your note bodies, list names, and tags stay on this device
-            — they are never sent to any provider.
+            <strong>Private content and map providers:</strong> note bodies, list names, and tags
+            are never sent to basemap, search, geocoding, or POI-resolution providers. They leave
+            this device only when you explicitly publish/share the selected content or enable
+            optional account sync, which sends the private library to the configured sync service
+            for your signed-in devices.
           </li>
           <li>
             <strong>Routing &amp; retention:</strong> development builds call public OSM community

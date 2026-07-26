@@ -281,7 +281,7 @@ describe("Phase 3 provider-failure persistence audit", () => {
 
       await expect(
         resolveReviewItem(repo, deps, row.id, { kind: "candidate", ref: firstCandidate.ref }, NOW),
-      ).resolves.toBeUndefined();
+      ).resolves.toMatchObject({ status: "pending", reason: expect.stringMatching(/retry/i) });
       expect(await repo.db.importItems.get(row.id)).toMatchObject({ status: "review" });
       expect(await repo.db.importBatches.get(row.batchId)).toMatchObject({ status: "reviewing" });
     } finally {

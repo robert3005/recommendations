@@ -28,6 +28,8 @@ export interface ChangeRecord {
   table: string;
   entityId: string;
   hlc: string;
+  /** Per-entity causal context; empty only for legacy accepted mutations. */
+  version: Record<string, number>;
   row: Record<string, unknown>;
   recordedAt: string;
 }
@@ -44,10 +46,15 @@ export interface SyncStorage {
    */
   addAccountToken(accountId: string, tokenHash: string): Promise<void>;
   findAccountByTokenHash(tokenHash: string): Promise<Account | undefined>;
-  /** True when the mutation id has already been accepted for this account. */
-  hasMutation(accountId: string, mutationId: string): Promise<boolean>;
-  /** Appends one change, assigning the next per-account sequence. */
-  appendChange(change: Omit<ChangeRecord, "seq">): Promise<ChangeRecord>;
+  /** Revokes exactly one device session without signing out its peers. */
+  removeAccountToken(tokenHash: string): Promise<void>;
+  /** Revokes every other device session while retaining the caller. */
+  removeOtherAccountTokens(accountId: string, retainedTokenHash: string): Promise<void>;
+  /**
+   * Atomically accepts a mutation id and assigns its next per-account
+   * sequence. Replaying an accepted id is a successful no-op.
+   */
+  appendChange(change: Omit<ChangeRecord, "seq">): Promise<void>;
   /** Changes with seq > after, ascending, at most limit. */
   changesSince(accountId: string, after: number, limit: number): Promise<ChangeRecord[]>;
   /** Simple fixed-window rate counter (shared shape with the share service). */
@@ -59,7 +66,6 @@ export class MemorySyncStorage implements SyncStorage {
   private tokens = new Map<string, string>(); // tokenHash → accountId
   private codes = new Map<string, LoginCode>();
   private changes = new Map<string, ChangeRecord[]>();
-  private mutationIds = new Map<string, Set<string>>();
   private buckets = new Map<string, { windowStart: number; count: number }>();
 
   async putLoginCode(code: LoginCode): Promise<void> {
@@ -89,19 +95,23 @@ export class MemorySyncStorage implements SyncStorage {
     return accountId ? this.accounts.get(accountId) : undefined;
   }
 
-  async hasMutation(accountId: string, mutationId: string): Promise<boolean> {
-    return this.mutationIds.get(accountId)?.has(mutationId) ?? false;
+  async removeAccountToken(tokenHash: string): Promise<void> {
+    this.tokens.delete(tokenHash);
   }
 
-  async appendChange(change: Omit<ChangeRecord, "seq">): Promise<ChangeRecord> {
+  async removeOtherAccountTokens(accountId: string, retainedTokenHash: string): Promise<void> {
+    for (const [tokenHash, owner] of this.tokens) {
+      if (owner === accountId && tokenHash !== retainedTokenHash) this.tokens.delete(tokenHash);
+    }
+  }
+
+  async appendChange(change: Omit<ChangeRecord, "seq">): Promise<void> {
     const log = this.changes.get(change.accountId) ?? [];
+    const existing = log.find((record) => record.mutationId === change.mutationId);
+    if (existing) return;
     const record: ChangeRecord = { ...change, seq: log.length + 1 };
     log.push(record);
     this.changes.set(change.accountId, log);
-    const ids = this.mutationIds.get(change.accountId) ?? new Set<string>();
-    ids.add(change.mutationId);
-    this.mutationIds.set(change.accountId, ids);
-    return record;
   }
 
   async changesSince(accountId: string, after: number, limit: number): Promise<ChangeRecord[]> {

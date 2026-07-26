@@ -46,7 +46,7 @@ test.describe("places exist through lists", () => {
     // Tag it.
     await details.getByLabel("Add tag").fill("coffee");
     await details.getByLabel("Add tag").press("Enter");
-    await expect(details.getByText("coffee")).toBeVisible();
+    await expect(details.getByRole("button", { name: "Remove tag coffee" })).toBeVisible();
 
     // Survives a full reload (IndexedDB persistence). The pane relaunches
     // expanded, so the canvas idles — collapse once to let the pins paint.
@@ -62,7 +62,7 @@ test.describe("places exist through lists", () => {
     const reopened = page.getByTestId("place-details");
     await expect(reopened).toBeVisible();
     await expect(reopened.getByText("Café Central")).toBeVisible();
-    await expect(reopened.getByText("coffee")).toBeVisible();
+    await expect(reopened.getByRole("button", { name: "Remove tag coffee" })).toBeVisible();
 
     // Removing the place removes it from the map and the library.
     await reopened.getByTestId("remove-place").click();

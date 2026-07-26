@@ -675,6 +675,11 @@ export type ReviewChoice =
   | { kind: "coords"; lat: number; lng: number }
   | { kind: "skip" };
 
+export type ReviewResolution =
+  | { status: "resolved" }
+  | { status: "pending"; reason: string }
+  | { status: "ignored" };
+
 /** Resolve one review-queue item: pick a candidate, place manually, or skip. */
 export async function resolveReviewItem(
   repo: DexieRepository,
@@ -682,9 +687,9 @@ export async function resolveReviewItem(
   itemId: string,
   choice: ReviewChoice,
   now: string,
-): Promise<void> {
+): Promise<ReviewResolution> {
   const row = await repo.db.importItems.get(itemId);
-  if (row?.status !== "review") return;
+  if (row?.status !== "review") return { status: "ignored" };
   const item: ParsedItem = { ...row.raw };
 
   if (choice.kind === "skip") {
@@ -701,7 +706,13 @@ export async function resolveReviewItem(
       throw new Error("out-of-range coordinate — the item stays in review");
     }
     const placed = await materializeItem(repo, row.targetListId, item, choice, undefined, now);
-    if (placed.status === "review") return; // ambiguous locally — still reviewable
+    if (placed.status === "review") {
+      return {
+        status: "pending",
+        reason:
+          "That location matches more than one saved place. Choose a candidate or try different coordinates.",
+      };
+    }
     // ODbL continuity: a manually placed row that descends from an OSM anchor
     // keeps that provenance on the place (as unresolved link history), so
     // exports keep attributing the facts correctly.
@@ -720,9 +731,20 @@ export async function resolveReviewItem(
     const candidate = (row.candidates ?? []).find(
       (c) => c.ref.type === choice.ref.type && c.ref.id === choice.ref.id,
     );
-    if (!candidate) return;
+    if (!candidate) {
+      return {
+        status: "pending",
+        reason: "That candidate is no longer available. Choose another.",
+      };
+    }
     const placed = await materializeCandidate(repo, deps, row.targetListId, item, candidate, now);
-    if (placed.status === "review") return; // resolve failed — the item stays reviewable
+    if (placed.status === "review") {
+      return {
+        status: "pending",
+        reason:
+          "The OSM candidate could not be verified. Check the connection and retry; the item is still queued.",
+      };
+    }
     await repo.db.importItems.put({
       ...row,
       status: placed.status,
@@ -740,4 +762,5 @@ export async function resolveReviewItem(
     const batch = await repo.db.importBatches.get(row.batchId);
     if (batch) await repo.db.importBatches.put({ ...batch, status: "done" });
   }
+  return { status: "resolved" };
 }

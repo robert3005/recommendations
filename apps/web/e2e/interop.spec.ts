@@ -42,10 +42,11 @@ test("a Takeout archive imports into a list; review resolves on the map", async 
   const reviewItem = page.getByTestId("review-item");
   await expect(reviewItem).toHaveCount(1);
   await expect(reviewItem).toContainText("Mystery Bar");
-  // "Place on map" stays on /review — it collapses the pane so the canvas shows.
+  // "Place on map" stays on /review and reveals the canvas while retaining
+  // the accessible coordinate and cancellation controls in the split pane.
   await reviewItem.getByTestId("review-place-on-map").click();
 
-  await expect(page.getByTestId("app-shell")).toHaveAttribute("data-pane-state", "collapsed");
+  await expect(page.getByTestId("app-shell")).toHaveAttribute("data-pane-state", "split");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
   await expect(page.getByTestId("placing-import-hint")).toBeVisible();
   const box = await page.getByTestId("map-canvas").boundingBox();
@@ -56,15 +57,15 @@ test("a Takeout archive imports into a list; review resolves on the map", async 
   const details = page.getByTestId("place-details");
   await expect(details).toBeVisible();
   await expect(details).toContainText("Mystery Bar");
-  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "3");
+  // The review projection clears its transient marks when the last item is
+  // resolved. The all-lists projection below verifies all three saved pins.
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-marks", "0");
   // Navigation handoff links are on the card.
   await expect(details.getByTestId("open-google-maps")).toBeVisible();
   await expect(details.getByTestId("open-apple-maps")).toBeVisible();
   await details.getByRole("button", { name: "Close" }).click();
 
   // The list holds all three; the linked place carries live OSM facts.
-  // The pane was collapsed for placement — reopen it to read the list.
-  await page.getByTestId("pane-reopen").click();
   await page
     .getByRole("navigation", { name: "Primary" })
     .getByRole("link", { name: "Lists" })

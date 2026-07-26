@@ -48,6 +48,7 @@ const guide: SharedGuide = {
         },
       },
       notes: [{ body: "This prose leaves too" }],
+      tags: ["coffee", "quiet terrace"],
     },
     {
       id: "manual-block",
@@ -110,9 +111,17 @@ describe("Phase 4 share-preview disclosure", () => {
       "151.654321",
       "viewpoint",
       "This prose leaves too",
+      "coffee",
+      "quiet terrace",
     ];
     const missing = valuesThatLeave.filter((value) => !text.includes(value));
 
     expect(missing).toEqual([]);
+    expect(screen.getByTestId("share-manifest")).toHaveTextContent(
+      /2 explicitly selected tags leave the device/i,
+    );
+    expect(screen.getByTestId("share-payload")).toHaveTextContent(
+      /Selected tags: coffee, quiet terrace/i,
+    );
   });
 });

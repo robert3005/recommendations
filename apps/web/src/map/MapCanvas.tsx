@@ -11,9 +11,9 @@
  */
 import type { BBox, ResolvedPoi } from "@placemarks/domain";
 import { displayFacts, refKey } from "@placemarks/domain";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DISCOVER_MIN_ZOOM } from "../config";
 import { useLibraryPlaces, useListMembership, useLists, usePostBlocks } from "../data/hooks";
 import { useDexieRepo, useRepo } from "../data/RepoContext";
@@ -22,7 +22,6 @@ import { MarkerGlyph } from "../features/lists/MarkerGlyph";
 import { TOP_CATEGORIES, type TopCategory, topCategoryOf } from "../features/map/categories";
 import { CandidatePicker } from "../features/picker/CandidatePicker";
 import { ManualPinDialog } from "../features/picker/ManualPinDialog";
-import { PlaceSheet } from "../features/place/PlaceSheet";
 import { SearchBar } from "../features/search/SearchBar";
 import { newId } from "../lib/id";
 import { DEFAULT_PIN_COLOR, FALLBACK_MARKER } from "../lib/markers";
@@ -76,9 +75,20 @@ interface FrozenView {
   fitTo: { bounds: BBox; key: string } | null;
 }
 
-export function MapCanvas() {
+export interface MapCanvasProps {
+  readOnly?: boolean;
+  routeViewport?: { lat?: number; lng?: number; zoom?: number };
+  onRouteViewportChange?: (viewport: { lat: number; lng: number; zoom: number }) => void;
+}
+
+export function MapCanvas({
+  readOnly = false,
+  routeViewport = {},
+  onRouteViewportChange,
+}: MapCanvasProps) {
   const repo = useRepo();
   const dexieRepo = useDexieRepo();
+  const queryClient = useQueryClient();
   const selection = useUiStore((s) => s.selection);
   const flyTo = useUiStore((s) => s.flyTo);
   const pickerAt = useUiStore((s) => s.pickerAt);
@@ -89,12 +99,16 @@ export function MapCanvas() {
   const requestFlyTo = useUiStore((s) => s.requestFlyTo);
   const placingImportItemId = useUiStore((s) => s.placingImportItemId);
   const stopPlacingImportItem = useUiStore((s) => s.stopPlacingImportItem);
+  const setImportReviewError = useUiStore((s) => s.setImportReviewError);
+  const clearImportReviewError = useUiStore((s) => s.clearImportReviewError);
   const hiddenListIds = useUiStore((s) => s.hiddenListIds);
   const toggleListVisibility = useUiStore((s) => s.toggleListVisibility);
   const projection = useProjectionStore((s) => s.projection);
   // At pane `expanded` / sheet `full` the canvas is fully occluded and IDLES
   // (spec/src/map-view.md §The grammar).
-  const idle = usePaneStore((s) => s.pane) === "expanded";
+  const pane = usePaneStore((s) => s.pane);
+  const setPane = usePaneStore((s) => s.setPane);
+  const idle = pane === "expanded";
 
   const libraryPlaces = useLibraryPlaces();
   const lists = useLists();
@@ -120,8 +134,40 @@ export function MapCanvas() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   // The starting camera: last viewport, else a timezone-derived approximation
   // (spec/src/map-view.md — no permission prompt, nothing leaves the device).
-  const [startViewport] = useState(() => initialViewport());
-  const discoverEnabled = viewport !== null && viewport.zoom >= DISCOVER_MIN_ZOOM;
+  const routeCamera =
+    routeViewport.lat !== undefined &&
+    routeViewport.lng !== undefined &&
+    routeViewport.zoom !== undefined
+      ? { lat: routeViewport.lat, lng: routeViewport.lng, zoom: routeViewport.zoom }
+      : undefined;
+  const routeCameraKey = routeCamera
+    ? `${routeCamera.lat.toString()},${routeCamera.lng.toString()},${routeCamera.zoom.toString()}`
+    : undefined;
+  // A route camera present at mount is consumed by MapLibre's constructor.
+  // Later values that did not originate from this canvas are back/forward or
+  // bookmark navigation and must move the retained instance.
+  const lastReportedRouteCameraKey = useRef(routeCameraKey);
+  const [startViewport] = useState(() => {
+    return routeCamera ?? initialViewport();
+  });
+  const restoredRouteCamera =
+    routeCamera && routeCameraKey && routeCameraKey !== lastReportedRouteCameraKey.current
+      ? { ...routeCamera, key: routeCameraKey }
+      : null;
+  const privateMapProjection =
+    projection.kind === "all" || projection.kind === "list" || projection.kind === "post";
+  const interactiveChrome = privateMapProjection && !readOnly && !idle;
+  const discoverEnabled =
+    interactiveChrome && viewport !== null && viewport.zoom >= DISCOVER_MIN_ZOOM;
+
+  // `enabled: false` does not cancel a request which was already running.
+  // Full occlusion explicitly aborts the query's signal; unmounting search
+  // below likewise cancels its now-unobserved request.
+  useEffect(() => {
+    if (idle || readOnly || !privateMapProjection) {
+      void queryClient.cancelQueries({ queryKey: ["discover"] });
+    }
+  }, [idle, privateMapProjection, queryClient, readOnly]);
 
   // Bounded, debounced viewport POI discovery (spec/src/data-sources.md
   // budgets). An idle canvas issues NO requests at all.
@@ -131,12 +177,12 @@ export function MapCanvas() {
       if (!viewport) throw new Error("no viewport");
       return poiResolver.discover(viewport.bbox, { signal });
     },
-    enabled: discoverEnabled && !idle,
+    enabled: discoverEnabled,
     staleTime: 5 * 60_000,
   });
 
   const poiPins: PoiPinFeature[] = (
-    discoverEnabled && !idle
+    discoverEnabled
       ? (discoverQuery.data?.pois ?? []).map((poi: ResolvedPoi) => ({
           refKey: refKey(poi.osmRef),
           ref: poi.osmRef,
@@ -182,54 +228,79 @@ export function MapCanvas() {
         )
       : undefined;
 
-  const placePins: PlacePinFeature[] = (libraryPlaces ?? []).flatMap((view) => {
-    const facts = displayFacts(view.place);
-    if (!facts) return [];
-    const memberListIds = membership?.[view.place.id] ?? [];
-    // Deterministic marker when in several lists: the lowest list id leads.
-    const memberLists = [...memberListIds]
-      .sort()
-      .map((id) => listsById.get(id))
-      .filter((l): l is NonNullable<typeof l> => l !== undefined);
-    const focused = focusPlaceIds?.has(view.place.id) ?? true;
-    if (projection.kind === "post") {
-      // Reading shows only the embeds; the editor adds the list as candidates.
-      if (!focused && !postCandidateIds?.has(view.place.id)) return [];
-    }
-    if (projection.kind === "all") {
-      // The list toggles are the canvas's primary filter: a place hides once
-      // EVERY list containing it is toggled off.
-      const visible = memberListIds.some((id) => !hiddenListIds.includes(id));
-      if (!visible) return [];
-    }
-    const marker = memberLists[0]?.marker ?? FALLBACK_MARKER;
-    return [
-      {
-        placeId: view.place.id,
-        name: facts.name ?? "Place",
-        lat: facts.lat,
-        lng: facts.lng,
-        color: memberLists.length > 0 ? marker.color : DEFAULT_PIN_COLOR,
-        icon: marker.icon,
-        unlinked: view.place.resolutionState === "unlinked",
-        multi: memberLists.length > 1,
-        dimmed: !focused,
-      },
-    ];
-  });
+  const placePins: PlacePinFeature[] =
+    !privateMapProjection || readOnly
+      ? []
+      : (libraryPlaces ?? []).flatMap((view) => {
+          const facts = displayFacts(view.place);
+          if (!facts) return [];
+          const memberListIds = membership?.[view.place.id] ?? [];
+          // Deterministic marker when in several lists: the lowest list id leads.
+          const memberLists = [...memberListIds]
+            .sort()
+            .map((id) => listsById.get(id))
+            .filter((l): l is NonNullable<typeof l> => l !== undefined);
+          const focused = focusPlaceIds?.has(view.place.id) ?? true;
+          if (projection.kind === "post") {
+            // Reading shows only the embeds; the editor adds the list as candidates.
+            if (!focused && !postCandidateIds?.has(view.place.id)) return [];
+          }
+          if (projection.kind === "all") {
+            // The list toggles are the canvas's primary filter: a place hides once
+            // EVERY list containing it is toggled off.
+            const visible = memberListIds.some((id) => !hiddenListIds.includes(id));
+            if (!visible) return [];
+          }
+          // A list/post projection belongs to exactly one list, even if a place is
+          // also a member elsewhere. Only the all-lists projection uses the
+          // deterministic multi-list badge.
+          const projectionList =
+            projection.kind === "list"
+              ? listsById.get(projection.listId)
+              : projection.kind === "post" && post
+                ? listsById.get(post.listId)
+                : undefined;
+          const marker = projectionList?.marker ?? memberLists[0]?.marker ?? FALLBACK_MARKER;
+          return [
+            {
+              placeId: view.place.id,
+              name: facts.name ?? "Place",
+              lat: facts.lat,
+              lng: facts.lng,
+              color: memberLists.length > 0 ? marker.color : DEFAULT_PIN_COLOR,
+              icon: marker.icon,
+              unlinked: view.place.resolutionState === "unlinked",
+              multi: projection.kind === "all" && memberLists.length > 1,
+              dimmed: !focused,
+            },
+          ];
+        });
 
   // Review projection: the item under review plus its labelled candidates on
   // the MAIN canvas (spec/src/interop.md §Import queue model — the bespoke
   // mini map is retired).
   const markPins: MarkPinFeature[] =
     projection.kind === "review" && reviewItem
-      ? (reviewItem.candidates ?? []).map((candidate, index) => ({
-          key: `${reviewItem.id}:${candidate.ref.type}/${candidate.ref.id}`,
-          name: candidate.name,
-          label: String.fromCharCode(65 + index),
-          lat: candidate.lat,
-          lng: candidate.lng,
-        }))
+      ? [
+          ...(reviewItem.coords
+            ? [
+                {
+                  key: `${reviewItem.id}:imported`,
+                  name: reviewItem.raw.title,
+                  label: "•",
+                  lat: reviewItem.coords.lat,
+                  lng: reviewItem.coords.lng,
+                },
+              ]
+            : []),
+          ...(reviewItem.candidates ?? []).map((candidate, index) => ({
+            key: `${reviewItem.id}:${candidate.ref.type}/${candidate.ref.id}`,
+            name: candidate.name,
+            label: String.fromCharCode(65 + index),
+            lat: candidate.lat,
+            lng: candidate.lng,
+          })),
+        ]
       : [];
 
   // The selection is marked on the map immediately, listed or not. In the
@@ -240,15 +311,17 @@ export function MapCanvas() {
           const selected = projection.pins.find((pin) => pin.selected);
           return selected ? { lat: selected.lat, lng: selected.lng } : null;
         })()
-      : selection?.kind === "osm" && selection.hint
-        ? { lat: selection.hint.lat, lng: selection.hint.lng }
-        : selection?.kind === "place"
-          ? (() => {
-              const view = (libraryPlaces ?? []).find((v) => v.place.id === selection.placeId);
-              const facts = view ? displayFacts(view.place) : undefined;
-              return facts ? { lat: facts.lat, lng: facts.lng } : null;
-            })()
-          : null;
+      : readOnly || !privateMapProjection
+        ? null
+        : selection?.kind === "osm" && selection.hint
+          ? { lat: selection.hint.lat, lng: selection.hint.lng }
+          : selection?.kind === "place"
+            ? (() => {
+                const view = (libraryPlaces ?? []).find((v) => v.place.id === selection.placeId);
+                const facts = view ? displayFacts(view.place) : undefined;
+                return facts ? { lat: facts.lat, lng: facts.lng } : null;
+              })()
+            : null;
 
   // One camera move per projection change — never before its pins exist.
   const fitTo = (() => {
@@ -267,16 +340,20 @@ export function MapCanvas() {
       return bounds ? { bounds, key: `${projection.kind}:${id}` } : null;
     }
     if (projection.kind === "review" && reviewItem) {
-      const points = [
-        ...markPins,
-        ...(reviewItem.coords ? [{ lat: reviewItem.coords.lat, lng: reviewItem.coords.lng }] : []),
-      ];
-      const bounds = boundsOf(points);
+      const bounds = boundsOf(markPins);
       return bounds ? { bounds, key: `review:${reviewItem.id}` } : null;
     }
     if (projection.kind === "shared") {
-      const bounds = boundsOf(projection.pins);
-      return bounds ? { bounds, key: `shared:${projection.pins.length.toString()}` } : null;
+      const focusKeys = projection.focusKeys?.length ? new Set(projection.focusKeys) : undefined;
+      const framedPins = focusKeys
+        ? projection.pins.filter((pin) => focusKeys.has(pin.key))
+        : projection.pins;
+      const bounds = boundsOf(framedPins);
+      const pinKey = projection.pins
+        .map((pin) => `${pin.key}:${pin.lat.toFixed(5)}:${pin.lng.toFixed(5)}`)
+        .join("|");
+      const focusKey = projection.focusKeys?.join(",") ?? "all";
+      return bounds ? { bounds, key: `shared:${pinKey}:focus:${focusKey}` } : null;
     }
     return null;
   })();
@@ -289,6 +366,7 @@ export function MapCanvas() {
           label: String(index + 1),
           lat: pin.lat,
           lng: pin.lng,
+          ...(pin.unlinked ? { unlinked: true } : {}),
         }))
       : [];
 
@@ -308,18 +386,38 @@ export function MapCanvas() {
   return (
     <div className="relative h-full" data-testid="map-page" data-canvas-idle={idle ? "1" : "0"}>
       <MapView
+        idle={idle}
+        layoutKey={pane}
         styleUrl={mapStyleProvider.style().styleUrl}
         initialCenter={{ lat: startViewport.lat, lng: startViewport.lng }}
         initialZoom={startViewport.zoom}
+        routeCamera={restoredRouteCamera}
         placePins={shown.placePins}
         poiPins={shown.poiPins}
         markPins={shown.markPins}
         selectionPin={shown.selectionPin}
         flyTo={shown.flyTo}
         fitTo={shown.fitTo}
-        onSelectPlace={selectPlace}
-        onSelectPoi={(pin) =>
-          selectOsm(pin.ref, { name: pin.name, lat: pin.lat, lng: pin.lng, category: pin.category })
+        onSelectPlace={
+          readOnly
+            ? undefined
+            : (placeId) => {
+                selectPlace(placeId);
+                if (projection.kind === "post") {
+                  useProjectionStore.getState().postSelectHandler?.(placeId);
+                }
+              }
+        }
+        onSelectPoi={
+          readOnly
+            ? undefined
+            : (pin) =>
+                selectOsm(pin.ref, {
+                  name: pin.name,
+                  lat: pin.lat,
+                  lng: pin.lng,
+                  category: pin.category,
+                })
         }
         onSelectMark={(mark) => {
           // A shared-pin tap selects its article entry in the viewer pane.
@@ -334,62 +432,111 @@ export function MapCanvas() {
           );
           if (!candidate) return;
           void (async () => {
-            await resolveReviewItem(
-              dexieRepo,
-              { search: searchProvider, resolver: poiResolver },
-              reviewItem.id,
-              { kind: "candidate", ref: candidate.ref },
-              nowIso(),
-            );
-            const placed = await dexieRepo.db.importItems.get(reviewItem.id);
-            if (placed?.placeId) selectPlace(placed.placeId);
-          })();
-        }}
-        onLongPress={(pos) => {
-          // Placing a review-queue import item: the long-press IS the placement.
-          if (placingImportItemId) {
-            const itemId = placingImportItemId;
-            stopPlacingImportItem();
-            void (async () => {
-              const item = await dexieRepo.db.importItems.get(itemId);
-              await resolveReviewItem(
+            try {
+              const outcome = await resolveReviewItem(
                 dexieRepo,
                 { search: searchProvider, resolver: poiResolver },
-                itemId,
-                { kind: "coords", lat: pos.lat, lng: pos.lng },
+                reviewItem.id,
+                { kind: "candidate", ref: candidate.ref },
                 nowIso(),
               );
-              const placed = item ? await dexieRepo.db.importItems.get(itemId) : undefined;
-              if (placed?.placeId) selectPlace(placed.placeId);
-            })();
-            return;
-          }
-          openPicker(pos);
+              if (outcome.status === "pending") {
+                setImportReviewError(reviewItem.id, outcome.reason);
+                setPane("split");
+                return;
+              }
+              if (outcome.status === "resolved") {
+                clearImportReviewError();
+                const placed = await dexieRepo.db.importItems.get(reviewItem.id);
+                if (placed?.placeId) selectPlace(placed.placeId);
+              }
+            } catch (error) {
+              setImportReviewError(
+                reviewItem.id,
+                error instanceof Error ? error.message : String(error),
+              );
+              setPane("split");
+            }
+          })();
         }}
+        onLongPress={
+          readOnly
+            ? undefined
+            : (pos) => {
+                // Placing a review-queue import item: the long-press IS the placement.
+                if (placingImportItemId) {
+                  const itemId = placingImportItemId;
+                  stopPlacingImportItem();
+                  void (async () => {
+                    try {
+                      const outcome = await resolveReviewItem(
+                        dexieRepo,
+                        { search: searchProvider, resolver: poiResolver },
+                        itemId,
+                        { kind: "coords", lat: pos.lat, lng: pos.lng },
+                        nowIso(),
+                      );
+                      if (outcome.status === "pending") {
+                        setImportReviewError(itemId, outcome.reason);
+                        setPane("split");
+                        return;
+                      }
+                      if (outcome.status === "resolved") {
+                        clearImportReviewError();
+                        const placed = await dexieRepo.db.importItems.get(itemId);
+                        if (placed?.placeId) selectPlace(placed.placeId);
+                      }
+                    } catch (error) {
+                      setImportReviewError(
+                        itemId,
+                        error instanceof Error ? error.message : String(error),
+                      );
+                      setPane("split");
+                    }
+                  })();
+                  return;
+                }
+                openPicker(pos);
+              }
+        }
         onViewportChange={(view) => {
           setViewport(view);
           // The next launch starts where this session left off — coarsened to
           // a ~1 km grid so a Locate-driven recenter never persists a precise
           // position (spec/src/map-view.md: nothing precise leaves the session).
           const coarse = (value: number) => Math.round(value * 100) / 100;
-          persistViewport({
+          const nextViewport = {
             lat: coarse(view.center.lat),
             lng: coarse(view.center.lng),
-            zoom: view.zoom,
-          });
+            zoom: Math.round(view.zoom * 100) / 100,
+          };
+          persistViewport(nextViewport);
+          lastReportedRouteCameraKey.current = `${nextViewport.lat.toString()},${nextViewport.lng.toString()},${nextViewport.zoom.toString()}`;
+          // The singleton map survives this replace-navigation; typed route
+          // search makes the current view restorable/bookmarkable without
+          // adding one history entry per pan gesture.
+          onRouteViewportChange?.(nextViewport);
         }}
       />
-      {placingImportItemId ? (
-        <output
+      {!idle && !readOnly && placingImportItemId ? (
+        <div
+          role="status"
           className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-orange-700/90 px-3 py-1 text-xs text-white"
           data-testid="placing-import-hint"
         >
-          Long-press (or right-click) the map to place the imported item
-        </output>
+          <span>Long-press (or right-click) the map to place the imported item</span>
+          <button
+            type="button"
+            className="ml-2 font-semibold underline"
+            onClick={stopPlacingImportItem}
+          >
+            Cancel
+          </button>
+        </div>
       ) : null}
       {/* The list toggles row — the canvas's primary filter
           (spec/src/map-view.md §The canvas): every list shows by default. */}
-      {(lists ?? []).length > 0 ? (
+      {interactiveChrome && projection.kind === "all" && (lists ?? []).length > 0 ? (
         <fieldset
           className="absolute top-16 left-3 z-10 flex max-w-[60%] flex-wrap gap-1.5"
           aria-label="List toggles"
@@ -416,7 +563,7 @@ export function MapCanvas() {
       ) : null}
       {/* Category chips (spec/src/map-view.md): demoted behind the search
           affordance; they filter live-POI discovery only. */}
-      {filtersOpen ? (
+      {interactiveChrome && filtersOpen ? (
         <fieldset
           className="absolute top-28 left-1/2 z-10 flex w-[calc(100%-1.5rem)] min-w-0 max-w-md -translate-x-1/2 flex-wrap gap-1.5"
           aria-label="Filter nearby places by category"
@@ -449,7 +596,7 @@ export function MapCanvas() {
       {/* The synchronized non-map equivalent of canvas results
           (spec/src/map-view.md §Accessibility): every discovered POI is
           reachable by keyboard and screen reader. */}
-      {poiPins.length > 0 ? (
+      {interactiveChrome && poiPins.length > 0 ? (
         <section
           aria-label="Nearby places (list view)"
           className="absolute bottom-16 left-3 z-10 max-h-40 w-56 overflow-y-auto rounded-lg bg-white/95 p-1.5 text-xs shadow"
@@ -477,46 +624,48 @@ export function MapCanvas() {
           </ul>
         </section>
       ) : null}
-      <div className="absolute top-3 left-1/2 z-10 flex w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 items-start gap-1.5">
-        <div className="min-w-0 flex-1">
-          <SearchBar
-            onSelect={(result) => {
-              selectOsm(result.ref, {
-                name: result.name,
-                lat: result.lat,
-                lng: result.lng,
-                ...(result.category ? { category: result.category } : {}),
-              });
-              requestFlyTo({ lat: result.lat, lng: result.lng, zoom: 17 });
-            }}
-          />
+      {interactiveChrome ? (
+        <div className="absolute top-3 left-1/2 z-10 flex w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 items-start gap-1.5">
+          <div className="min-w-0 flex-1">
+            <SearchBar
+              onSelect={(result) => {
+                selectOsm(result.ref, {
+                  name: result.name,
+                  lat: result.lat,
+                  lng: result.lng,
+                  ...(result.category ? { category: result.category } : {}),
+                });
+                requestFlyTo({ lat: result.lat, lng: result.lng, zoom: 17 });
+              }}
+            />
+          </div>
+          <button
+            type="button"
+            aria-pressed={filtersOpen}
+            aria-label="Nearby category filters"
+            data-testid="toggle-category-chips"
+            onClick={() => setFiltersOpen((open) => !open)}
+            className={`shrink-0 rounded-full px-2.5 py-1.5 text-xs font-medium shadow ${
+              filtersOpen || activeFilters.size > 0
+                ? "bg-stone-800 text-white"
+                : "bg-white/95 text-stone-700"
+            }`}
+          >
+            ⚲
+          </button>
         </div>
-        <button
-          type="button"
-          aria-pressed={filtersOpen}
-          aria-label="Nearby category filters"
-          data-testid="toggle-category-chips"
-          onClick={() => setFiltersOpen((open) => !open)}
-          className={`shrink-0 rounded-full px-2.5 py-1.5 text-xs font-medium shadow ${
-            filtersOpen || activeFilters.size > 0
-              ? "bg-stone-800 text-white"
-              : "bg-white/95 text-stone-700"
-          }`}
-        >
-          ⚲
-        </button>
-      </div>
-      {viewport && !idle && !discoverEnabled ? (
+      ) : null}
+      {interactiveChrome && viewport && !discoverEnabled ? (
         <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-stone-800/85 px-3 py-1 text-xs text-white">
           Zoom in to see nearby places
         </div>
       ) : null}
-      {discoverEnabled && !idle && discoverQuery.data?.truncated ? (
+      {discoverEnabled && discoverQuery.data?.truncated ? (
         <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-stone-800/85 px-3 py-1 text-xs text-white">
           Showing a capped set of places — zoom in for more
         </div>
       ) : null}
-      {discoverEnabled && !idle && discoverQuery.isError ? (
+      {discoverEnabled && discoverQuery.isError ? (
         <output
           className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-orange-700/90 px-3 py-1 text-xs text-white"
           data-testid="discover-error"
@@ -524,8 +673,7 @@ export function MapCanvas() {
           Nearby places unavailable right now — your saved pins are unaffected
         </output>
       ) : null}
-      {selection ? <PlaceSheet /> : null}
-      {pickerAt ? (
+      {!idle && !readOnly && pickerAt ? (
         <CandidatePicker
           lat={pickerAt.lat}
           lng={pickerAt.lng}
@@ -545,7 +693,7 @@ export function MapCanvas() {
           }}
         />
       ) : null}
-      {manualAt ? (
+      {!idle && !readOnly && manualAt ? (
         <ManualPinDialog
           lat={manualAt.lat}
           lng={manualAt.lng}

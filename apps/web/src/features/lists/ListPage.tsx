@@ -111,6 +111,9 @@ export function ListPage() {
   };
 
   const placeBlocks = blocks ?? [];
+  const blockerPlaceNames = Object.fromEntries(
+    placeBlocks.map((view) => [view.place.id, displayFacts(view.place)?.name ?? "Unnamed place"]),
+  );
 
   // Fail closed: a portable export with silently missing notes is worse than
   // no export — read errors abort the download and surface instead.
@@ -522,6 +525,14 @@ export function ListPage() {
         <BlockerDialog
           title={refusal.title}
           blockers={refusal.blockers}
+          placeNames={blockerPlaceNames}
+          onOpenPlace={(placeId) => {
+            const blocked = placeBlocks.find((view) => view.place.id === placeId);
+            const facts = blocked ? displayFacts(blocked.place) : undefined;
+            setRefusal(undefined);
+            selectPlace(placeId);
+            if (facts) requestFlyTo({ lat: facts.lat, lng: facts.lng, zoom: 16 });
+          }}
           onClose={() => setRefusal(undefined)}
         />
       ) : null}

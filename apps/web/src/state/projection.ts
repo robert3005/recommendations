@@ -30,8 +30,12 @@ export type CanvasProjection =
         name: string;
         lat: number;
         lng: number;
+        /** Manual public anchors are visibly labelled as unlinked. */
+        unlinked?: boolean;
         selected?: boolean;
       }[];
+      /** Article block(s) currently in view; only these pins are framed. */
+      focusKeys?: string[];
     };
 
 interface ProjectionStore {
@@ -43,6 +47,12 @@ interface ProjectionStore {
    */
   sharedSelectHandler: ((key: string) => void) | null;
   setSharedSelectHandler: (handler: ((key: string) => void) | null) => void;
+  /**
+   * The private post reader's map→article channel. Map pins carry place ids,
+   * so the mounted post reader owns the matching scroll/highlight behaviour.
+   */
+  postSelectHandler: ((placeId: string) => void) | null;
+  setPostSelectHandler: (handler: ((placeId: string) => void) | null) => void;
 }
 
 export const useProjectionStore = create<ProjectionStore>((set) => ({
@@ -50,6 +60,8 @@ export const useProjectionStore = create<ProjectionStore>((set) => ({
   setProjection: (projection) => set({ projection }),
   sharedSelectHandler: null,
   setSharedSelectHandler: (handler) => set({ sharedSelectHandler: handler }),
+  postSelectHandler: null,
+  setPostSelectHandler: (handler) => set({ postSelectHandler: handler }),
 }));
 
 /** Publish this route's projection while it is mounted. */
@@ -61,4 +73,10 @@ export function useCanvasProjection(projection: CanvasProjection): void {
   useEffect(() => {
     setProjection(JSON.parse(key) as CanvasProjection);
   }, [key, setProjection]);
+}
+
+/** Clear a public route's canvas while its document is loading or unavailable. */
+export function EmptySharedCanvasProjection() {
+  useCanvasProjection({ kind: "shared", pins: [] });
+  return null;
 }

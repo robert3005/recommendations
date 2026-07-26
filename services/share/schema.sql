@@ -1,4 +1,6 @@
--- Share-service D1 schema (spec/src/sharing.md §Share service).
+-- Share-service D1 schema snapshot (spec/src/sharing.md §Share service).
+-- Production and fresh databases use the ordered migrations/ workflow; this
+-- file is a reference, not an upgrade command.
 CREATE TABLE IF NOT EXISTS documents (
   slug TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('list', 'post', 'note')),

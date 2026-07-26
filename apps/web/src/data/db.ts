@@ -21,17 +21,21 @@ import type {
   Publication,
   Tag,
   TagAssignment,
+  VersionVector,
 } from "@placemarks/domain";
 import { rankAfter } from "@placemarks/domain";
 import Dexie, { type EntityTable } from "dexie";
 import { newId } from "../lib/id";
 import {
+  canonicalPivotBlock,
   type PivotAttachmentRow,
   type PivotBlockRow,
   type PivotListRow,
   type PivotNoteRow,
   type PivotPublicationRow,
+  pivotBlockIndex,
   pivotGuideLayer,
+  pivotNoteTargetKey,
 } from "./pivot";
 
 export type PlaceRow = Place & { refKeys: string[] };
@@ -81,6 +85,8 @@ export interface MutationRow {
   table: string;
   entityId: string;
   hlc: string;
+  /** Per-entity causal context; absent only on pre-vector queued rows. */
+  version?: VersionVector;
   row: Record<string, unknown>;
   createdAt: string;
 }
@@ -89,6 +95,8 @@ export interface MutationRow {
 export interface SyncStateRow {
   id: "sync";
   actorId: string;
+  /** Durable checkpoint for the device HLC; syncRevs is the crash-safe fallback. */
+  clock?: string;
   accountId?: string;
   /** Bearer token naming the sync scope; never in any public document. */
   token?: string;
@@ -96,6 +104,8 @@ export interface SyncStateRow {
   cursor?: string;
   lastSyncedAt?: string;
   lastError?: string;
+  /** Scope for which the pre-sync local library has been snapshotted once. */
+  bootstrappedAccountId?: string;
 }
 
 /**
@@ -107,6 +117,8 @@ export interface SyncStateRow {
 export interface SyncRevRow {
   key: string;
   hlc: string;
+  /** Per-entity causal context; absent only on pre-vector revision rows. */
+  version?: VersionVector;
   origin: "local" | "remote";
 }
 
@@ -313,16 +325,30 @@ export class PlacemarksDb extends Dexie {
         blockTagSelections: "id, blockId, tagId, [blockId+tagId], updatedAt",
       })
       .upgrade(async (tx) => {
-        const now = new Date().toISOString();
+        const lists = (await tx.table("lists").toArray()) as PivotListRow[];
+        const listBlocks = (await tx.table("listBlocks").toArray()) as PivotBlockRow[];
+        const notes = (await tx.table("notes").toArray()) as PivotNoteRow[];
+        const blockNoteAttachments = (await tx
+          .table("blockNoteAttachments")
+          .toArray()) as PivotAttachmentRow[];
+        const publications = (await tx.table("publications").toArray()) as PivotPublicationRow[];
         const changes = pivotGuideLayer({
-          lists: (await tx.table("lists").toArray()) as PivotListRow[],
-          listBlocks: (await tx.table("listBlocks").toArray()) as PivotBlockRow[],
-          notes: (await tx.table("notes").toArray()) as PivotNoteRow[],
-          blockNoteAttachments: (await tx
-            .table("blockNoteAttachments")
-            .toArray()) as PivotAttachmentRow[],
-          publications: (await tx.table("publications").toArray()) as PivotPublicationRow[],
+          lists,
+          listBlocks,
+          notes,
+          blockNoteAttachments,
+          publications,
         });
+        // The legacy query indexes are never authoritative. Rebuild them from
+        // canonical content/target even when they were stale before upgrade.
+        for (const block of listBlocks) {
+          await tx
+            .table("listBlocks")
+            .update(block.id, pivotBlockIndex(canonicalPivotBlock(block)));
+        }
+        for (const note of notes) {
+          await tx.table("notes").update(note.id, { targetKey: pivotNoteTargetKey(note.target) });
+        }
         for (const [listId, marker] of changes.markers) {
           await tx.table("lists").update(listId, {
             marker,
@@ -331,42 +357,37 @@ export class PlacemarksDb extends Dexie {
           });
         }
         for (const post of changes.posts) {
-          await tx.table("posts").put({ ...post, createdAt: now, updatedAt: now });
+          await tx.table("posts").put(post);
         }
         for (const block of changes.postBlocks) {
           await tx.table("postBlocks").put({
             ...block,
-            content:
-              block.kind === "section"
-                ? { type: "section", noteId: block.refId }
-                : { type: "place", placeId: block.refId },
-            createdAt: now,
-            updatedAt: now,
+            ...pivotBlockIndex(block.content),
           });
         }
-        for (const blockId of changes.tombstoneListBlockIds) {
-          await tx.table("listBlocks").update(blockId, { deleted: true, updatedAt: now });
+        for (const [blockId, updatedAt] of changes.tombstoneListBlocks) {
+          await tx.table("listBlocks").update(blockId, { deleted: true, updatedAt });
         }
-        for (const [noteId, postId] of changes.retargetNotes) {
+        for (const [noteId, change] of changes.retargetNotes) {
           await tx.table("notes").update(noteId, {
-            target: { kind: "post", postId },
-            targetKey: `post:${postId}`,
-            updatedAt: now,
+            target: { kind: "post", postId: change.postId },
+            targetKey: `post:${change.postId}`,
+            updatedAt: change.updatedAt,
           });
         }
-        for (const [attachmentId, blockId] of changes.moveAttachments) {
+        for (const [attachmentId, change] of changes.moveAttachments) {
           await tx.table("blockNoteAttachments").update(attachmentId, {
-            blockId,
-            updatedAt: now,
+            blockId: change.blockId,
+            updatedAt: change.updatedAt,
           });
         }
         // The publication follows the editorial content to the post; its
         // hosted slug keeps serving the same document from /s/lists.
-        for (const [publicationId, postId] of changes.retargetPublications) {
+        for (const [publicationId, change] of changes.retargetPublications) {
           await tx.table("publications").update(publicationId, {
-            target: { kind: "post", id: postId },
+            target: { kind: "post", id: change.postId },
             channel: "lists",
-            updatedAt: now,
+            updatedAt: change.updatedAt,
           });
         }
       });

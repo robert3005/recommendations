@@ -59,10 +59,7 @@ test("publish → public read-only page → update → unpublish", async ({ page
   await expect(page.getByTestId("shared-place")).toHaveCount(1);
 
   // Publish the update → the page shows both places.
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Lists" })
-    .click();
+  await page.goto("/");
   await page.getByRole("link", { name: /Hosted picks/ }).click();
   await expect(page.getByTestId("publication-status")).toContainText("local changes");
   await page.getByTestId("publish-update").click();
@@ -71,10 +68,7 @@ test("publish → public read-only page → update → unpublish", async ({ page
   await expect(page.getByTestId("shared-place")).toHaveCount(2);
 
   // Unpublish → the public URL shows the designed gone state.
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Lists" })
-    .click();
+  await page.goto("/");
   await page.getByRole("link", { name: /Hosted picks/ }).click();
   await page.getByTestId("unpublish").click();
   await expect(page.getByTestId("publication-status")).toHaveAttribute("data-status", "revoked");

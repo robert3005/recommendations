@@ -150,6 +150,13 @@ export function PostEditorPage() {
     return () => setEmbedTargetPost(null);
   }, [postId, setEmbedTargetPost]);
 
+  const blockKey = (blocks ?? []).map((view) => view.block.id).join("|");
+  useEffect(() => {
+    if (!blockKey || !window.location.hash) return;
+    const blockId = decodeURIComponent(window.location.hash.slice(1));
+    document.getElementById(blockId)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [blockKey]);
+
   if (!post) return <div className="p-4 text-stone-500">Post not found.</div>;
 
   const embeddedIds = new Set(
@@ -261,7 +268,8 @@ export function PostEditorPage() {
           return (
             <li
               key={view.block.id}
-              className="rounded-lg border border-stone-200 bg-stone-50 p-3"
+              id={view.block.id}
+              className="rounded-lg border border-stone-200 bg-stone-50 p-3 target:ring-2 target:ring-stone-400"
               data-testid={isSection ? "editor-section" : "editor-embed"}
             >
               <div className="flex items-start justify-between gap-2">

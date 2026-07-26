@@ -48,6 +48,61 @@ async function signIn(
 }
 
 describe("multi-device sync", () => {
+  it("bootstraps an existing pre-sync library the first time its account is enabled", async () => {
+    const wire = service();
+    const established = await device("pre-v8-library");
+    const fresh = await device("pre-v8-fresh");
+    try {
+      await established.createList({
+        id: "legacy-list",
+        name: "Years of places",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      const place = (
+        await established.addToList(
+          "legacy-list",
+          { kind: "manual", facts: { name: "Old favourite", lat: 51.5, lng: -0.12 } },
+          NOW,
+        )
+      ).place;
+      await established.createNote({
+        id: "legacy-note",
+        target: { kind: "place", placeId: place.id },
+        body: "Written before sync existed",
+        mediaIds: [],
+        shareable: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      // This is the material state of an upgraded v7 database: domain rows,
+      // but neither local revisions nor mutation jobs.
+      await established.db.transaction(
+        "rw",
+        [established.db.mutationOutbox, established.db.syncRevs],
+        async () => {
+          await established.db.mutationOutbox.clear();
+          await established.db.syncRevs.clear();
+        },
+      );
+
+      await signIn(established, "owner@example.com", wire);
+      expect(await established.db.mutationOutbox.count()).toBeGreaterThanOrEqual(4);
+      await syncNow(established, undefined, wire.fetcher);
+      await signIn(fresh, "owner@example.com", wire);
+      await syncNow(fresh, undefined, wire.fetcher);
+
+      expect((await fresh.listLists()).map((list) => list.id)).toEqual(["legacy-list"]);
+      expect((await fresh.listNotesForPlace(place.id)).map((note) => note.body)).toEqual([
+        "Written before sync existed",
+      ]);
+    } finally {
+      established.db.close();
+      fresh.db.close();
+    }
+  });
+
   it("converges lists, places, tags, notes, and posts across two devices", async () => {
     const wire = service();
     const a = await device("sync-a");
@@ -228,6 +283,74 @@ describe("multi-device sync", () => {
     } finally {
       a.db.close();
       b.db.close();
+    }
+  });
+
+  it("rescues Markdown when the remote note tombstone arrives before its target tombstone", async () => {
+    const repo = await device("tombstone-first");
+    try {
+      await repo.createList({
+        id: "list-1",
+        name: "Lisbon",
+        marker: markerAt(0),
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      const place = (
+        await repo.addToList(
+          "list-1",
+          { kind: "manual", facts: { name: "Pin", lat: 38.7, lng: -9.1 } },
+          NOW,
+        )
+      ).place;
+      await repo.createNote({
+        id: "note-1",
+        target: { kind: "place", placeId: place.id },
+        body: "original",
+        mediaIds: [],
+        shareable: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      const edited = (await repo.listNotesForPlace(place.id))[0];
+      if (!edited) throw new Error("seed failed");
+      await repo.updateNote({ ...edited, body: "words written during teardown", updatedAt: NOW });
+      const noteRow = await repo.db.notes.get("note-1");
+      const placeRow = await repo.db.places.get(place.id);
+      const membership = (await repo.db.listBlocks.toArray()).find(
+        (block) => !block.deleted && block.refId === place.id,
+      );
+      if (!noteRow || !placeRow || !membership) throw new Error("seed rows missing");
+
+      await repo.applyRemoteChanges([
+        {
+          table: "notes",
+          entityId: noteRow.id,
+          actorId: "device-b",
+          hlc: "999999999999990:000000:device-b",
+          row: { ...noteRow, body: "original", deleted: true },
+        },
+        {
+          table: "listBlocks",
+          entityId: membership.id,
+          actorId: "device-b",
+          hlc: "999999999999991:000000:device-b",
+          row: { ...membership, deleted: true },
+        },
+        {
+          table: "places",
+          entityId: placeRow.id,
+          actorId: "device-b",
+          hlc: "999999999999992:000000:device-b",
+          row: { ...placeRow, deleted: true },
+        },
+      ]);
+
+      expect((await repo.db.syncConflicts.toArray()).map((conflict) => conflict.body)).toContain(
+        "words written during teardown",
+      );
+    } finally {
+      repo.db.close();
     }
   });
 

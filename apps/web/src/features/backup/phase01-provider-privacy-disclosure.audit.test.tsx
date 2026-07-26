@@ -30,10 +30,13 @@ describe("Phase 0 provider privacy disclosure", () => {
           /(?:note bodies|notes)/i,
           /(?:list names|lists)/i,
           /tags/i,
-          /(?:never|not sent|do not send|doesn't send)/i,
+          /never sent/i,
+          /(?:basemap|search|geocod|POI)/i,
         ),
       )
       .toBe(true);
+    expect.soft(containsAll(/optional account sync/i, /private library/i)).toBe(true);
+    expect.soft(containsAll(/explicitly publish|share/i, /selected content/i)).toBe(true);
     expect.soft(containsAll(/direct/i, /proxied/i)).toBe(true);
     expect.soft(text).toMatch(/retention/i);
   });

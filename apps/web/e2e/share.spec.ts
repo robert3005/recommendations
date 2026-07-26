@@ -75,11 +75,9 @@ test("a snapshot link renders read-only in a fresh context and imports cleanly",
   // The recipient imports the guide into their own (empty) library.
   await viewer.getByTestId("save-shared-guide").click();
   await expect(viewer.getByTestId("save-result")).toContainText("Added 1 place");
-  await viewer
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Lists" })
-    .click();
-  await expect(viewer.getByRole("link", { name: /Weekend picks/ })).toBeVisible();
+  await viewer.getByTestId("open-saved-list").click();
+  await expect(viewer.getByTestId("list-page")).toContainText("Weekend picks");
+  await expect(viewer.getByRole("navigation", { name: "Primary" })).toBeVisible();
   await viewer.context().close();
 });
 
@@ -88,5 +86,6 @@ test("a damaged snapshot link fails with a designed error, never a blank page", 
 }) => {
   await page.goto("/l#definitely-not-a-guide");
   await expect(page.getByTestId("snapshot-error")).toContainText("Could not open");
-  await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
+  await expect(page.getByTestId("public-readonly-chrome")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(0);
 });

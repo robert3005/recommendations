@@ -29,9 +29,15 @@ const guide: SharedGuide = {
   title: "Synchronized reader",
   blocks: [
     {
+      id: "intro-section",
+      type: "section",
+      note: { body: "Two viewpoints for sunset.", title: "Sunset" },
+    },
+    {
       id: "alpha-block",
       type: "place",
       place: { kind: "manual", name: "Alpha viewpoint", lat: 38.71, lng: -9.14 },
+      tags: ["sunset", "quiet"],
     },
     {
       id: "bravo-block",
@@ -69,6 +75,27 @@ describe("Phase 4 public map/article synchronization", () => {
     const repo = new DexieRepository(`phase4-public-sync-${crypto.randomUUID()}`);
     const user = userEvent.setup();
     const scrolled = new Set<Element>();
+    const observed: Element[] = [];
+    let intersectionCallback: IntersectionObserverCallback | undefined;
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        constructor(callback: IntersectionObserverCallback) {
+          intersectionCallback = callback;
+        }
+        observe(element: Element) {
+          observed.push(element);
+        }
+        disconnect() {}
+        unobserve() {}
+        takeRecords() {
+          return [];
+        }
+        root = null;
+        rootMargin = "";
+        thresholds = [0.4];
+      },
+    );
     const previousScrollIntoView = HTMLElement.prototype.scrollIntoView;
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
@@ -77,7 +104,7 @@ describe("Phase 4 public map/article synchronization", () => {
       }),
     });
     try {
-      render(
+      const view = render(
         <RepoProvider repo={repo}>
           <SharedGuideView guide={guide} mode="snapshot" />
         </RepoProvider>,
@@ -87,6 +114,31 @@ describe("Phase 4 public map/article synchronization", () => {
       const projected = useProjectionStore.getState().projection;
       if (projected.kind !== "shared") throw new Error("viewer did not project onto the canvas");
       expect(projected.pins.map((pin) => pin.name)).toEqual(["Alpha viewpoint", "Bravo viewpoint"]);
+      expect(projected.pins.every((pin) => pin.unlinked)).toBe(true);
+      expect(
+        within(placeEntry("Alpha viewpoint")).getByTestId("shared-place-tags"),
+      ).toHaveTextContent("sunsetquiet");
+      expect(screen.getAllByTestId("open-google-maps")).toHaveLength(2);
+      expect(screen.getAllByTestId("open-apple-maps")).toHaveLength(2);
+      const proseSection = view.container.querySelector('[data-shared-follow="intro-section"]');
+      if (!proseSection) throw new Error("shared prose section missing");
+      await waitFor(() => expect(observed).toContain(proseSection));
+      act(() => {
+        intersectionCallback?.(
+          [
+            {
+              target: proseSection,
+              isIntersecting: true,
+            } as unknown as IntersectionObserverEntry,
+          ],
+          {} as IntersectionObserver,
+        );
+      });
+      await waitFor(() => {
+        const following = useProjectionStore.getState().projection;
+        if (following.kind !== "shared") throw new Error("projection lost");
+        expect(following.focusKeys).toEqual(["alpha-block", "bravo-block"]);
+      });
       // …and registered the map→article channel a canvas pin tap uses.
       const handler = useProjectionStore.getState().sharedSelectHandler;
       expect(handler).toBeTruthy();
@@ -115,6 +167,7 @@ describe("Phase 4 public map/article synchronization", () => {
       expect(screen.queryByTestId("edit-list")).not.toBeInTheDocument();
       expect(screen.queryByTestId("publish-list")).not.toBeInTheDocument();
     } finally {
+      vi.unstubAllGlobals();
       if (previousScrollIntoView) {
         Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
           configurable: true,

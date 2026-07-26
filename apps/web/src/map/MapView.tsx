@@ -9,7 +9,7 @@ import type { BBox, OsmElementRef } from "@placemarks/domain";
 import type { FeatureCollection } from "geojson";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import { DISCOVER_DEBOUNCE_MS, OSM_ATTRIBUTION_HTML } from "../config";
+import { DISCOVER_DEBOUNCE_MS, OSM_ATTRIBUTION } from "../config";
 import { MARKER_ICON_PATHS, MULTI_LIST_PIN_COLOR } from "../lib/markers";
 
 export interface PlacePinFeature {
@@ -45,13 +45,21 @@ export interface MarkPinFeature {
   label: string;
   lat: number;
   lng: number;
+  /** Public manual anchors carry an explicit unlinked map label. */
+  unlinked?: boolean;
 }
 
 export interface MapViewProps {
   styleUrl: string;
+  /** Fully occluded: retain the scene, but suspend rendering and tile work. */
+  idle?: boolean;
+  /** Changes when shell geometry changes so MapLibre remeasures its canvas. */
+  layoutKey?: string;
   /** Starting camera — the caller decides (last viewport / timezone approximation). */
   initialCenter: { lat: number; lng: number };
   initialZoom: number;
+  /** A typed URL camera restored after back/forward without remounting. */
+  routeCamera?: { lat: number; lng: number; zoom: number; key: string } | null;
   placePins: PlacePinFeature[];
   poiPins: PoiPinFeature[];
   markPins?: MarkPinFeature[];
@@ -76,6 +84,72 @@ export interface MapViewProps {
 
 const LONG_PRESS_MS = 600;
 const LONG_PRESS_TOLERANCE_PX = 8;
+
+interface IdleTile {
+  state: string;
+  aborted: boolean;
+}
+
+interface IdleTileManager {
+  pause: () => void;
+  resume: () => void;
+  reload: (sourceDataChanged?: boolean) => void;
+  getSource: () => { abortTile?: (tile: IdleTile) => Promise<void> };
+  _inViewTiles?: { getAllTiles: () => IdleTile[] };
+}
+
+interface MapIdleInternals {
+  _frameRequest?: AbortController | null;
+  _renderTaskQueue?: { clear: () => void };
+  style?: { tileManagers?: Record<string, IdleTileManager> };
+}
+
+interface IdleOwnership {
+  pausedManagers: Set<IdleTileManager>;
+  abortedManagers: Set<IdleTileManager>;
+}
+
+function tileManagersOf(map: maplibregl.Map): IdleTileManager[] {
+  const internals = map as unknown as MapIdleInternals;
+  return Object.values(internals.style?.tileManagers ?? {});
+}
+
+/**
+ * Idempotently stop every currently known render/tile path. MapLibre can add
+ * managers after construction while a style is loading, so callers always
+ * enumerate fresh and ownership records ensure we resume only our own pauses.
+ */
+function quiesce(map: maplibregl.Map, ownership: IdleOwnership): void {
+  const internals = map as unknown as MapIdleInternals;
+  map.stop();
+  internals._frameRequest?.abort();
+  internals._frameRequest = null;
+  internals._renderTaskQueue?.clear();
+
+  for (const manager of tileManagersOf(map)) {
+    if (!ownership.pausedManagers.has(manager)) {
+      // Record before pausing: synchronous data events can re-enter quiesce.
+      ownership.pausedManagers.add(manager);
+      manager.pause();
+    }
+    const source = manager.getSource();
+    for (const tile of manager._inViewTiles?.getAllTiles() ?? []) {
+      if (tile.state === "loaded" || tile.state === "errored" || tile.aborted) continue;
+      tile.aborted = true;
+      ownership.abortedManagers.add(manager);
+      void source.abortTile?.(tile).catch(() => {
+        // Best effort inside MapLibre. Reveal reloads every manager for which
+        // we attempted an abort, even if the provider rejected cancellation.
+      });
+    }
+  }
+
+  // Pausing/aborting may synchronously enqueue one last frame.
+  const finalInternals = map as unknown as MapIdleInternals;
+  finalInternals._frameRequest?.abort();
+  finalInternals._frameRequest = null;
+  finalInternals._renderTaskQueue?.clear();
+}
 
 /** Sprite id for a marker variant — parsed back by the sprite painter. */
 function markerImageId(pin: PlacePinFeature): string {
@@ -172,15 +246,23 @@ function marksToGeoJSON(pins: MarkPinFeature[]): FeatureCollection {
     features: pins.map((pin) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [pin.lng, pin.lat] },
-      properties: { key: pin.key, name: pin.name, label: pin.label },
+      properties: {
+        key: pin.key,
+        name: pin.name,
+        label: pin.label,
+        unlinked: pin.unlinked ? 1 : 0,
+      },
     })),
   };
 }
 
 export function MapView({
   styleUrl,
+  idle = false,
+  layoutKey,
   initialCenter,
   initialZoom,
+  routeCamera,
   placePins,
   poiPins,
   markPins = [],
@@ -195,6 +277,13 @@ export function MapView({
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const pausedTileManagersRef = useRef(new Set<IdleTileManager>());
+  const abortedTileManagersRef = useRef(new Set<IdleTileManager>());
+  const idleRef = useRef(idle);
+  idleRef.current = idle;
+  const wasIdleRef = useRef(idle);
+  const providerStyleActivatedRef = useRef(!idle);
+  const appliedStyleUrlRef = useRef<string | undefined>(undefined);
   const callbacksRef = useRef({
     onSelectPlace,
     onSelectPoi,
@@ -211,29 +300,56 @@ export function MapView({
   };
   const poiPinsRef = useRef(poiPins);
   poiPinsRef.current = poiPins;
+  const placePinsRef = useRef(placePins);
+  placePinsRef.current = placePins;
   const markPinsRef = useRef(markPins);
   markPinsRef.current = markPins;
+  const selectionPinRef = useRef(selectionPin);
+  selectionPinRef.current = selectionPin;
   // A basemap that never establishes itself is a designed state, not a blank
   // canvas (spec/src/map-view.md §Offline and failure states).
   const [unavailable, setUnavailable] = useState(false);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the initial camera applies once at map creation — re-running on center/zoom changes would recreate the map.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the initial camera/style apply once at singleton creation; later style changes reconcile below without recreating the map.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+    providerStyleActivatedRef.current = !idleRef.current;
+    appliedStyleUrlRef.current = providerStyleActivatedRef.current ? styleUrl : undefined;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: styleUrl,
+      ...(providerStyleActivatedRef.current ? { style: styleUrl } : {}),
       center: [initialCenter.lng, initialCenter.lat],
       zoom: initialZoom,
       attributionControl: false,
     });
     mapRef.current = map;
+    const ownership: IdleOwnership = {
+      pausedManagers: pausedTileManagersRef.current,
+      abortedManagers: abortedTileManagersRef.current,
+    };
+
+    // Style/source events can create managers or request a frame after the
+    // pane became fully occluded. These listeners live for the map instance,
+    // and triggerRepaint itself is guarded, closing both late-event paths.
+    const quiesceIfIdle = () => {
+      if (idleRef.current) quiesce(map, ownership);
+    };
+    for (const event of ["dataloading", "data", "sourcedataabort", "error"] as const) {
+      map.on(event, quiesceIfIdle);
+    }
+    const originalTriggerRepaint = map.triggerRepaint.bind(map);
+    map.triggerRepaint = (() => {
+      if (idleRef.current) {
+        quiesce(map, ownership);
+        return;
+      }
+      originalTriggerRepaint();
+    }) as typeof map.triggerRepaint;
 
     // OSM attribution is a licensing requirement on every map surface.
     map.addControl(
       new maplibregl.AttributionControl({
         compact: false,
-        customAttribution: OSM_ATTRIBUTION_HTML,
       }),
     );
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
@@ -290,8 +406,11 @@ export function MapView({
     });
 
     map.on("load", () => {
+      // The no-style launch exists only to mount the retained canvas.
+      // Projection sources are installed when the real provider style loads.
+      if (!providerStyleActivatedRef.current) return;
       setUnavailable(false);
-      map.addSource("pois", { type: "geojson", data: poisToGeoJSON([]) });
+      map.addSource("pois", { type: "geojson", data: poisToGeoJSON(poiPinsRef.current) });
       map.addLayer({
         id: "poi-pins",
         type: "circle",
@@ -307,7 +426,7 @@ export function MapView({
       });
       map.addSource("saved", {
         type: "geojson",
-        data: placesToGeoJSON([]),
+        data: placesToGeoJSON(placePinsRef.current),
         cluster: true,
         clusterRadius: 44,
       });
@@ -353,13 +472,13 @@ export function MapView({
       });
 
       // Labelled transient marks (review-queue candidates: A, B, C…).
-      map.addSource("marks", { type: "geojson", data: marksToGeoJSON([]) });
+      map.addSource("marks", { type: "geojson", data: marksToGeoJSON(markPinsRef.current) });
       map.addLayer({
         id: "mark-pins",
         type: "circle",
         source: "marks",
         paint: {
-          "circle-color": "#9a3412",
+          "circle-color": ["case", ["==", ["get", "unlinked"], 1], "#57534e", "#9a3412"],
           "circle-radius": 10,
           "circle-stroke-width": 2,
           "circle-stroke-color": "#fafaf9",
@@ -372,10 +491,41 @@ export function MapView({
         layout: { "text-field": ["get", "label"], "text-size": 11 },
         paint: { "text-color": "#fafaf9" },
       });
+      map.addLayer({
+        id: "mark-unlinked-labels",
+        type: "symbol",
+        source: "marks",
+        filter: ["==", ["get", "unlinked"], 1],
+        layout: {
+          "text-field": "not linked",
+          "text-size": 9,
+          "text-offset": [0, 1.8],
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "#44403c",
+          "text-halo-color": "#fafaf9",
+          "text-halo-width": 1.5,
+        },
+      });
 
       map.addSource("selection", {
         type: "geojson",
-        data: { type: "FeatureCollection", features: [] },
+        data: {
+          type: "FeatureCollection",
+          features: selectionPinRef.current
+            ? [
+                {
+                  type: "Feature",
+                  geometry: {
+                    type: "Point",
+                    coordinates: [selectionPinRef.current.lng, selectionPinRef.current.lat],
+                  },
+                  properties: {},
+                },
+              ]
+            : [],
+        },
       });
       map.addLayer({
         id: "selection-ring",
@@ -389,6 +539,11 @@ export function MapView({
           "circle-stroke-color": "#1c1917",
         },
       });
+      if (container) {
+        container.dataset.pins = String(placePinsRef.current.length);
+        container.dataset.marks = String(markPinsRef.current.length);
+        container.dataset.selection = selectionPinRef.current ? "1" : "0";
+      }
 
       map.on("click", "saved-pins", (e) => {
         const feature = e.features?.[0];
@@ -456,8 +611,10 @@ export function MapView({
     // Debounced viewport reporting for bounded POI discovery.
     let moveTimer: ReturnType<typeof setTimeout> | undefined;
     map.on("moveend", () => {
+      if (idleRef.current) return;
       if (moveTimer) clearTimeout(moveTimer);
       moveTimer = setTimeout(() => {
+        if (idleRef.current) return;
         const bounds = map.getBounds();
         const center = map.getCenter();
         callbacksRef.current.onViewportChange?.({
@@ -478,29 +635,79 @@ export function MapView({
       if (moveTimer) clearTimeout(moveTimer);
       map.remove();
       mapRef.current = null;
+      pausedTileManagersRef.current.clear();
+      abortedTileManagersRef.current.clear();
     };
-  }, [styleUrl]);
+  }, []);
 
   useEffect(() => {
+    const map = mapRef.current;
+    if (!map) {
+      wasIdleRef.current = idle;
+      return;
+    }
+    if (idle) {
+      quiesce(map, {
+        pausedManagers: pausedTileManagersRef.current,
+        abortedManagers: abortedTileManagersRef.current,
+      });
+      if (containerRef.current) containerRef.current.dataset.idle = "1";
+      wasIdleRef.current = true;
+      return;
+    }
+    if (!providerStyleActivatedRef.current || appliedStyleUrlRef.current !== styleUrl) {
+      providerStyleActivatedRef.current = true;
+      appliedStyleUrlRef.current = styleUrl;
+      map.setStyle(styleUrl);
+    }
+    if (!wasIdleRef.current) {
+      if (containerRef.current) containerRef.current.dataset.idle = "0";
+      return;
+    }
+    // Managers may have appeared or disappeared while hidden. Enumerate the
+    // live style and touch only managers whose pause/abort we own.
+    for (const manager of tileManagersOf(map)) {
+      if (pausedTileManagersRef.current.delete(manager)) manager.resume();
+      if (abortedTileManagersRef.current.delete(manager)) {
+        for (const tile of manager._inViewTiles?.getAllTiles() ?? []) tile.aborted = false;
+        manager.reload(true);
+      }
+    }
+    pausedTileManagersRef.current.clear();
+    abortedTileManagersRef.current.clear();
+    map.resize();
+    map.triggerRepaint();
+    if (containerRef.current) containerRef.current.dataset.idle = "0";
+    wasIdleRef.current = false;
+  }, [idle, styleUrl]);
+
+  // Desktop split/collapsed changes the canvas's actual CSS box. MapLibre
+  // tracks window resizes, not arbitrary sibling geometry, so remeasure it
+  // explicitly without recreating the persistent map instance.
+  useEffect(() => {
+    if (idle) return;
+    if (containerRef.current && layoutKey) containerRef.current.dataset.layout = layoutKey;
+    mapRef.current?.resize();
+  }, [idle, layoutKey]);
+
+  useEffect(() => {
+    if (idle) return;
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
       (map.getSource("saved") as maplibregl.GeoJSONSource | undefined)?.setData(
         placesToGeoJSON(placePins),
       );
-      // Observable render state: the count appears only after the layer has
-      // actually painted (tests wait on this instead of sleeping).
-      map.once("idle", () => {
-        if (containerRef.current) {
-          containerRef.current.dataset.pins = String(placePins.length);
-        }
-      });
+      // Observable projection state for tests and debugging. MapLibre paints
+      // asynchronously, but the source has accepted this exact collection.
+      if (containerRef.current) containerRef.current.dataset.pins = String(placePins.length);
     };
     if (map.getSource("saved")) apply();
     else map.once("load", apply);
-  }, [placePins]);
+  }, [idle, placePins]);
 
   useEffect(() => {
+    if (idle) return;
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
@@ -510,9 +717,10 @@ export function MapView({
     };
     if (map.getSource("pois")) apply();
     else map.once("load", apply);
-  }, [poiPins]);
+  }, [idle, poiPins]);
 
   useEffect(() => {
+    if (idle) return;
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
@@ -525,9 +733,10 @@ export function MapView({
     };
     if (map.getSource("marks")) apply();
     else map.once("load", apply);
-  }, [markPins]);
+  }, [idle, markPins]);
 
   useEffect(() => {
+    if (idle) return;
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
@@ -550,29 +759,44 @@ export function MapView({
     };
     if (map.getSource("selection")) apply();
     else map.once("load", apply);
-  }, [selectionPin]);
+  }, [idle, selectionPin]);
 
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !flyTo) return;
-    // Respect prefers-reduced-motion: recenter instantly instead of animating.
-    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    map.flyTo({
-      center: [flyTo.lng, flyTo.lat],
-      zoom: flyTo.zoom ?? 17,
-      duration: reduceMotion ? 0 : 700,
-      // Keep the target clear of the bottom sheet.
-      offset: [0, -120],
-    });
-  }, [flyTo]);
-
-  // One camera move per projection change (spec/src/map-view.md §The grammar).
+  // One camera move per projection change/reveal. If a direct fly request
+  // and a route projection were both deferred while hidden, the newer direct
+  // selection wins and consumes the fit key: reveal still performs one move.
+  const appliedFlyTo = useRef<MapViewProps["flyTo"] | null>(null);
+  const appliedRouteCameraKey = useRef<string | null>(null);
   const appliedFitKey = useRef<string | null>(null);
   useEffect(() => {
+    if (idle) return;
     const map = mapRef.current;
-    if (!map || !fitTo || appliedFitKey.current === fitTo.key) return;
-    appliedFitKey.current = fitTo.key;
+    if (!map) return;
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    if (flyTo && appliedFlyTo.current !== flyTo) {
+      appliedFlyTo.current = flyTo;
+      if (fitTo) appliedFitKey.current = fitTo.key;
+      map.flyTo({
+        center: [flyTo.lng, flyTo.lat],
+        zoom: flyTo.zoom ?? 17,
+        duration: reduceMotion ? 0 : 700,
+        // Keep the target clear of the bottom sheet.
+        offset: [0, -120],
+      });
+      return;
+    }
+    if (routeCamera && appliedRouteCameraKey.current !== routeCamera.key) {
+      appliedRouteCameraKey.current = routeCamera.key;
+      if (fitTo) appliedFitKey.current = fitTo.key;
+      map.easeTo({
+        center: [routeCamera.lng, routeCamera.lat],
+        zoom: routeCamera.zoom,
+        duration: reduceMotion ? 0 : 400,
+      });
+      if (containerRef.current) containerRef.current.dataset.routeCamera = routeCamera.key;
+      return;
+    }
+    if (!fitTo || appliedFitKey.current === fitTo.key) return;
+    appliedFitKey.current = fitTo.key;
     map.fitBounds(
       [
         [fitTo.bounds.west, fitTo.bounds.south],
@@ -581,11 +805,20 @@ export function MapView({
       { padding: 72, maxZoom: 16, duration: reduceMotion ? 0 : 700 },
     );
     if (containerRef.current) containerRef.current.dataset.fitKey = fitTo.key;
-  }, [fitTo]);
+  }, [fitTo, flyTo, idle, routeCamera]);
 
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} data-testid="map-canvas" className="h-full w-full" />
+      <a
+        href="https://www.openstreetmap.org/copyright"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="map-attribution"
+        className="absolute bottom-0 left-0 z-10 rounded-tr bg-white/90 px-1 py-0.5 text-[10px] text-stone-700 hover:underline"
+      >
+        {OSM_ATTRIBUTION}
+      </a>
       {unavailable ? (
         <div
           role="status"
