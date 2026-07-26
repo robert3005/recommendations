@@ -13,17 +13,15 @@ primary store for the web client.
 
 - `places` — app-owned `PlaceId`, current/historical OSM bindings, first-seen evidence,
   last-verified evidence, and resolution state.
-- `notes`, `tags`, `tagAssignments`, `lists`, `listBlocks`, `posts`, `postBlocks`,
-  `blockNoteAttachments`, and `blockTagSelections` — personal domain entities (2026-07-19:
-  attachment/selection edges hang off post blocks; list blocks carry membership only). There is
-  no saves store (2026-07-18: membership is existence — tag assignments and place blocks join
-  directly on `PlaceId`).
-- `media` — binary image blobs keyed separately from portable `MediaAsset` metadata.
-- `publications` — private publication state, public slug, revisions, status, and a reference to a
-  local credential.
-- `credentials` — hosted-share editor bearer tokens; never included in public documents.
+- `notes`, `tags`, `tagAssignments`, `lists`, `listBlocks`, `posts`, `postBlocks`, and
+  `blockNoteAttachments` — personal domain entities. There is no saves store: membership is
+  existence, so tag assignments and place blocks join directly on `PlaceId`.
+- `mediaAssets` / `media` — image metadata and its binary blobs. **Device-local.**
+- `publications` — publication state: slug, revisions, status, and a reference to a local
+  credential. **Device-local** (see below).
+- `credentials` — hosted-share editor bearer tokens; never in a public document, never synced.
 - `mutationOutbox` — durable local mutation ids drained by the sync transport.
-- `publicationOutbox` — idempotent publish and revoke jobs.
+- `publicationJobs` — one row per publication holding its pending publish or revoke.
 
 There is no separate authoritative `poiCache`: `Place.lastVerified` is the durable display fallback
 and identity evidence. A short-lived resolver response cache may exist for performance, but it is
@@ -175,6 +173,19 @@ it cannot set `lastPublishedLocalRevision` past, or clear, a newer queued edit. 
 durable mechanism and an idempotent delete job.
 
 ## Multi-device sync
+
+**What does not sync, and why it is stated here.** Media is device-local: the bytes never travel,
+so replicating the metadata would hand another device a `localBlobKey` pointing at nothing.
+Publication state is device-local too — which means a page published on one device is invisible on
+another, and can only be updated or revoked from the device that published it. That follows from
+the editor token being device-held by design, but it is a real limit on
+[the convergence promise](./vision.md), so it is written down rather than left implicit.
+
+Letting `publications` (never `credentials`) converge is a deliberate open question. It would let a
+second device *see* that a list is published and open its link, still without the ability to update
+it. It requires one guard first: the job drain must **skip** a publication whose `credentialId`
+resolves to no local credential, rather than marking it failed — otherwise every synced publication
+would surface as an error on every device that did not create it.
 
 **Multi-device sync is in v1.** The initial version is
 local storage **with remote sync**: a personal library that exists on one browser's IndexedDB
