@@ -257,7 +257,6 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
                 id: newId(),
                 target: { kind: "place", placeId: view.place.id },
                 body: "",
-                mediaIds: [],
                 shareable: false,
                 createdAt: now,
                 updatedAt: now,

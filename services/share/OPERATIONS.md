@@ -4,11 +4,11 @@ Deployment notes for the hosted share service (`wrangler.toml`, `migrations/`).
 
 ## Database migrations and deployment
 
-The ordered D1 migrations are the only production schema-upgrade path. The
-baseline deliberately describes the original list/note deployment; subsequent
-migrations add retention timestamps and rebuild `documents` to accept posts.
-That makes one sequence work for a fresh database and for the deployed
-predecessor without losing documents or revision history.
+The ordered D1 migrations are the only production schema-upgrade path. There is
+exactly one — the baseline — because the service has never been deployed:
+`wrangler.toml` still carries `REPLACE_WITH_REAL_ID`, so no database exists that
+predates the current schema. Migrations that upgrade a live predecessor start
+being written the day one exists.
 
 From `services/share`:
 
@@ -19,14 +19,12 @@ pnpm deploy             # runs the remote migration first via predeploy
 ```
 
 Replace `REPLACE_WITH_REAL_ID` in `wrangler.toml` before a remote operation.
-Back up the production D1 database before applying migrations, and verify that
-the migration command reports 0001, 0002, and 0003 applied before deploying the
-Worker.
+Once the service is live, back up the production D1 database before applying any
+migration and verify the command reports it applied before deploying the Worker.
 
 `schema.sql` is the current-schema reference/snapshot only. Do **not** execute it
-as an upgrade: `CREATE TABLE IF NOT EXISTS` cannot replace the predecessor's
-`documents.kind` CHECK constraint, and mixing the snapshot with the ordered
-migrations can make an already-present column collide with 0002.
+as an upgrade once a deployment exists: `CREATE TABLE IF NOT EXISTS` cannot
+replace an existing table's CHECK constraint.
 
 ## Internal data retention
 

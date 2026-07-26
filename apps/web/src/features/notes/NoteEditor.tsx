@@ -22,7 +22,6 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
   const [title, setTitle] = useState(note.title ?? "");
   const [body, setBody] = useState(note.body);
   const [shareable, setShareable] = useState(note.shareable);
-  const [mediaIds, setMediaIds] = useState(note.mediaIds);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -39,7 +38,8 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
       updatedAt: nowIso(),
     } as const;
     await repo.putMedia(asset, imported.blob);
-    setMediaIds((ids) => [...ids, asset.id]);
+    // The body's `asset:<id>` reference is the only record the renderer needs;
+    // a parallel id list on the note was written and never read.
     const snippet = `\n![${file.name.replace(/\.[a-z0-9]+$/i, "")}](asset:${asset.id})\n`;
     const textarea = textareaRef.current;
     if (textarea) {
@@ -91,7 +91,6 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
               ...rest,
               ...(title.trim() ? { title: title.trim() } : {}),
               body,
-              mediaIds,
               shareable,
               updatedAt: nowIso(),
             });

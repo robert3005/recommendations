@@ -30,6 +30,7 @@ describe("Phase 5 concurrent slug ownership", () => {
     const app = createShareApp({ storage: new SimultaneousClaimStorage() });
     const document: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "One owner",
       blocks: [],
       contentHash: "same-document",

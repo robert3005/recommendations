@@ -31,7 +31,6 @@ export interface Note extends BaseEntity {
   target: NoteTarget;
   title?: string;
   body: string; // CommonMark + GFM source of truth
-  mediaIds: string[];
   shareable: boolean; // eligibility only; default false
 }
 
@@ -44,7 +43,6 @@ export interface MediaAsset extends BaseEntity {
   width?: number;
   height?: number;
   localBlobKey: string; // binary bytes live in the media blob store, not the domain object
-  hostedMediaId?: string;
 }
 
 /**
@@ -65,7 +63,6 @@ export interface ListMarker {
 export interface List extends BaseEntity {
   name: string;
   marker: ListMarker; // unique per live list; worn by its places' pins on the map
-  coverMediaId?: string;
 }
 
 /** List blocks carry membership only (2026-07-19 pivot). */
@@ -85,7 +82,6 @@ export interface ListBlock extends BaseEntity {
 export interface Post extends BaseEntity {
   title: string;
   listId: string; // the list this post editorialises
-  coverMediaId?: string;
 }
 
 export type PostBlockContent =
@@ -117,7 +113,6 @@ export function compareByRank<T extends { rank: string; id: string }>(a: T, b: T
 }
 
 export type PublicationStatus =
-  | "draft"
   | "queued"
   | "publishing"
   | "published"
@@ -133,15 +128,7 @@ export type PublicationStatus =
  */
 export interface Publication extends BaseEntity {
   target: { kind: "list" | "post" | "note"; id: string };
-  mode: "snapshot" | "hosted";
-  slug?: string; // hosted mode; public and guessable
-  /**
-   * The share-service path segment this publication's slug lives under.
-   * Pre-pivot guide documents migrated onto posts keep serving from
-   * `/s/lists` under their original slugs (spec/src/sharing.md §Share service);
-   * absent means the segment implied by `target.kind`.
-   */
-  channel?: "lists" | "posts" | "notes";
+  slug?: string; // public and guessable; the path segment follows target.kind
   credentialId?: string;
   status: PublicationStatus;
   localRevision: string;

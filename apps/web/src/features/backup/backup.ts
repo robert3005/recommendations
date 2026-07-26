@@ -14,18 +14,11 @@ import {
 } from "@placemarks/domain";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { z } from "zod";
-import {
-  type PivotAttachmentRow,
-  type PivotBlockRow,
-  type PivotListRow,
-  type PivotNoteRow,
-  pivotGuideLayer,
-} from "../../data/pivot";
 import type { DexieRepository } from "../../data/repo";
 import { newId } from "../../lib/id";
 
-/** v3 (2026-07-19 pivot): lists carry markers; posts and their edges join the archive. */
-export const BACKUP_SCHEMA_VERSION = 3;
+/** One archive format. Nothing has shipped, so no older archive exists. */
+export const BACKUP_SCHEMA_VERSION = 1;
 
 const entityBase = {
   id: z.string(),
@@ -36,9 +29,7 @@ const entityBase = {
 
 const manifestSchema = z.object({
   app: z.literal("placemarks"),
-  // Pre-pivot (v2) archives restore losslessly: the guide layer they carry is
-  // pivoted onto posts on import (spec/src/posts.md §Migration).
-  schemaVersion: z.union([z.literal(2), z.literal(BACKUP_SCHEMA_VERSION)]),
+  schemaVersion: z.literal(BACKUP_SCHEMA_VERSION),
   exportedAt: z.string(),
   checksums: z.record(z.string(), z.string()),
   counts: z.record(z.string(), z.number()),
@@ -75,65 +66,6 @@ const dataSchema = z.object({
 });
 
 export type BackupData = z.infer<typeof dataSchema>;
-
-/**
- * Restore a pre-pivot (v2) archive into the post-pivot model: lists gain
- * markers, the guide layer moves onto posts, list notes retarget, attachments
- * follow. Derived pivot ids make this converge with a library that migrated
- * locally — no duplicate posts on merge.
- */
-function pivotBackupData(data: BackupData): void {
-  const changes = pivotGuideLayer({
-    lists: data.lists as unknown as PivotListRow[],
-    listBlocks: data.listBlocks as unknown as PivotBlockRow[],
-    notes: data.notes as unknown as PivotNoteRow[],
-    blockNoteAttachments: data.blockNoteAttachments as unknown as PivotAttachmentRow[],
-  });
-  for (const list of data.lists as unknown as (PivotListRow & Record<string, unknown>)[]) {
-    const marker = changes.markers.get(list.id);
-    if (marker) {
-      list.marker = marker;
-      delete list.color;
-      delete list.icon;
-    }
-  }
-  for (const post of changes.posts) {
-    data.posts.push(post);
-  }
-  for (const block of changes.postBlocks) {
-    data.postBlocks.push({
-      ...block,
-      kind: block.content.type,
-      refId: block.content.type === "section" ? block.content.noteId : block.content.placeId,
-    });
-  }
-  for (const block of data.listBlocks as unknown as (PivotBlockRow & {
-    updatedAt: string;
-  })[]) {
-    const updatedAt = changes.tombstoneListBlocks.get(block.id);
-    if (updatedAt) {
-      block.deleted = true;
-      block.updatedAt = updatedAt;
-    }
-  }
-  for (const note of data.notes as unknown as (PivotNoteRow & { targetKey: string })[]) {
-    const change = changes.retargetNotes.get(note.id);
-    if (change) {
-      note.target = { kind: "post", postId: change.postId };
-      note.targetKey = `post:${change.postId}`;
-      note.updatedAt = change.updatedAt;
-    }
-  }
-  for (const attachment of data.blockNoteAttachments as unknown as (PivotAttachmentRow & {
-    updatedAt: string;
-  })[]) {
-    const change = changes.moveAttachments.get(attachment.id);
-    if (change) {
-      attachment.blockId = change.blockId;
-      attachment.updatedAt = change.updatedAt;
-    }
-  }
-}
 
 /**
  * IndexedDB rows carry a handful of query-only fields beside their canonical
@@ -1235,18 +1167,12 @@ export async function importBackup(
     if (!entries[name]) throw new Error(`backup is missing declared entry ${name}`);
   }
   const data = dataSchema.parse(JSON.parse(strFromU8(dataBytes)));
-  // Manifest counts must exactly describe the payload they attest to (tables
-  // a v2 archive predates count as zero).
+  // Manifest counts must exactly describe the payload they attest to.
   for (const [table, tableRows] of Object.entries(data)) {
     if ((manifest.counts[table] ?? 0) !== (tableRows as unknown[]).length) {
       throw new Error(`manifest count for ${table} does not match data.json — refusing to import`);
     }
   }
-  // A pre-pivot archive restores into the post-pivot model losslessly. Every
-  // generated/rewritten row derives its timestamps from the exact source row:
-  // export or restore wall time must never manufacture a newer post, overwrite
-  // a real edit, or resurrect a locally deleted generated row.
-  if (manifest.schemaVersion === 2) pivotBackupData(data);
   normalizeDerivedFields(data);
   validateCoordinates(data);
   validateGraph(data, entries, mode);
@@ -1299,11 +1225,6 @@ export async function importBackup(
             .where("publicationId")
             .equals(publication.id)
             .toArray();
-          if (publication.mode !== "hosted") {
-            for (const job of jobs) await db.publicationOutbox.delete(job.id);
-            await db.publications.delete(publication.id);
-            continue;
-          }
           for (const job of jobs) {
             if (job.action === "publish") await db.publicationOutbox.delete(job.id);
           }

@@ -6,6 +6,7 @@ import { SharePreview } from "./SharePreview";
 
 const guide: SharedGuide = {
   v: 1,
+  kind: "list",
   title: "Exact disclosure guide",
   blocks: [
     {

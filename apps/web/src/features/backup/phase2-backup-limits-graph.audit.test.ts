@@ -169,7 +169,6 @@ async function seedRich(repo: DexieRepository): Promise<void> {
     id: "place-note",
     target: { kind: "place", placeId: placeA },
     body: "A place note",
-    mediaIds: [],
     shareable: true,
     createdAt: NOW,
     updatedAt: NOW,

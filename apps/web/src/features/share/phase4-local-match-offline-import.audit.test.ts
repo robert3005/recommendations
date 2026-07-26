@@ -38,6 +38,7 @@ describe("Phase 4 offline shared-guide import deduplication", () => {
     };
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Shared exact match",
       blocks: [
         {

@@ -181,7 +181,6 @@ describe("Phase 2 residual whole-object update boundaries", () => {
         id: "note-1",
         target: { kind: "place", placeId: place.id },
         body: "Keep me",
-        mediaIds: [],
         shareable: false,
         createdAt: NOW,
         updatedAt: NOW,

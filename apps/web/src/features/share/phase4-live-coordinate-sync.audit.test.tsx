@@ -49,6 +49,7 @@ const copied: SharedPlaceEvidence = {
 
 const guide: SharedGuide = {
   v: 1,
+  kind: "list",
   title: "Live coordinates",
   blocks: [
     {

@@ -17,7 +17,6 @@ describe("Phase 5 note-page revocation UI precedence", () => {
       target: { kind: "post", postId: "post-1" },
       title: "Public note",
       body: "This page is waiting to be removed.",
-      mediaIds: [],
       shareable: true,
       createdAt: NOW,
       updatedAt: NOW,
@@ -25,7 +24,6 @@ describe("Phase 5 note-page revocation UI precedence", () => {
     const publication: Publication = {
       id: "publication-1",
       target: { kind: "note", id: note.id },
-      mode: "hosted",
       slug: "public-note",
       credentialId: "credential-1",
       status: "failed",

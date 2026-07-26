@@ -200,7 +200,6 @@ describe("mergeRemoteChange", () => {
       target: { kind: "place", placeId: "place-1" },
       title: "A",
       body: "device A words",
-      mediaIds: [],
       shareable: true,
       createdAt: "2026-07-20T09:00:00.000Z",
       updatedAt: "2026-07-20T10:00:00.000Z",

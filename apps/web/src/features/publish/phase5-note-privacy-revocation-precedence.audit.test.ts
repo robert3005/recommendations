@@ -13,7 +13,6 @@ describe("Phase 5 note-page revocation precedence", () => {
       id: "note-1",
       target: { kind: "post", postId: "post-1" },
       body: "This text must come down.",
-      mediaIds: [],
       shareable: true,
       createdAt: NOW,
       updatedAt: NOW,
@@ -21,7 +20,6 @@ describe("Phase 5 note-page revocation precedence", () => {
     const publication: Publication = {
       id: "publication-1",
       target: { kind: "note", id: note.id },
-      mode: "hosted",
       slug: "private-later",
       credentialId: "credential-1",
       status: "failed",
@@ -113,7 +111,6 @@ describe("Phase 5 note-page revocation precedence", () => {
         id: "retargeted-note",
         target: { kind: "place", placeId: oldPlace.id },
         body: "Private after this move.",
-        mediaIds: [],
         shareable: true,
         createdAt: NOW,
         updatedAt: NOW,
@@ -123,7 +120,6 @@ describe("Phase 5 note-page revocation precedence", () => {
       const guidePublication: Publication = {
         id: "old-guide-publication",
         target: { kind: "list", id: "list-a" },
-        mode: "hosted",
         slug: "old-guide",
         credentialId: "old-guide-credential",
         status: "published",
@@ -136,7 +132,6 @@ describe("Phase 5 note-page revocation precedence", () => {
       const notePublication: Publication = {
         id: "retargeted-note-publication",
         target: { kind: "note", id: note.id },
-        mode: "hosted",
         slug: "retargeted-note",
         credentialId: "note-credential",
         status: "published",

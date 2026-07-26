@@ -25,6 +25,7 @@ describe("Phase 5 revoke idempotency", () => {
       app.request(`https://share.test${path}`, init);
     const document: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Revoke interruption",
       blocks: [],
       contentHash: "v1",

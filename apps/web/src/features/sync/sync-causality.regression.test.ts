@@ -67,7 +67,6 @@ describe("sync causal protocol regressions", () => {
         id: "note-1",
         target: { kind: "place", placeId: place.id },
         body: "seed",
-        mediaIds: [],
         shareable: false,
         createdAt: NOW,
         updatedAt: NOW,
@@ -124,7 +123,6 @@ describe("sync causal protocol regressions", () => {
         id: "frontier-note",
         target: { kind: "place", placeId: place.id },
         body: "seed",
-        mediaIds: [],
         shareable: false,
         createdAt: NOW,
         updatedAt: NOW,
@@ -225,7 +223,6 @@ describe("sync causal protocol regressions", () => {
       const publication: Publication = {
         id: "publication-1",
         target: { kind: "list", id: "list-1" },
-        mode: "hosted",
         slug: "list-1",
         credentialId: "credential-1",
         status: "published",

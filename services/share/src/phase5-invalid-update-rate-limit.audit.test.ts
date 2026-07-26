@@ -12,6 +12,7 @@ describe("Phase 5 invalid update rate limiting", () => {
     const app = createShareApp({ storage: new MemoryStorage() });
     const document: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Rate-limited guide",
       blocks: [],
       contentHash: "v1",

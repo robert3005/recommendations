@@ -276,7 +276,6 @@ async function importNotes(
       target: { kind: "place", placeId },
       ...(note.title ? { title: note.title } : {}),
       body: note.body,
-      mediaIds: [],
       shareable: false,
       createdAt: now,
       updatedAt: now,

@@ -20,7 +20,7 @@ export async function publicationForNote(
   noteId: string,
 ): Promise<Publication | undefined> {
   const rows = (await repo.db.publications.toArray()).filter(
-    (p) => !p.deleted && p.target.kind === "note" && p.target.id === noteId && p.mode === "hosted",
+    (p) => !p.deleted && p.target.kind === "note" && p.target.id === noteId,
   );
   // A live publication outranks a revoked tombstone of the same target.
   return rows.find((p) => p.status !== "revoked") ?? rows[0];
@@ -57,7 +57,6 @@ export async function publishNote(
     ...(note.title ? { title: note.title } : {}),
     context,
     body: withImagePlaceholders(note.body),
-    media: [], // hosted media pipeline is a follow-up; images stay placeholders
     contentHash: note.updatedAt,
     publishedAt: now,
   };
@@ -75,7 +74,6 @@ export async function publishNote(
     publication = {
       id: newId(),
       target: { kind: "note", id: note.id },
-      mode: "hosted",
       slug,
       credentialId,
       status: "queued",
@@ -135,7 +133,7 @@ export async function publicationForList(
   listId: string,
 ): Promise<Publication | undefined> {
   const rows = (await repo.db.publications.toArray()).filter(
-    (p) => !p.deleted && p.target.kind === "list" && p.target.id === listId && p.mode === "hosted",
+    (p) => !p.deleted && p.target.kind === "list" && p.target.id === listId,
   );
   // A live publication outranks a revoked tombstone of the same target.
   return rows.find((p) => p.status !== "revoked") ?? rows[0];
@@ -156,7 +154,7 @@ export async function publicationForPost(
   postId: string,
 ): Promise<Publication | undefined> {
   const rows = (await repo.db.publications.toArray()).filter(
-    (p) => !p.deleted && p.target.kind === "post" && p.target.id === postId && p.mode === "hosted",
+    (p) => !p.deleted && p.target.kind === "post" && p.target.id === postId,
   );
   // A live publication outranks a revoked tombstone of the same target.
   return rows.find((p) => p.status !== "revoked") ?? rows[0];
@@ -207,7 +205,6 @@ export async function publishList(
     publication = {
       id: newId(),
       target: { kind: "list", id: listId },
-      mode: "hosted",
       slug: slugFor(list.name),
       credentialId,
       status: "queued",
@@ -273,8 +270,6 @@ export async function publishPost(
     publication = {
       id: newId(),
       target: { kind: "post", id: postId },
-      mode: "hosted",
-      channel: "posts",
       slug: slugFor(post.title),
       credentialId,
       status: "queued",
@@ -303,14 +298,8 @@ export async function publishPost(
   return (await repo.db.publications.get(publication.id)) ?? publication;
 }
 
-/**
- * The share-service path segment for a publication: its recorded channel when
- * present (a pre-pivot guide migrated onto a post keeps serving from
- * /s/lists under its original slug — spec/src/sharing.md §Share service),
- * else the segment implied by the target kind.
- */
+/** The share-service path segment for a publication, implied by its target kind. */
 export function publicationChannel(publication: Publication): "lists" | "posts" | "notes" {
-  if (publication.channel) return publication.channel;
   if (publication.target.kind === "note") return "notes";
   if (publication.target.kind === "post") return "posts";
   return "lists";

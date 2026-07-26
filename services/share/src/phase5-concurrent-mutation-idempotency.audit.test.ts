@@ -7,7 +7,7 @@ import { MemoryStorage } from "./storage";
 const TOKEN = "a".repeat(43);
 
 function guide(title: string, contentHash = title): SharedGuide {
-  return { v: 1, title, blocks: [], contentHash };
+  return { v: 1, kind: "list", title, blocks: [], contentHash };
 }
 
 async function createGuide(app: ReturnType<typeof createShareApp>, slug: string) {

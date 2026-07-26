@@ -59,7 +59,6 @@ vi.mock("../../data/RepoContext", () => ({
           id: `note-${placeId}`,
           target: { kind: "place", placeId },
           body: "x".repeat(60_000),
-          mediaIds: [],
           shareable: false,
           createdAt: NOW,
           updatedAt: NOW,

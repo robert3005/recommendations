@@ -37,6 +37,7 @@ function guide(): SharedGuide {
   };
   return {
     v: 1,
+    kind: "list",
     title: "Lisbon",
     blocks: [
       {

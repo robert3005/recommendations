@@ -109,7 +109,7 @@ describe("hosted publication", () => {
         },
         body: JSON.stringify({
           desiredSlug: "lisbon-weekend",
-          document: { v: 1, title: "Impostor", blocks: [], contentHash: "x" },
+          document: { v: 1, kind: "list", title: "Impostor", blocks: [], contentHash: "x" },
         }),
       });
       expect(rival.status).toBe(409);
@@ -160,7 +160,7 @@ describe("hosted publication", () => {
       },
       body: JSON.stringify({
         desiredSlug: "lisbon-weekend",
-        document: { v: 1, title: "First come", blocks: [], contentHash: "x" },
+        document: { v: 1, kind: "list", title: "First come", blocks: [], contentHash: "x" },
       }),
     });
     const repo = await seeded();

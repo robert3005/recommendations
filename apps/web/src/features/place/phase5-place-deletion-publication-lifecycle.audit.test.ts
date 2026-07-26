@@ -15,7 +15,6 @@ function publication(id: string, target: Publication["target"]): Publication {
   return {
     id,
     target,
-    mode: "hosted",
     slug: id,
     credentialId: `${id}-credential`,
     status: "published",
@@ -57,7 +56,6 @@ describe("Phase 5 place-deletion publication lifecycle", () => {
         id: "note-1",
         target: { kind: "place", placeId: place.id },
         body: "A separately published place note.",
-        mediaIds: [],
         shareable: true,
         createdAt: NOW,
         updatedAt: NOW,

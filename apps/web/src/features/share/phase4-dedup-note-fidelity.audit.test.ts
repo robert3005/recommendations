@@ -17,6 +17,7 @@ describe("Phase 4 guide-import note fidelity after deduplication", () => {
     const repo = new DexieRepository(`phase4-dedup-note-fidelity-${crypto.randomUUID()}`);
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Existing guide",
       blocks: [
         {

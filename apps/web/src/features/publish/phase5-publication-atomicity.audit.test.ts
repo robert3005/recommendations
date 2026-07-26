@@ -23,7 +23,6 @@ function hostedPublication(
   return {
     id,
     target,
-    mode: "hosted",
     slug,
     credentialId,
     status: "published",
@@ -138,6 +137,7 @@ describe("Phase 5 per-publication outbox draining", () => {
           localRevision: blocked.localRevision,
           payload: JSON.stringify({
             v: 1,
+            kind: "list",
             title: "Blocked guide",
             blocks: [],
             contentHash: blocked.localRevision,
@@ -152,6 +152,7 @@ describe("Phase 5 per-publication outbox draining", () => {
           localRevision: healthy.localRevision,
           payload: JSON.stringify({
             v: 1,
+            kind: "list",
             title: "Healthy guide",
             blocks: [],
             contentHash: healthy.localRevision,
@@ -213,7 +214,6 @@ describe("Phase 5 publication fan-out for shareable notes", () => {
         target: { kind: "place", placeId: place.id },
         title: "Old title",
         body: "Old body",
-        mediaIds: [],
         shareable: true,
         createdAt: NOW,
         updatedAt: NOW,

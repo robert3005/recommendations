@@ -158,7 +158,6 @@ export const SYNCED_TABLES = [
   "tags",
   "tagAssignments",
   "notes",
-  "mediaAssets",
   "lists",
   "listBlocks",
   "posts",

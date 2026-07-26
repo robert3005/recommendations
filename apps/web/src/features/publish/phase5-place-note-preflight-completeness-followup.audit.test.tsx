@@ -47,7 +47,6 @@ describe("Phase 5 place-note preflight completeness", () => {
         target: { kind: "place", placeId: place.id },
         title: "Field note",
         body: "Before ![Private terrace](asset:private-media) after",
-        mediaIds: ["private-media"],
         shareable: true,
         createdAt: NOW,
         updatedAt: NOW,

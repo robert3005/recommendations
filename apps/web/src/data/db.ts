@@ -3,9 +3,8 @@
  * Rows carry derived index fields (refKeys, targetKey, kind/refId) next to the
  * domain shape; the repository strips/derives them at the boundary.
  *
- * v2/v3 (2026-07-18): the standalone "save" concept was removed — membership is
- * existence. Tag assignments and place blocks join directly on PlaceId; the old
- * savedPlaces rows are migrated through and then dropped.
+ * One version. Nothing has shipped, so there is no database anywhere that
+ * predates this schema and no migration to carry.
  */
 import type {
   BlockNoteAttachment,
@@ -23,20 +22,7 @@ import type {
   TagAssignment,
   VersionVector,
 } from "@placemarks/domain";
-import { rankAfter } from "@placemarks/domain";
 import Dexie, { type EntityTable } from "dexie";
-import { newId } from "../lib/id";
-import {
-  canonicalPivotBlock,
-  type PivotAttachmentRow,
-  type PivotBlockRow,
-  type PivotListRow,
-  type PivotNoteRow,
-  type PivotPublicationRow,
-  pivotBlockIndex,
-  pivotGuideLayer,
-  pivotNoteTargetKey,
-} from "./pivot";
 
 export type PlaceRow = Place & { refKeys: string[] };
 export type NoteRow = Note & { targetKey: string };
@@ -214,187 +200,23 @@ export class PlacemarksDb extends Dexie {
     super(name);
     this.version(1).stores({
       places: "id, resolutionState, updatedAt, *refKeys",
-      savedPlaces: "id, placeId, updatedAt",
       tags: "id, nameNorm, updatedAt",
-      tagAssignments: "id, savedPlaceId, tagId, [savedPlaceId+tagId], updatedAt",
+      tagAssignments: "id, placeId, tagId, [placeId+tagId], updatedAt",
       notes: "id, targetKey, updatedAt",
       mediaAssets: "id, updatedAt",
       mediaBlobs: "id",
       lists: "id, updatedAt",
       listBlocks: "id, listId, kind, refId, updatedAt",
+      posts: "id, listId, updatedAt",
+      postBlocks: "id, postId, kind, refId, updatedAt",
       blockNoteAttachments: "id, blockId, noteId, [blockId+noteId], updatedAt",
-    });
-    // v2: edges join on PlaceId directly; migrate via the old savedPlaces rows.
-    this.version(2)
-      .stores({
-        tagAssignments: "id, placeId, tagId, [placeId+tagId], updatedAt",
-      })
-      .upgrade(async (tx) => {
-        const saves = (await tx.table("savedPlaces").toArray()) as {
-          id: string;
-          placeId: string;
-        }[];
-        const placeIdBySaveId = new Map(saves.map((s) => [s.id, s.placeId]));
-        await tx
-          .table("tagAssignments")
-          .toCollection()
-          .modify((a: Record<string, unknown>) => {
-            a.placeId = placeIdBySaveId.get(a.savedPlaceId as string) ?? a.savedPlaceId;
-            delete a.savedPlaceId;
-          });
-        await tx
-          .table("listBlocks")
-          .toCollection()
-          .modify((b: Record<string, unknown>) => {
-            if (b.kind === "place") {
-              const placeId = placeIdBySaveId.get(b.refId as string) ?? (b.refId as string);
-              b.refId = placeId;
-              b.content = { type: "place", placeId };
-            }
-          });
-      });
-    // v3: the savedPlaces store is gone.
-    this.version(3).stores({ savedPlaces: null });
-    // v4: membership is existence — a live place with no live list membership would
-    // be a hidden orphan (invisible but occupying its OSM ref). Formerly saved
-    // places that belonged to no list are placed in an explicit migration-created
-    // list instead (spec/src/storage-sync.md §Backup and restore).
-    this.version(4).upgrade(async (tx) => {
-      const places = (await tx.table("places").toArray()) as {
-        id: string;
-        deleted?: boolean;
-      }[];
-      const blocks = (await tx.table("listBlocks").toArray()) as {
-        kind: string;
-        refId: string;
-        deleted?: boolean;
-      }[];
-      const withMembership = new Set(
-        blocks.filter((b) => !b.deleted && b.kind === "place").map((b) => b.refId),
-      );
-      const orphans = places.filter((p) => !p.deleted && !withMembership.has(p.id));
-      if (orphans.length === 0) return;
-      const now = new Date().toISOString();
-      const listId = newId();
-      await tx
-        .table("lists")
-        .put({ id: listId, name: "Saved places", createdAt: now, updatedAt: now });
-      let rank: string | null = null;
-      for (const orphan of orphans) {
-        rank = rankAfter(rank);
-        await tx.table("listBlocks").put({
-          id: newId(),
-          listId,
-          rank,
-          kind: "place",
-          refId: orphan.id,
-          content: { type: "place", placeId: orphan.id },
-          createdAt: now,
-          updatedAt: now,
-        });
-      }
-    });
-    // v5 (Phase 3, spec/src/interop.md): the persisted import review queue.
-    this.version(5).stores({
+      blockTagSelections: "id, blockId, tagId, [blockId+tagId], updatedAt",
       importBatches: "id, status, startedAt",
       importItems: "id, batchId, status",
-    });
-    // v6 (Phases 3/5): source-list identity across re-imports (a renamed local
-    // list stays canonical), and the publication machinery — publications,
-    // device-held editor credentials, and the durable publication outbox.
-    this.version(6).stores({
       importSources: "sourceKey",
       publications: "id, status, updatedAt",
       credentials: "id",
       publicationOutbox: "id, publicationId, createdAt",
-    });
-    // v7 (2026-07-19 lists-and-posts pivot, spec/src/posts.md §Migration from
-    // the guide layer):
-    //  - every list gets a unique (colour, icon) marker; legacy colour-only
-    //    lists keep their colour and gain an icon;
-    //  - a list carrying editorial content (section blocks, note attachments,
-    //    or list-targeted notes) gets a same-titled post created from it; the
-    //    list keeps only its place blocks;
-    //  - list-targeted notes retarget to the created post; attachments move to
-    //    the post's blocks; a publication of such a list follows the editorial
-    //    content to the post but keeps serving from /s/lists under its slug.
-    this.version(7)
-      .stores({
-        posts: "id, listId, updatedAt",
-        postBlocks: "id, postId, kind, refId, updatedAt",
-        blockTagSelections: "id, blockId, tagId, [blockId+tagId], updatedAt",
-      })
-      .upgrade(async (tx) => {
-        const lists = (await tx.table("lists").toArray()) as PivotListRow[];
-        const listBlocks = (await tx.table("listBlocks").toArray()) as PivotBlockRow[];
-        const notes = (await tx.table("notes").toArray()) as PivotNoteRow[];
-        const blockNoteAttachments = (await tx
-          .table("blockNoteAttachments")
-          .toArray()) as PivotAttachmentRow[];
-        const publications = (await tx.table("publications").toArray()) as PivotPublicationRow[];
-        const changes = pivotGuideLayer({
-          lists,
-          listBlocks,
-          notes,
-          blockNoteAttachments,
-          publications,
-        });
-        // The legacy query indexes are never authoritative. Rebuild them from
-        // canonical content/target even when they were stale before upgrade.
-        for (const block of listBlocks) {
-          await tx
-            .table("listBlocks")
-            .update(block.id, pivotBlockIndex(canonicalPivotBlock(block)));
-        }
-        for (const note of notes) {
-          await tx.table("notes").update(note.id, { targetKey: pivotNoteTargetKey(note.target) });
-        }
-        for (const [listId, marker] of changes.markers) {
-          await tx.table("lists").update(listId, {
-            marker,
-            color: undefined,
-            icon: undefined,
-          });
-        }
-        for (const post of changes.posts) {
-          await tx.table("posts").put(post);
-        }
-        for (const block of changes.postBlocks) {
-          await tx.table("postBlocks").put({
-            ...block,
-            ...pivotBlockIndex(block.content),
-          });
-        }
-        for (const [blockId, updatedAt] of changes.tombstoneListBlocks) {
-          await tx.table("listBlocks").update(blockId, { deleted: true, updatedAt });
-        }
-        for (const [noteId, change] of changes.retargetNotes) {
-          await tx.table("notes").update(noteId, {
-            target: { kind: "post", postId: change.postId },
-            targetKey: `post:${change.postId}`,
-            updatedAt: change.updatedAt,
-          });
-        }
-        for (const [attachmentId, change] of changes.moveAttachments) {
-          await tx.table("blockNoteAttachments").update(attachmentId, {
-            blockId: change.blockId,
-            updatedAt: change.updatedAt,
-          });
-        }
-        // The publication follows the editorial content to the post; its
-        // hosted slug keeps serving the same document from /s/lists.
-        for (const [publicationId, change] of changes.retargetPublications) {
-          await tx.table("publications").update(publicationId, {
-            target: { kind: "post", id: change.postId },
-            channel: "lists",
-            updatedAt: change.updatedAt,
-          });
-        }
-      });
-    // v8 (Phase 8, spec/src/storage-sync.md §Multi-device sync): the durable
-    // mutation outbox the sync transport drains, device sync state, applied
-    // revision stamps, and rescued sync conflicts.
-    this.version(8).stores({
       mutationOutbox: "id, table, entityId, createdAt",
       syncState: "id",
       syncRevs: "key",

@@ -287,7 +287,6 @@ export class DexieRepository implements PlacemarksRepository {
           "lists",
           "places",
           "tags",
-          "mediaAssets",
           "posts",
           "notes",
           "listBlocks",
@@ -1326,7 +1325,6 @@ export class DexieRepository implements PlacemarksRepository {
     const publications = (await this.db.publications.toArray()).filter(
       (p) =>
         !p.deleted &&
-        p.mode === "hosted" &&
         p.target.kind === target.kind &&
         p.target.id === target.id &&
         p.status !== "revoked" &&
@@ -1372,7 +1370,6 @@ export class DexieRepository implements PlacemarksRepository {
     const publications = (await this.db.publications.toArray()).filter(
       (p) =>
         !p.deleted &&
-        p.mode === "hosted" &&
         p.target.kind === target.kind &&
         p.target.id === target.id &&
         p.status !== "revoked" &&
@@ -1407,7 +1404,7 @@ export class DexieRepository implements PlacemarksRepository {
    */
   private async reconcileHostedPublicationsAfterSync(now: string): Promise<void> {
     const publications = (await this.db.publications.toArray()).filter(
-      (publication) => !publication.deleted && publication.mode === "hosted",
+      (publication) => !publication.deleted,
     );
     for (const publication of publications) {
       const target = publication.target;
@@ -1819,15 +1816,15 @@ export class DexieRepository implements PlacemarksRepository {
 
   // ---------- media ----------
 
+  /**
+   * Media is device-local: the bytes never sync, so replicating the asset row
+   * would hand another device a `localBlobKey` pointing at nothing.
+   */
   async putMedia(asset: MediaAsset, blob: Blob): Promise<void> {
-    await this.db.transaction(
-      "rw",
-      [this.db.mediaAssets, this.db.mediaBlobs, this.db.mutationOutbox, this.db.syncRevs],
-      async () => {
-        await this.syncedPut("mediaAssets", asset);
-        await this.db.mediaBlobs.put({ id: asset.localBlobKey, blob });
-      },
-    );
+    await this.db.transaction("rw", [this.db.mediaAssets, this.db.mediaBlobs], async () => {
+      await this.db.mediaAssets.put(asset);
+      await this.db.mediaBlobs.put({ id: asset.localBlobKey, blob });
+    });
   }
 
   async getMedia(id: string): Promise<{ asset: MediaAsset; blob: Blob } | undefined> {
@@ -2450,7 +2447,6 @@ export class DexieRepository implements PlacemarksRepository {
           target: { kind: "post", postId },
           ...(title ? { title } : {}),
           body,
-          mediaIds: [],
           shareable: false,
           createdAt: now,
           updatedAt: now,

@@ -13,7 +13,6 @@ describe("Phase 5 revocation scheduling atomicity", () => {
     const publication: Publication = {
       id: "publication-1",
       target: { kind: "list", id: "list-1" },
-      mode: "hosted",
       slug: "published-guide",
       credentialId: "credential-1",
       status: "queued",

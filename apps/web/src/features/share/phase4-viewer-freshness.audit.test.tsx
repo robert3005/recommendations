@@ -54,6 +54,7 @@ describe("Phase 4 viewer freshness", () => {
     const copied = copiedEvidence();
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Shared Lisbon",
       blocks: [
         {

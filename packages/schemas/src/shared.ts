@@ -49,10 +49,6 @@ export const sharedNoteBodySchema = z.object({
   pageSlug: z.string().max(120).optional(),
   title: z.string().max(300).optional(),
   body: z.string().max(65_536),
-  media: z
-    .array(z.object({ hostedMediaId: z.string().max(120) }))
-    .max(20)
-    .optional(),
 });
 
 export const sharedBlockSchema = z.discriminatedUnion("type", [
@@ -72,12 +68,8 @@ export const sharedBlockSchema = z.discriminatedUnion("type", [
 
 export const sharedGuideSchema = z.object({
   v: z.literal(1),
-  /**
-   * Which projection this document is (spec/src/sharing.md §One block
-   * document, two projections). Absent in pre-pivot documents, which read as
-   * posts whose sections happen to live on a list.
-   */
-  kind: z.enum(["list", "post"]).optional(),
+  /** Which projection this document is (spec/src/sharing.md §One block document, two projections). */
+  kind: z.enum(["list", "post"]),
   slug: z.string().max(120).optional(), // hosted mode only
   title: z.string().min(1).max(300),
   description: z.string().max(2000).optional(),
@@ -89,7 +81,6 @@ export const sharedGuideSchema = z.object({
   list: z
     .object({ title: z.string().min(1).max(300), slug: z.string().max(120).optional() })
     .optional(),
-  cover: z.object({ hostedMediaId: z.string().max(120) }).optional(),
   blocks: z.array(sharedBlockSchema).max(500),
   contentHash: z.string().max(80),
   publishedAt: z.string().optional(),
@@ -108,7 +99,6 @@ export const sharedNoteSchema = z.object({
   title: z.string().max(300).optional(),
   context: sharedNoteContextSchema,
   body: z.string().max(65_536),
-  media: z.array(z.object({ hostedMediaId: z.string().max(120) })).max(20),
   contentHash: z.string().max(80),
   publishedAt: z.string(),
 });

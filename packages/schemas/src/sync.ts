@@ -11,7 +11,6 @@ export const SYNCED_TABLE_NAMES = [
   "tags",
   "tagAssignments",
   "notes",
-  "mediaAssets",
   "lists",
   "listBlocks",
   "posts",
@@ -187,21 +186,9 @@ const noteSchema = z
     target: noteTargetSchema,
     title: z.string().optional(),
     body: z.string(),
-    mediaIds: z.array(idSchema),
     shareable: z.boolean(),
     // Local-only derived index. Receivers recompute it before writing.
     targetKey: z.string().optional(),
-  })
-  .strict();
-
-const mediaAssetSchema = z
-  .object({
-    ...baseEntityShape,
-    mime: z.enum(["image/jpeg", "image/png", "image/webp"]),
-    width: z.number().int().positive().optional(),
-    height: z.number().int().positive().optional(),
-    localBlobKey: idSchema,
-    hostedMediaId: z.string().optional(),
   })
   .strict();
 
@@ -210,7 +197,6 @@ const listSchema = z
     ...baseEntityShape,
     name: z.string(),
     marker: z.object({ color: z.string().min(1), icon: z.string().min(1) }),
-    coverMediaId: idSchema.optional(),
     // v7 migration cleared these legacy fields with undefined values.
     color: z.string().optional(),
     icon: z.string().optional(),
@@ -249,7 +235,6 @@ const postSchema = z
     ...baseEntityShape,
     title: z.string(),
     listId: idSchema,
-    coverMediaId: idSchema.optional(),
   })
   .strict();
 
@@ -290,7 +275,6 @@ export const syncEntityRowSchemas = {
   tags: tagSchema,
   tagAssignments: tagAssignmentSchema,
   notes: noteSchema,
-  mediaAssets: mediaAssetSchema,
   lists: listSchema,
   listBlocks: listBlockSchema,
   posts: postSchema,

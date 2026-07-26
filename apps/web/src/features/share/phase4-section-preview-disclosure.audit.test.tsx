@@ -7,6 +7,7 @@ describe("Phase 4 section-prose disclosure", () => {
   it("shows the exact shareable section title and prose before generating the link", () => {
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Weekend guide",
       blocks: [
         {

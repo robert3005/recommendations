@@ -8,6 +8,7 @@ const TOKEN = "a".repeat(43);
 
 const guide: SharedGuide = {
   v: 1,
+  kind: "list",
   title: "Cache lifecycle",
   blocks: [],
   contentHash: "cache-lifecycle-v1",

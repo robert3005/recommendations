@@ -74,7 +74,6 @@ function noteMutation(index: number, body: string): SyncMutation {
       id,
       target: { kind: "place", placeId: "place-1" },
       body,
-      mediaIds: [],
       shareable: false,
       createdAt: "2026-07-20T10:00:00.000Z",
       updatedAt: "2026-07-20T10:00:00.000Z",

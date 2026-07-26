@@ -79,7 +79,6 @@ async function seed(repo: DexieRepository) {
     id: "note-1",
     target: { kind: "place", placeId: place.id },
     body: "archived body",
-    mediaIds: [],
     shareable: false,
     createdAt: NOW,
     updatedAt: NOW,

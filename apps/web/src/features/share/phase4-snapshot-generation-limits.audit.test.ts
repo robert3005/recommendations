@@ -7,6 +7,7 @@ describe("Phase 4 snapshot generation limits", () => {
   it("refuses an inflated payload over the decoder limit even when it compresses well", () => {
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Highly compressible guide",
       blocks: Array.from({ length: 17 }, (_, index) => ({
         id: `section-${index.toString()}`,

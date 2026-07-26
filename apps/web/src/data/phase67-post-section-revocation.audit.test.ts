@@ -36,7 +36,6 @@ describe("Phase 6/7 post-section publication teardown", () => {
       const publication: Publication = {
         id: "section-note-publication",
         target: { kind: "note", id: view.sectionNote.id },
-        mode: "hosted",
         slug: "published-prose",
         credentialId: "section-note-credential",
         status: "published",

@@ -12,7 +12,6 @@ import {
   createRouter,
   Link,
   Outlet,
-  redirect,
   retainSearchParams,
   useNavigate,
   useRouterState,
@@ -312,23 +311,6 @@ const listRoute = createRoute({
   component: ListPage,
 });
 
-// Pre-pivot paths stay reachable.
-const legacyListsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/lists",
-  beforeLoad: () => {
-    throw redirect({ to: "/" });
-  },
-});
-
-const legacyListRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/lists/$listId",
-  beforeLoad: ({ params }) => {
-    throw redirect({ to: "/list/$listId", params: { listId: params.listId } });
-  },
-});
-
 // Posts — the editorial layer (spec/src/posts.md): reading beside the
 // following canvas, and the block editor beside the candidate-dimmed canvas.
 const postRoute = createRoute({
@@ -386,8 +368,6 @@ const noteRoute = createRoute({
 export const routeTree = rootRoute.addChildren([
   homeRoute,
   listRoute,
-  legacyListsRoute,
-  legacyListRoute,
   postRoute,
   postEditorRoute,
   reviewRoute,

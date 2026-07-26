@@ -19,7 +19,6 @@ describe("Phase 5 standalone-note publication preflight", () => {
       target: { kind: "post", postId: "post-1" },
       title: "Public field note",
       body: "The exact prose that would leave this device.",
-      mediaIds: [],
       shareable: true,
       createdAt: NOW,
       updatedAt: NOW,

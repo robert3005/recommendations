@@ -46,6 +46,7 @@ const anchor: SharedPlaceAnchor = {
 
 const guide: SharedGuide = {
   v: 1,
+  kind: "list",
   title: "OSM guide",
   blocks: [
     {
@@ -94,7 +95,6 @@ describe("linked public OSM attribution", () => {
       title: "A shared note",
       context: { kind: "place", place: anchor },
       body: "Public prose",
-      media: [],
       contentHash: "note-attribution-fixture",
       publishedAt: "2026-07-19T12:00:00.000Z",
     };

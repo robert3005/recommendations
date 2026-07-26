@@ -32,7 +32,6 @@ describe("Phase 5 list-deletion publication lifecycle", () => {
       const hosted: Publication = {
         id: "publication-1",
         target: { kind: "list", id: "list-1" },
-        mode: "hosted",
         slug: "public-guide",
         credentialId: "credential-1",
         status: "published",
@@ -108,7 +107,6 @@ describe("Phase 5 list-deletion publication lifecycle", () => {
       const notePage: Publication = {
         id: "publication-note",
         target: { kind: "note", id: noteId },
-        mode: "hosted",
         slug: "published-introduction",
         credentialId: "credential-note",
         status: "published",

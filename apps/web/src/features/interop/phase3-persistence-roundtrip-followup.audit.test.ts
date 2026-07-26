@@ -95,7 +95,6 @@ describe("Phase 3 persisted interchange fidelity follow-up", () => {
       id: "formula-note",
       target: { kind: "place", placeId: sourcePlace.id },
       body: "+owned note",
-      mediaIds: [],
       shareable: false,
       createdAt: NOW,
       updatedAt: NOW,

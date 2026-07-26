@@ -26,6 +26,7 @@ vi.mock("../../providers", () => ({
 
 const guide: SharedGuide = {
   v: 1,
+  kind: "list",
   title: "Synchronized reader",
   blocks: [
     {

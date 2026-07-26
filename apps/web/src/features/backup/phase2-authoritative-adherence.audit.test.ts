@@ -191,7 +191,6 @@ describe("Phase 2 authoritative local graph", () => {
           id: "orphan-note",
           target: { kind: "place", placeId: "missing-place" },
           body: "This note has no aggregate owner",
-          mediaIds: [],
           shareable: false,
           createdAt: NOW,
           updatedAt: NOW,

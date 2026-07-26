@@ -12,7 +12,7 @@
 import { markerAt } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
-import { publicationChannel, publicationForPost, publicListSlug, publishPost } from "./publication";
+import { publicationChannel, publicListSlug, publishPost } from "./publication";
 
 const NOW = "2026-07-19T16:00:00.000Z";
 const LATER = "2026-07-19T17:00:00.000Z";
@@ -101,7 +101,6 @@ describe("hosted post publication", () => {
       expect(body.document.list).toEqual({ title: "Lisbon Weekend" });
       expect(publication).toMatchObject({
         target: { kind: "post", id: "post-1" },
-        channel: "posts",
         status: "published",
         slug: "a-weekend-of-lisbon-coffee",
         publishedRevision: 1,
@@ -122,7 +121,6 @@ describe("hosted post publication", () => {
       const listPublication = {
         id: "publication-list",
         target: { kind: "list" as const, id: "list-1" },
-        mode: "hosted" as const,
         slug: "lisbon-weekend",
         credentialId: "credential-list",
         status: "queued" as const,
@@ -168,55 +166,6 @@ describe("hosted post publication", () => {
         publishedRevision: 1,
       });
       expect(await publicListSlug(repo, "list-1")).toBeUndefined();
-    } finally {
-      repo.db.close();
-    }
-  });
-
-  it("drains a migrated pre-pivot publication against /s/lists even though it targets a post", async () => {
-    const repo = new DexieRepository(`post-migrated-channel-${crypto.randomUUID()}`);
-    const { fetcher, requests } = stubService();
-    try {
-      await seeded(repo);
-      // A pre-pivot guide publication retargeted onto the post by the Dexie v7
-      // upgrade: target.kind "post", channel "lists", the original guide slug
-      // and server revision (spec/src/sharing.md §Share service).
-      await repo.db.credentials.put({
-        id: "credential-legacy",
-        token: "a".repeat(43),
-        createdAt: NOW,
-        updatedAt: NOW,
-      });
-      await repo.db.publications.put({
-        id: "publication-legacy",
-        target: { kind: "post", id: "post-1" },
-        mode: "hosted",
-        channel: "lists",
-        slug: "lisbon-weekend",
-        credentialId: "credential-legacy",
-        status: "queued",
-        localRevision: "pre-pivot-revision",
-        lastPublishedLocalRevision: "pre-pivot-revision",
-        publishedRevision: 3,
-        createdAt: NOW,
-        updatedAt: NOW,
-      });
-
-      const publication = await publishPost(repo, "post-1", LATER, fetcher);
-
-      // The update went to the original /s/lists slug — never /s/posts — under
-      // the migrated server revision.
-      expect(requests.map((r) => `${r.method} ${r.url}`)).toEqual(["PUT /s/lists/lisbon-weekend"]);
-      expect(requests[0]?.ifMatch).toBe('"3"');
-      expect(publication).toMatchObject({
-        id: "publication-legacy",
-        target: { kind: "post", id: "post-1" },
-        channel: "lists",
-        status: "published",
-        slug: "lisbon-weekend",
-      });
-      const persisted = await publicationForPost(repo, "post-1");
-      expect(persisted && publicationChannel(persisted)).toBe("lists");
     } finally {
       repo.db.close();
     }

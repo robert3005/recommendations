@@ -86,6 +86,7 @@ describe("Phase 4 snapshot safety", () => {
   it("enforces the compressed-byte limit while decoding, not only while generating", () => {
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Oversized inbound guide",
       blocks: [
         {
@@ -164,6 +165,7 @@ describe("Phase 4 viewer identity", () => {
     const copied = evidence({ website: unsafe });
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Untrusted snapshot",
       blocks: [
         {
@@ -210,6 +212,7 @@ describe("Phase 4 manual-anchor import", () => {
       await repo.addToList("existing-list", { kind: "poi", poi: poi() }, NOW);
       const guide: SharedGuide = {
         v: 1,
+        kind: "list",
         title: "Imported snapshot",
         blocks: [
           {

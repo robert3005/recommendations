@@ -30,6 +30,7 @@ const evidence = {
 };
 const guide: SharedGuide = {
   v: 1,
+  kind: "list",
   title: "Eventually resolved guide",
   blocks: [
     {

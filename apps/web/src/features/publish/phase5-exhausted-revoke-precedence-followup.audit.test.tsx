@@ -19,7 +19,6 @@ describe("Phase 5 exhausted revocation precedence", () => {
     const publication: Publication = {
       id: "publication-1",
       target: { kind: "list", id: "list-1" },
-      mode: "hosted",
       slug: "public-guide",
       credentialId: "credential-1",
       status: "failed",

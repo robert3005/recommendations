@@ -41,6 +41,7 @@ describe("Phase 4 exact preview disclosure", () => {
     };
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Identity disclosure",
       blocks: [
         {
@@ -99,7 +100,6 @@ describe("Phase 4 exact preview disclosure", () => {
         body:
           "![Sunset from the terrace](asset:media-sunset)\n\n" +
           "![Handwritten dinner menu](asset:media-menu)",
-        mediaIds: ["media-sunset", "media-menu"],
         shareable: true,
         createdAt: NOW,
         updatedAt: NOW,
@@ -150,7 +150,6 @@ describe("Phase 4 snapshot media privacy", () => {
         id: "note-1",
         target: { kind: "place", placeId: place.place.id },
         body: `Before ![Private family photo](${privateImageUrl}) after`,
-        mediaIds: [],
         shareable: true,
         createdAt: NOW,
         updatedAt: NOW,

@@ -17,7 +17,7 @@ const TOKEN = "a".repeat(43); // shaped like 256 bits of unpadded base64url
 const NOW = "2026-07-19T15:00:00.000Z";
 
 function guide(): SharedGuide {
-  return { v: 1, title: "Atomic first publish", blocks: [], contentHash: "hash" };
+  return { v: 1, kind: "list", title: "Atomic first publish", blocks: [], contentHash: "hash" };
 }
 
 class CreateAuditFailsOnceStorage extends MemoryStorage {

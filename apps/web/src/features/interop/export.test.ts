@@ -66,7 +66,6 @@ const note: Note = {
   id: "n1",
   target: { kind: "place", placeId: "p1" },
   body: "Great bica, sit outside",
-  mediaIds: [],
   shareable: false,
   createdAt: NOW,
   updatedAt: NOW,

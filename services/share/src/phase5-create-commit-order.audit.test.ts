@@ -36,6 +36,7 @@ describe("Phase 5 create commit ordering", () => {
     const app = createShareApp({ storage });
     const document: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Ordered first publish",
       blocks: [],
       contentHash: "v1",

@@ -12,7 +12,6 @@ function note(slug: string, body = "Original body"): SharedNote {
     slug,
     context: { kind: "list", listTitle: "Lisbon" },
     body,
-    media: [],
     contentHash: body,
     publishedAt: "2026-07-19T15:00:00.000Z",
   };

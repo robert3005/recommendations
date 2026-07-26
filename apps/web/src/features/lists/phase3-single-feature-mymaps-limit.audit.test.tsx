@@ -79,7 +79,6 @@ describe("Phase 3 Google My Maps unsplittable feature", () => {
         id: "note-1",
         target: { kind: "place", placeId: place.id },
         body: "x".repeat(MY_MAPS_FILE_LIMIT + 4096),
-        mediaIds: [],
         shareable: false,
         createdAt: NOW,
         updatedAt: NOW,

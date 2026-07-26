@@ -49,7 +49,6 @@ async function seed(repo: DexieRepository) {
     id: "n1",
     target: { kind: "place", placeId: view.place.id },
     body: "original body",
-    mediaIds: [],
     shareable: true,
     createdAt: NOW,
     updatedAt: NOW,

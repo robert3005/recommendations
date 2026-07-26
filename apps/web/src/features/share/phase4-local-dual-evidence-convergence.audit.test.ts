@@ -62,6 +62,7 @@ describe("Phase 4 offline two-epoch evidence deduplication", () => {
       );
       const guide: SharedGuide = {
         v: 1,
+        kind: "list",
         title: "Imported guide",
         blocks: [
           {

@@ -201,6 +201,7 @@ describe("Phase 5 D1 transactional and versioned persistence", () => {
     });
     const document: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Transactional publication",
       blocks: [],
       contentHash: "transactional-publication",
@@ -250,6 +251,7 @@ describe("Phase 5 D1 transactional and versioned persistence", () => {
         desiredSlug: "transactional-update",
         document: {
           v: 1,
+          kind: "list",
           title: "Before update",
           blocks: [],
           contentHash: "before-update",
@@ -269,6 +271,7 @@ describe("Phase 5 D1 transactional and versioned persistence", () => {
       body: JSON.stringify({
         document: {
           v: 1,
+          kind: "list",
           title: "After update",
           blocks: [],
           contentHash: "after-update",

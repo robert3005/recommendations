@@ -106,7 +106,6 @@ async function addImportNote(
     id: newId(),
     target: { kind: "place", placeId },
     body: note,
-    mediaIds: [],
     shareable: false,
     createdAt: now,
     updatedAt: now,

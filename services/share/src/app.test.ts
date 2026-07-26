@@ -12,7 +12,7 @@ const TOKEN = "a".repeat(43); // shaped like 256 bits of base64url
 const OTHER_TOKEN = "b".repeat(43);
 
 function guide(title = "Lisbon weekend"): SharedGuide {
-  return { v: 1, title, blocks: [], contentHash: "hash" };
+  return { v: 1, kind: "list", title, blocks: [], contentHash: "hash" };
 }
 
 function harness() {

@@ -12,7 +12,14 @@ import { type AuditEntry, MemoryStorage } from "./storage";
 const TOKEN = "a".repeat(43); // 32 bytes encoded as unpadded base64url
 
 function guide(overrides: Partial<SharedGuide> = {}): SharedGuide {
-  return { v: 1, title: "Lisbon weekend", blocks: [], contentHash: "hash", ...overrides };
+  return {
+    v: 1,
+    kind: "list",
+    title: "Lisbon weekend",
+    blocks: [],
+    contentHash: "hash",
+    ...overrides,
+  };
 }
 
 function note(slug: string): SharedNote {
@@ -21,7 +28,6 @@ function note(slug: string): SharedNote {
     slug,
     context: { kind: "list", listTitle: "Lisbon" },
     body: "A note",
-    media: [],
     contentHash: "hash",
     publishedAt: "2026-07-19T15:00:00.000Z",
   };

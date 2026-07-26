@@ -11,7 +11,6 @@ const meta = {
       id: "n1",
       target: { kind: "place", placeId: "p1" },
       body: "",
-      mediaIds: [],
       shareable: false,
       createdAt: "2026-07-18T00:00:00.000Z",
       updatedAt: "2026-07-18T00:00:00.000Z",

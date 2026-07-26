@@ -39,7 +39,6 @@ describe("Phase 5 hosted-publication preflight", () => {
         id: "note-1",
         target: { kind: "place", placeId: place.id },
         body: "Private itinerary detail selected for sharing.",
-        mediaIds: [],
         shareable: true,
         createdAt: NOW,
         updatedAt: NOW,

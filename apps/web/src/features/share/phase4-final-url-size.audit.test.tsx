@@ -7,6 +7,7 @@ describe("Phase 4 final snapshot URL disclosure", () => {
   it("reports the final URL size rather than only the compressed payload size", () => {
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "URL size guide",
       blocks: [],
       contentHash: "hash",

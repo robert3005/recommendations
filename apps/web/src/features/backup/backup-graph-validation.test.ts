@@ -89,7 +89,7 @@ function rowWith(data: MutableData, table: string, predicate: (row: MutableRow) 
   return row;
 }
 
-describe("Pivot replace-mode graph validation", () => {
+describe("Backup replace-mode graph validation", () => {
   it("rejects two live lists sharing one marker — markers are unique pairs", async () => {
     const source = freshRepo("pivot-duplicate-marker-source");
     const target = freshRepo("pivot-duplicate-marker-target");
@@ -215,7 +215,7 @@ describe("Pivot replace-mode graph validation", () => {
     }
   });
 
-  it('rejects a live note with the retired "list" target kind in post-pivot data', async () => {
+  it('rejects a live note whose target kind is not one the model defines', async () => {
     const source = freshRepo("pivot-list-note-source");
     const target = freshRepo("pivot-list-note-target");
     try {
@@ -228,7 +228,6 @@ describe("Pivot replace-mode graph validation", () => {
           target: { kind: "list", listId: "list-1" },
           targetKey: "list:list-1",
           body: "Legacy list prose",
-          mediaIds: [],
           shareable: false,
           createdAt: NOW,
           updatedAt: NOW,

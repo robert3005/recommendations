@@ -51,6 +51,7 @@ describe("Phase 4 pending preview fidelity", () => {
     });
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Pending fidelity",
       blocks: [
         {
@@ -115,6 +116,7 @@ describe("Phase 4 local evidence deduplication", () => {
     });
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Evidence match",
       blocks: [
         {

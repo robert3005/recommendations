@@ -75,7 +75,6 @@ describe("Phase 4 public projection privacy", () => {
         id: "note-1",
         target: { kind: "place", placeId: place.place.id },
         body: "A private photo: ![sunset][photo]\n\n[photo]: asset:media-secret",
-        mediaIds: ["media-secret"],
         shareable: true,
         createdAt: NOW,
         updatedAt: NOW,
@@ -113,7 +112,6 @@ describe("Phase 4 public projection privacy", () => {
         id: "note-1",
         target: { kind: "place", placeId: place.place.id },
         body: `A private photo: ![family][photo]\n\n[photo]: ${privateDestination}`,
-        mediaIds: [],
         shareable: true,
         createdAt: NOW,
         updatedAt: NOW,
@@ -175,6 +173,7 @@ describe("Phase 4 pending shared-guide import", () => {
     const repo = new DexieRepository(`phase4-pending-evidence-${crypto.randomUUID()}`);
     const guide: SharedGuide = {
       v: 1,
+      kind: "list",
       title: "Pending guide",
       blocks: [
         {

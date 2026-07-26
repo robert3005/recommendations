@@ -51,21 +51,6 @@ function parseIfMatch(value: string | undefined): number | undefined {
   return match?.[1] ? Number.parseInt(match[1], 10) : undefined;
 }
 
-/**
- * The media pipeline issues server-side ids bound to a publication and token
- * (spec/src/notes.md); until it exists, no document may claim one. Structural:
- * inspects the parsed value, so JSON escape spellings cannot slip through.
- */
-function claimsHostedMedia(value: unknown): boolean {
-  if (Array.isArray(value)) return value.some(claimsHostedMedia);
-  if (value && typeof value === "object") {
-    return Object.entries(value).some(
-      ([key, nested]) => key === "hostedMediaId" || claimsHostedMedia(nested),
-    );
-  }
-  return false;
-}
-
 const MUTATION_HEADERS = { "Cache-Control": "no-store" } as const;
 
 const PUBLIC_HEADERS = {
@@ -200,13 +185,6 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
           return c.text("document slug disagrees with the claimed URL", 400, MUTATION_HEADERS);
         }
       }
-      if (claimsHostedMedia(parsed.document)) {
-        return c.text(
-          "hosted media ids must be issued by the media service for this publication",
-          422,
-          MUTATION_HEADERS,
-        );
-      }
       const documentBody = JSON.stringify(parsed.document);
       if (utf8Bytes(documentBody) > LIMITS.documentBytes) {
         return c.text("document too large", 413, MUTATION_HEADERS);
@@ -324,13 +302,6 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         if (docSlug !== c.req.param("slug")) {
           return c.text("document slug disagrees with the public URL", 400, MUTATION_HEADERS);
         }
-      }
-      if (claimsHostedMedia(document)) {
-        return c.text(
-          "hosted media ids must be issued by the media service for this publication",
-          422,
-          MUTATION_HEADERS,
-        );
       }
       const serialized = JSON.stringify(document);
       if (utf8Bytes(serialized) > LIMITS.documentBytes) {

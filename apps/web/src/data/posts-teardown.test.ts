@@ -57,7 +57,6 @@ function placeNote(id: string, placeId: string, shareable = true): Note {
     id,
     target: { kind: "place", placeId },
     body: `body of ${id}`,
-    mediaIds: [],
     shareable,
     createdAt: NOW,
     updatedAt: NOW,
@@ -68,7 +67,6 @@ function hostedPublication(id: string, target: Publication["target"]): Publicati
   return {
     id,
     target,
-    mode: "hosted",
     slug: id,
     credentialId: `${id}-credential`,
     status: "published",
