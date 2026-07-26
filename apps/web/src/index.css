@@ -18,15 +18,15 @@
 @theme {
   /* Paper and ink — the one background (deep forest, not black), and the
      full-strength foreground (warm off-white). */
-  --color-paper: #0e1613;
+  --color-paper: #223129;
   --color-ink: #e9efe9;
 
   /* Panel — the one raised surface, for popups and menus that must sit
      above the ground. Everything else stays on paper. */
-  --color-panel: #15201b;
+  --color-panel: #2b3c33;
 
   /* Hairline — every rule and border, at 1px. */
-  --color-hairline: #2a3a31;
+  --color-hairline: #41544a;
 
   /*
    * The eight accents. Bright fills are for markers, toggles, and large type;

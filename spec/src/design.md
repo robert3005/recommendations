@@ -11,10 +11,11 @@ starting values; it fixes roles and relationships, not pixel specs.
 
 ## Paper and ink
 
-The ground is the **deep-green console**: deep forest (`#0E1613`, decidedly not black) with warm
-off-white ink (`#E9EFE9`) and hairlines in a muted green (`#2A3A31`). The notebook, cards, sheets,
+The ground is the **deep-green console**: a mid-deep forest (`#223129`) — deliberately lifted
+well clear of black, so the console sits beside the light map plate rather than clashing against
+it — with warm off-white ink (`#E9EFE9`) and hairlines in a muted green (`#41544A`). The notebook, cards, sheets,
 and the public viewer all sit on that same ground; structure comes from hairlines and whitespace,
-not background changes. The one exception is `--color-panel` (`#15201B`), a single slightly-raised
+not background changes. The one exception is `--color-panel` (`#2B3C33`), a single slightly-raised
 surface reserved for popups and menus that must sit above the ground.
 
 The basemap deliberately stays a light plate (see [Map styling](#map-styling)), so the console
@@ -95,14 +96,14 @@ things. Under `prefers-reduced-motion` every one of them completes instantly.
 
 ## Token families
 
-- **Paper** — `--color-paper` (`#0E1613`): the one background — deep forest, not black.
+- **Paper** — `--color-paper` (`#223129`): the one background — deep forest, not black.
 - **Ink** — `--color-ink` (`#E9EFE9`): text, icons, and controls at full strength — warm
   off-white.
-- **Panel** — `--color-panel` (`#15201B`): the one raised surface, only for popups and menus
+- **Panel** — `--color-panel` (`#2B3C33`): the one raised surface, only for popups and menus
   that sit above the ground.
 - **Accents** — `--color-accent-<name>` and `--color-accent-<name>-deep`, eight of each (table
   above). No other hues exist in the app.
-- **Hairline** — `--color-hairline` (`#2A3A31`): every rule and border, at 1px.
+- **Hairline** — `--color-hairline` (`#41544A`): every rule and border, at 1px.
 - **Radius** — `--radius-crisp` (`2px`): the one corner radius.
 - **Type** — `--font-display`, `--font-body`, `--font-mono`; the size scale keeps Tailwind's
   default `--text-*` steps.
