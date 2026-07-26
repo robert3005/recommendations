@@ -82,60 +82,17 @@ import {
   type PlaceRow,
   type PostBlockRow,
 } from "./db";
-
-function toPlaceRow(place: Place): PlaceRow {
-  return { ...place, refKeys: allRefKeys(place) };
-}
-
-function toNoteRow(note: Note): NoteRow {
-  return { ...note, targetKey: noteTargetKey(note.target) };
-}
-
-function toBlockRow(block: ListBlock): ListBlockRow {
-  return { ...block, kind: "place", refId: block.content.placeId };
-}
-
-function toPostBlockRow(block: PostBlock): PostBlockRow {
-  return {
-    ...block,
-    kind: block.content.type,
-    refId: block.content.type === "section" ? block.content.noteId : block.content.placeId,
-  };
-}
-
-const live = <T extends { deleted?: boolean }>(row: T | undefined): T | undefined =>
-  row && !row.deleted ? row : undefined;
-
-function assertValidPlaceShape(place: Place): void {
-  const validCoords = (lat: number, lng: number): boolean =>
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lng >= -180 &&
-    lng <= 180;
-  if (place.currentOsmRef) {
-    if (!place.currentOsmLinkedAt || !place.firstSeen || !place.lastVerified) {
-      throw new Error("an OSM-linked place requires link time and recovery evidence");
-    }
-    if (!sameRef(place.lastVerified.ref, place.currentOsmRef)) {
-      throw new Error("lastVerified evidence must describe the current OSM element");
-    }
-    if (place.resolutionState === "unlinked") {
-      throw new Error("an OSM-linked place cannot have unlinked resolution state");
-    }
-  } else if (!place.manual || place.origin === "osm" || place.resolutionState !== "unlinked") {
-    throw new Error("a place without an OSM binding requires unlinked manual display facts");
-  }
-  if (place.manual && !validCoords(place.manual.lat, place.manual.lng)) {
-    throw new Error("manual place coordinates are outside valid latitude/longitude bounds");
-  }
-  for (const evidence of [place.firstSeen, place.lastVerified]) {
-    if (evidence && !validCoords(evidence.lat, evidence.lng)) {
-      throw new Error("OSM evidence coordinates are outside valid latitude/longitude bounds");
-    }
-  }
-}
+import {
+  assertValidPlaceShape,
+  decidePlaceIdentity,
+  listDeletionBlockers,
+  live,
+  membershipBlockers,
+  toBlockRow,
+  toNoteRow,
+  toPlaceRow,
+  toPostBlockRow,
+} from "./decisions";
 
 /** The device's stable actor id for sync mutations (never part of backups). */
 let volatileActorId: string | undefined;
@@ -992,50 +949,15 @@ export class DexieRepository implements PlacemarksRepository {
         // first observation never change, and completed link history is
         // strictly append-only — an update keeps its history only when the
         // existing entries survive verbatim as its prefix.
-        const existingPast = new Set(existing.pastOsmRefs.map(refKey));
-        const incomingPast = new Set(place.pastOsmRefs.map(refKey));
-        // Former refs only ever grow. As a set this is containment, where the
-        // interval log needed a verbatim-prefix comparison over four fields.
-        const preservesPast = [...existingPast].every((key) => incomingPast.has(key));
-        // A binding transition and its record move together: changing the
-        // current ref REQUIRES retaining the one it replaced, and the ONLY ref a
-        // transition may add is exactly that one — anything else is forged.
-        const refChanged = !(
-          (existing.currentOsmRef === undefined && place.currentOsmRef === undefined) ||
-          (existing.currentOsmRef !== undefined &&
-            place.currentOsmRef !== undefined &&
-            sameRef(existing.currentOsmRef, place.currentOsmRef))
-        );
-        const added = [...incomingPast].filter((key) => !existingPast.has(key));
-        const additionValid =
-          added.length === 0 ||
-          // A transition may add exactly the ref it replaced, and nothing else.
-          (refChanged &&
-            added.length === 1 &&
-            place.currentOsmRef !== undefined &&
-            existing.currentOsmRef !== undefined &&
-            added[0] === refKey(existing.currentOsmRef)) ||
-          // An unlinked place may record provenance for an element its facts
-          // descend from without claiming a binding to it — this is how an
-          // imported OSM-derived row keeps its ODbL attribution after being
-          // placed manually (spec/src/interop.md §Licensing hygiene).
-          (existing.currentOsmRef === undefined && place.currentOsmRef === undefined);
-        const nextPast = preservesPast && additionValid ? place.pastOsmRefs : existing.pastOsmRefs;
-        const acceptRef =
-          !refChanged ||
-          existing.currentOsmRef === undefined ||
-          (place.currentOsmRef !== undefined &&
-            preservesPast &&
-            additionValid &&
-            added.length === 1);
+        const identity = decidePlaceIdentity(existing, place);
         await this.syncedPut(
           "places",
           toPlaceRow({
             ...place,
             origin: existing.origin,
             ...(existing.firstSeen ? { firstSeen: existing.firstSeen } : {}),
-            pastOsmRefs: nextPast,
-            ...(acceptRef
+            pastOsmRefs: identity.pastOsmRefs,
+            ...(identity.acceptRef
               ? {}
               : {
                   currentOsmRef: existing.currentOsmRef,
@@ -1302,31 +1224,29 @@ export class DexieRepository implements PlacemarksRepository {
     placeId: PlaceId,
     scope: { kind: "place" } | { kind: "membership"; listId: string; blockId: string },
   ): Promise<Blocker[]> {
-    const blockers: Blocker[] = [];
-    for (const embed of await this.liveEmbedsOfPlace(placeId)) {
-      if (scope.kind === "membership" && embed.post.listId !== scope.listId) continue;
-      blockers.push({
-        kind: "embed",
-        id: embed.block.id,
-        label: embed.post.title,
-        postId: embed.post.id,
-        placeId,
-      });
-    }
-    const endsExistence =
-      scope.kind === "place" ||
-      (await this.livePlaceBlocks(placeId)).filter((b) => b.id !== scope.blockId).length === 0;
-    if (endsExistence) {
-      for (const note of await this.liveNotesOfPlace(placeId)) {
-        blockers.push({
-          kind: "note",
-          id: note.id,
-          ...(note.title !== undefined ? { label: note.title } : {}),
-          placeId,
-        });
-      }
-    }
-    return blockers;
+    const embeds = (await this.liveEmbedsOfPlace(placeId)).map((embed) => ({
+      blockId: embed.block.id,
+      postId: embed.post.id,
+      postTitle: embed.post.title,
+      postListId: embed.post.listId,
+    }));
+    const notes = (await this.liveNotesOfPlace(placeId)).map((note) => ({
+      id: note.id,
+      ...(note.title !== undefined ? { title: note.title } : {}),
+    }));
+    const remaining =
+      scope.kind === "membership"
+        ? (await this.livePlaceBlocks(placeId)).filter((block) => block.id !== scope.blockId).length
+        : 0;
+    return membershipBlockers({
+      placeId,
+      scope:
+        scope.kind === "place"
+          ? { kind: "place" }
+          : { kind: "membership", listId: scope.listId, remainingMemberships: remaining },
+      embeds,
+      notes,
+    });
   }
 
   async removePlace(placeId: PlaceId, now: string): Promise<void> {
@@ -1738,16 +1658,13 @@ export class DexieRepository implements PlacemarksRepository {
         if (!list) return;
         // Bottom-up teardown: a list deletes only once it is empty and no
         // live post editorialises it — nothing cascades through it.
-        const blockers: Blocker[] = [];
-        for (const post of await this.listPostsForList(listId)) {
-          blockers.push({ kind: "post", id: post.id, label: post.title, postId: post.id });
-        }
         const members = (await this.db.listBlocks.where("listId").equals(listId).toArray()).filter(
           (b) => !b.deleted && b.kind === "place",
         );
-        for (const block of members) {
-          blockers.push({ kind: "member", id: block.refId, placeId: block.refId });
-        }
+        const blockers = listDeletionBlockers(
+          await this.listPostsForList(listId),
+          members.map((block) => block.refId),
+        );
         if (blockers.length > 0) {
           throw new TeardownRefusedError(
             "deleting this list is blocked — remove its places and delete its posts first",
