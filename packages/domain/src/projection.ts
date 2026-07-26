@@ -17,6 +17,16 @@ export interface PublishedPlace {
   category?: string;
   osmRef?: OsmRef; // attribution + OSM deep link on the public page
   imageUrl?: string; // Wikimedia-hosted photo, when the place carries one
+  // Richer POI facts, published verbatim when the place carries them.
+  // descriptionSource stays local: the public page credits Wikipedia through
+  // wikipediaUrl, which is present exactly when the description came from there.
+  website?: string;
+  phone?: string;
+  openingHours?: string;
+  cuisine?: string;
+  wheelchair?: string;
+  description?: string;
+  wikipediaUrl?: string;
 }
 
 export interface PublishedList {
@@ -47,6 +57,13 @@ export function toPublishedPlace(p: Place): PublishedPlace {
     ...(p.category !== undefined ? { category: p.category } : {}),
     ...(p.osmRef !== undefined ? { osmRef: p.osmRef } : {}),
     ...(p.imageUrl !== undefined ? { imageUrl: p.imageUrl } : {}),
+    ...(p.website !== undefined ? { website: p.website } : {}),
+    ...(p.phone !== undefined ? { phone: p.phone } : {}),
+    ...(p.openingHours !== undefined ? { openingHours: p.openingHours } : {}),
+    ...(p.cuisine !== undefined ? { cuisine: p.cuisine } : {}),
+    ...(p.wheelchair !== undefined ? { wheelchair: p.wheelchair } : {}),
+    ...(p.description !== undefined ? { description: p.description } : {}),
+    ...(p.wikipediaUrl !== undefined ? { wikipediaUrl: p.wikipediaUrl } : {}),
   };
 }
 

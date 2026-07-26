@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { Markdown } from "../../markdown/Markdown";
+import { PlaceFacts } from "../place/PlaceFacts";
 import { PlaceImage } from "../place/PlaceImage";
 import { placeIdFromHash, usePlaceFragmentSelection } from "./placeFragment";
 import { fetchPublishedPost, PublishedDocumentError } from "./publishedDoc";
@@ -78,7 +79,10 @@ export function PublishedPostContent({ slug }: { slug: string }) {
           <ul className="mt-1 space-y-1">
             {document.places.map((place) => (
               <li key={place.id} id={`place-${place.id}`} data-testid="published-place">
-                {/* The photo, exactly as published — same rendering as the place card. */}
+                {/* The photo and facts, exactly as published — the same
+                    listing the place card renders (spec/src/map-view.md §The
+                    place card); no coordinates, the pin is the coordinate
+                    display. */}
                 {place.imageUrl !== undefined ? (
                   <PlaceImage url={place.imageUrl} name={place.name} />
                 ) : null}
@@ -91,11 +95,25 @@ export function PublishedPostContent({ slug }: { slug: string }) {
                     selectedId === place.id ? "border-ink" : "border-hairline"
                   }`}
                 >
-                  <span className="font-medium text-ink">{place.name}</span>{" "}
-                  <span className="text-ink/55">
-                    {String(place.lat)}, {String(place.lng)}
-                  </span>
+                  <span className="font-medium text-ink">{place.name}</span>
+                  {place.category || place.cuisine ? (
+                    <>
+                      {" "}
+                      <span className="capitalize text-ink/55">
+                        {[place.category, place.cuisine].filter(Boolean).join(" · ")}
+                      </span>
+                    </>
+                  ) : null}
                 </button>
+                <PlaceFacts
+                  description={place.description}
+                  wikipediaUrl={place.wikipediaUrl}
+                  address={place.address}
+                  website={place.website}
+                  phone={place.phone}
+                  openingHours={place.openingHours}
+                  wheelchair={place.wheelchair}
+                />
                 <OsmPlaceLink place={place} />
               </li>
             ))}

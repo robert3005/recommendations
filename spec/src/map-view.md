@@ -50,11 +50,13 @@ DESKTOP — every route renders notebook + canvas      MOBILE — sheet over can
   Settings is a notebook route like any other: library-archive export and import
   ([Local Storage](./storage.md)) and provider and privacy information
   ([Map Data & Providers](./data-sources.md)) live there, and the canvas keeps its viewport.
-- **Selection is bidirectional.** Tap a pin → its place card opens — a column beside the
-  notebook on desktop, a bottom sheet over the canvas on mobile;
-  select in the notebook → the canvas highlights and flies (instant under
-  `prefers-reduced-motion`). The notebook is the map's synchronised non-map equivalent for
-  accessibility.
+- **Selection is bidirectional, and every selection centres.** Tap a pin → its place card opens —
+  a column beside the notebook on desktop, a bottom sheet over the canvas on mobile; select in
+  the notebook → the same. Either way the canvas centres the place with one camera move (instant
+  under `prefers-reduced-motion`), and the requested zoom is a floor — centring never zooms the
+  user out of a closer view. The selected pin is unmistakable beside its list-mates: enlarged,
+  never dimmed, stacked above its neighbours, and wearing the ink selection ring. The notebook
+  is the map's synchronised non-map equivalent for accessibility.
 
 Pins are solid accent-coloured shapes wearing their list's marker; a place on several lists wears
 a deterministic stacked/badged variant naming its lists on tap ([Visual Design](./design.md)).
@@ -116,11 +118,19 @@ toggle renders the sanitised article in place ([Posts](./posts.md)).
 ## The place card
 
 On desktop the card is its own column beside the notebook; on mobile it is a bottom sheet. It
-shows the place's facts — name, category, address, coordinates — and its ways out and in. A
-photo tops the card when the place carries one (Wikimedia-hosted, from its OSM element — captured
-at paste-time lookup, or by one best-effort lookup after adding a search pick), with a small
-Wikimedia Commons credit link; a failed load hides the photo block.
+reads as a listing, not a record, and its contents are, top to bottom — each only when present:
 
+- The **photo** (Wikimedia-hosted, from the OSM element's tags or its Wikipedia article —
+  captured at paste-time lookup or by the enrichment pass below), with a small Wikimedia
+  Commons credit link; a failed load hides the photo block.
+- The **name**, then one muted line of **category · cuisine**.
+- The **description** paragraph, set with relaxed line-height — the OSM `description` tag, or
+  the linked Wikipedia article's summary. Wikipedia-sourced text carries a small **Wikipedia**
+  credit link to the article, titled with its CC BY-SA licence.
+- The **address**.
+- Compact **fact rows**: website (a normalized https link, its hostname as the text), phone (a
+  `tel:` link), opening hours (the raw `opening_hours` value, in the mono face), and wheelchair
+  access ("Wheelchair accessible" / "Partly accessible" / "Not accessible").
 - Deep links out: **Open in Google Maps** (the retained `googleUrl` when one exists, else a
   coordinate/name search URL), **Open in Apple Maps**, and **View on OpenStreetMap** when the
   place carries an `osmRef` — the OSM element page is also where fact corrections happen.
@@ -128,6 +138,12 @@ Wikimedia Commons credit link; a failed load hides the photo block.
   ([Data Model](./data-model.md)): joining a list is how a place enters the library.
 - The place's posts, when any exist, plus **Write a post**, which creates a place post and opens
   the editor.
+
+Coordinates do not appear anywhere on the card — they were chrome, not information; the pin on
+the canvas is the coordinate display. Opening the card of a place with an `osmRef` fires one
+fire-and-forget enrichment pass — capture rules and the fill-only-missing guarantee are in
+[Data Model](./data-model.md) §Normative rules — so places added before their facts were
+captured gain them the first time they are looked at.
 
 ## The add-a-place field
 

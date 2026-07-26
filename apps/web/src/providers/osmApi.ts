@@ -60,6 +60,38 @@ function imageUrlOf(tags: Record<string, string>): string | undefined {
   return undefined;
 }
 
+/** Website from website | contact:website | url — https only; anything else is dropped. */
+function websiteOf(tags: Record<string, string>): string | undefined {
+  for (const key of ["website", "contact:website", "url"]) {
+    const value = tags[key];
+    if (value?.startsWith("https://")) return value;
+  }
+  return undefined;
+}
+
+const WHEELCHAIR_VALUES = new Set(["yes", "limited", "no"]);
+
+/**
+ * Richer POI facts from the element's tags (spec/src/data-model.md §Normative
+ * rules): captured opportunistically at lookup, filled onto places only while
+ * missing. `wikipedia` is the raw tag value ("lang:Article Title") for the
+ * summary provider to resolve.
+ */
+function poiFactsOf(tags: Record<string, string>): Partial<GeocoderCandidate> {
+  const website = websiteOf(tags);
+  const phone = tags.phone ?? tags["contact:phone"];
+  const wheelchair = tags.wheelchair;
+  return {
+    ...(website !== undefined ? { website } : {}),
+    ...(phone !== undefined ? { phone } : {}),
+    ...(tags.opening_hours !== undefined ? { openingHours: tags.opening_hours } : {}),
+    ...(tags.cuisine !== undefined ? { cuisine: tags.cuisine } : {}),
+    ...(wheelchair !== undefined && WHEELCHAIR_VALUES.has(wheelchair) ? { wheelchair } : {}),
+    ...(tags.description !== undefined ? { description: tags.description } : {}),
+    ...(tags.wikipedia !== undefined ? { wikipedia: tags.wikipedia } : {}),
+  };
+}
+
 function addressOf(tags: Record<string, string>): string | undefined {
   const address = [
     [tags["addr:street"], tags["addr:housenumber"]].filter(Boolean).join(" "),
@@ -103,6 +135,7 @@ export class OsmApiGeocoder {
       ...(address ? { address } : {}),
       osmRef: ref,
       ...(imageUrl ? { imageUrl } : {}),
+      ...poiFactsOf(tags),
     };
   }
 }

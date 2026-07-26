@@ -16,6 +16,18 @@ produces a union-of-all-designs codebase: roughly 8,500 lines of it, removed ove
 
 ---
 
+## 2026-07-26 — richer place metadata
+
+The owner asked for the place card to show a picture, a description, and more POI facts —
+and for raw coordinates to leave the card. Places (and their published projections) gain
+optional `website`, `phone`, `openingHours`, `cuisine`, `wheelchair`, `description`, and
+`wikipediaUrl`, captured opportunistically: the exact OSM lookup maps the element's tags, and
+a Wikipedia REST summary is consulted only when the element names an article, filling the
+description (credited via `wikipediaUrl`) and the photo fallback. The wikimedia-only image
+rule stands — Wikipedia thumbnails are accepted only from Wikimedia hosts. Facts fill only
+while missing: enrichment never overwrites anything the user can see, and it stays
+best-effort and silent, one attempt per place per session.
+
 ## 2026-07-26 — search-first chrome
 
 The persistent Lists/Review/Settings nav is retired; search owns the top bar. The notebook

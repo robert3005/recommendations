@@ -12,6 +12,7 @@ import { server } from "../mocks/server";
 import { OsmApiGeocoder } from "./osmApi";
 import { PeliasGeocoder } from "./pelias";
 import { PhotonGeocoder } from "./photon";
+import { wikipediaSummary } from "./wikipedia";
 
 describe("PhotonGeocoder.search", () => {
   it("normalizes features to candidates recording osmRef, dropping ref-less ones", async () => {
@@ -188,6 +189,79 @@ describe("OsmApiGeocoder.lookup", () => {
     expect(await lookups.lookup({ type: "node", id: "3" })).not.toHaveProperty("imageUrl");
   });
 
+  it("maps the richer POI tags onto the candidate, wikipedia kept as the raw tag", async () => {
+    const candidate = await geocoder.lookup({ type: "node", id: "101" });
+    expect(candidate).toMatchObject({
+      website: "https://cafecentral.pt",
+      phone: "+351 21 000 0000",
+      openingHours: "Mo-Fr 08:00-18:00; Sa 09:00-14:00",
+      cuisine: "portuguese",
+      wheelchair: "limited",
+      description: "Historic café on Rua Example, pouring bica since 1923.",
+      wikipedia: "pt:Café Central (Lisboa)",
+    });
+    // The sparse element yields none of them.
+    const sparse = await geocoder.lookup({ type: "node", id: "102" });
+    for (const key of [
+      "website",
+      "phone",
+      "openingHours",
+      "cuisine",
+      "wheelchair",
+      "description",
+      "wikipedia",
+    ]) {
+      expect(sparse).not.toHaveProperty(key);
+    }
+  });
+
+  it("takes website from website|contact:website|url, https only; phone falls back to contact:phone", async () => {
+    const baseUrl = "https://lookup-facts.test";
+    const node = (id: number, tags: Record<string, string>) => ({
+      version: "0.6",
+      elements: [{ type: "node", id, lat: 38.7, lon: -9.1, tags: { name: "X", ...tags } }],
+    });
+    server.use(
+      // An http website is dropped, and the https contact:website steps in.
+      http.get(`${baseUrl}/api/0.6/node/1.json`, () =>
+        HttpResponse.json(
+          node(1, { website: "http://insecure.example", "contact:website": "https://x.example" }),
+        ),
+      ),
+      http.get(`${baseUrl}/api/0.6/node/2.json`, () =>
+        HttpResponse.json(node(2, { url: "https://url-tag.example" })),
+      ),
+      http.get(`${baseUrl}/api/0.6/node/3.json`, () =>
+        HttpResponse.json(node(3, { website: "no-scheme.example" })),
+      ),
+      http.get(`${baseUrl}/api/0.6/node/4.json`, () =>
+        HttpResponse.json(node(4, { "contact:phone": "+351 21 111 1111" })),
+      ),
+    );
+    const lookups = new OsmApiGeocoder(baseUrl);
+    expect((await lookups.lookup({ type: "node", id: "1" }))?.website).toBe("https://x.example");
+    expect((await lookups.lookup({ type: "node", id: "2" }))?.website).toBe(
+      "https://url-tag.example",
+    );
+    expect(await lookups.lookup({ type: "node", id: "3" })).not.toHaveProperty("website");
+    expect((await lookups.lookup({ type: "node", id: "4" }))?.phone).toBe("+351 21 111 1111");
+  });
+
+  it("keeps wheelchair only for yes|limited|no", async () => {
+    const baseUrl = "https://lookup-wheelchair.test";
+    const node = (id: number, wheelchair: string) => ({
+      version: "0.6",
+      elements: [{ type: "node", id, lat: 38.7, lon: -9.1, tags: { name: "X", wheelchair } }],
+    });
+    server.use(
+      http.get(`${baseUrl}/api/0.6/node/1.json`, () => HttpResponse.json(node(1, "yes"))),
+      http.get(`${baseUrl}/api/0.6/node/2.json`, () => HttpResponse.json(node(2, "designated"))),
+    );
+    const lookups = new OsmApiGeocoder(baseUrl);
+    expect((await lookups.lookup({ type: "node", id: "1" }))?.wheelchair).toBe("yes");
+    expect(await lookups.lookup({ type: "node", id: "2" })).not.toHaveProperty("wheelchair");
+  });
+
   it("computes a representative point for ways from member nodes", async () => {
     const candidate = await geocoder.lookup({ type: "way", id: "201" });
     expect(candidate?.lat).toBeCloseTo(38.7107, 3);
@@ -214,5 +288,60 @@ describe("OsmApiGeocoder.lookup", () => {
     await expect(new OsmApiGeocoder(baseUrl).lookup({ type: "node", id: "42" })).rejects.toThrow(
       /element missing/,
     );
+  });
+});
+
+describe("wikipediaSummary", () => {
+  it("resolves a lang-prefixed tag against that language wiki and parses the summary", async () => {
+    const summary = await wikipediaSummary("pt:Café Central (Lisboa)");
+    expect(summary).toEqual({
+      extract: expect.stringContaining("café histórico de Lisboa"),
+      thumbnailUrl:
+        "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Cafe_Central_Lisboa.jpg/320px-Cafe_Central_Lisboa.jpg",
+      articleUrl: "https://pt.wikipedia.org/wiki/Caf%C3%A9_Central_(Lisboa)",
+    });
+  });
+
+  it("defaults to the English wiki when the tag carries no lang prefix", async () => {
+    let requested: string | undefined;
+    server.use(
+      http.get("https://en.wikipedia.org/api/rest_v1/page/summary/:title", ({ request }) => {
+        requested = request.url;
+        return HttpResponse.json({ extract: "An article." });
+      }),
+    );
+    const summary = await wikipediaSummary("Jerónimos Monastery");
+    expect(requested).toBe(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent("Jerónimos Monastery")}`,
+    );
+    expect(summary?.extract).toBe("An article.");
+  });
+
+  it("rejects a thumbnail whose host is not Wikimedia", async () => {
+    server.use(
+      http.get("https://en.wikipedia.org/api/rest_v1/page/summary/:title", () =>
+        HttpResponse.json({
+          extract: "An article.",
+          thumbnail: { source: "https://example.com/hotlinked.jpg" },
+        }),
+      ),
+    );
+    const summary = await wikipediaSummary("Somewhere");
+    expect(summary).not.toHaveProperty("thumbnailUrl");
+    expect(summary?.extract).toBe("An article.");
+  });
+
+  it("truncates the extract to 600 characters at capture", async () => {
+    server.use(
+      http.get("https://en.wikipedia.org/api/rest_v1/page/summary/:title", () =>
+        HttpResponse.json({ extract: "x".repeat(700) }),
+      ),
+    );
+    const summary = await wikipediaSummary("Long Article");
+    expect(summary?.extract).toHaveLength(600);
+  });
+
+  it("answers undefined for a missing article — 404 is not an error", async () => {
+    expect(await wikipediaSummary("pt:Página Inexistente")).toBeUndefined();
   });
 });

@@ -74,7 +74,8 @@ Uniqueness is enforced across live lists up to 64; beyond that, pairs repeat wit
 badge as the deterministic variant and the UI says so.
 
 A place on multiple visible lists wears a deterministic stacked/badged variant of its markers;
-tapping it names the lists it belongs to.
+tapping it names the lists it belongs to. The selected place is the loudest pin on the plate:
+half again as large, never dimmed, above its neighbours, ringed in plate ink.
 
 ## Map styling
 

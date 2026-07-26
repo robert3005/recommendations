@@ -139,6 +139,35 @@ describe("membership is existence", () => {
     expect(updated?.category).toBe("cafe");
     await expect(repo.updatePlaceFacts(place.id, { lat: 91 })).rejects.toThrow(/coordinates/);
   });
+
+  it("updatePlaceFacts accepts the richer POI facts and leaves unpatched ones alone", async () => {
+    const list = await repo.createList("Lisbon");
+    const place = placeOf(await repo.addToList(list.id, { kind: "new", facts: facts() }));
+    await repo.updatePlaceFacts(place.id, {
+      website: "https://cafecentral.pt",
+      phone: "+351 21 000 0000",
+      openingHours: "Mo-Fr 08:00-18:00",
+      cuisine: "portuguese",
+      wheelchair: "limited",
+      description: "Historic café.",
+      descriptionSource: "osm",
+      wikipediaUrl: "https://pt.wikipedia.org/wiki/Caf%C3%A9_Central_(Lisboa)",
+    });
+    const updated = await repo.getPlace(place.id);
+    expect(updated).toMatchObject({
+      website: "https://cafecentral.pt",
+      phone: "+351 21 000 0000",
+      openingHours: "Mo-Fr 08:00-18:00",
+      cuisine: "portuguese",
+      wheelchair: "limited",
+      description: "Historic café.",
+      descriptionSource: "osm",
+      wikipediaUrl: "https://pt.wikipedia.org/wiki/Caf%C3%A9_Central_(Lisboa)",
+    });
+    // A later unrelated patch leaves the facts standing.
+    await repo.updatePlaceFacts(place.id, { name: "Café Central (renamed)" });
+    expect((await repo.getPlace(place.id))?.website).toBe("https://cafecentral.pt");
+  });
 });
 
 describe("dedup precedence: feature id → osmRef → name + proximity", () => {

@@ -10,6 +10,7 @@ import {
   peliasCafeResponse,
   photonCafeResponse,
   photonMigradoResponse,
+  wikipediaSummaryCafeCentral,
 } from "./fixtures";
 
 /**
@@ -97,4 +98,12 @@ export const handlers = [
     HttpResponse.text("Server Error", { status: 500 }),
   ),
   http.get(`${OSM_API_URL}/api/0.6/way/201/full.json`, () => HttpResponse.json(osmWay201Full)),
+
+  // Wikipedia REST summary for osmNode101's wikipedia tag; any other pt title
+  // is a missing article — 404 is the endpoint's "no such page" answer.
+  http.get("https://pt.wikipedia.org/api/rest_v1/page/summary/:title", ({ params }) =>
+    decodeURIComponent(String(params.title)) === "Café Central (Lisboa)"
+      ? HttpResponse.json(wikipediaSummaryCafeCentral)
+      : HttpResponse.json({ type: "not_found" }, { status: 404 }),
+  ),
 ];

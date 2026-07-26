@@ -21,6 +21,17 @@ export interface Place {
   // placement): deep link, export identity, dedup key, attribution trigger
   imageUrl?: string; // Wikimedia-hosted photo from the OSM element's image/wikimedia_commons
   // tags, captured at lookup time; never any other host
+  // Richer POI facts, captured opportunistically from OSM tags at lookup and
+  // from a Wikipedia summary when the element names an article; each fills
+  // only while missing (spec/src/data-model.md §Normative rules).
+  website?: string; // https only
+  phone?: string;
+  openingHours?: string; // the raw opening_hours tag value
+  cuisine?: string;
+  wheelchair?: string; // "yes" | "limited" | "no" — other tag values are dropped at capture
+  description?: string;
+  descriptionSource?: "osm" | "wikipedia"; // which source filled description
+  wikipediaUrl?: string; // the article page a Wikipedia-sourced description came from
   createdAt: string;
   updatedAt: string;
 }
@@ -99,6 +110,14 @@ export interface GeocoderCandidate {
   address?: string;
   osmRef?: OsmRef;
   imageUrl?: string; // Wikimedia-hosted photo, set only by the exact OSM element lookup
+  // Richer POI facts, mapped from the element's tags by the exact lookup only.
+  website?: string; // https only
+  phone?: string;
+  openingHours?: string;
+  cuisine?: string;
+  wheelchair?: string; // "yes" | "limited" | "no" only
+  description?: string; // the OSM description tag
+  wikipedia?: string; // the raw wikipedia tag value, "lang:Article Title"
 }
 
 export interface ImportItem {

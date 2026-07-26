@@ -38,6 +38,14 @@ interface Place {
   osmRef?: OsmRef;      // set whenever facts came from OSM (link paste, search pick, geocoder
                         // placement): deep link, export identity, dedup key, attribution trigger
   imageUrl?: string;    // Wikimedia-hosted photo from the OSM element's tags, set at lookup time
+  website?: string;     // richer POI facts, captured opportunistically at lookup — https only
+  phone?: string;
+  openingHours?: string;                       // the raw opening_hours tag value
+  cuisine?: string;
+  wheelchair?: string;                         // "yes" | "limited" | "no" only
+  description?: string;
+  descriptionSource?: "osm" | "wikipedia";     // which source filled description
+  wikipediaUrl?: string;                       // the article a Wikipedia description came from
   createdAt: string;
   updatedAt: string;
 }
@@ -104,6 +112,9 @@ interface ImportBatch {
 interface GeocoderCandidate {
   name: string; lat: number; lng: number; address?: string; osmRef?: OsmRef;
   imageUrl?: string;  // Wikimedia-hosted photo, set only by the exact OSM element lookup
+  website?: string; phone?: string; openingHours?: string; cuisine?: string;
+  wheelchair?: string; description?: string;   // POI facts from the element's tags (lookup only)
+  wikipedia?: string; // the raw wikipedia tag value, "lang:Article Title"
 }
 
 interface ImportItem {
@@ -138,6 +149,13 @@ report in [Import & Export](./interop.md).
   whenever `osmRef` exists. An OSM element lookup may also capture a photo: `imageUrl` is set
   only from the element's `image` / `wikimedia_commons` tags and only when the URL is
   Wikimedia-hosted (`commons.wikimedia.org` / `upload.wikimedia.org`); any other host is ignored.
+  The richer POI facts are captured the same opportunistic way: `website` (https only, from
+  `website`/`contact:website`/`url`), `phone` (`phone`/`contact:phone`), `openingHours`,
+  `cuisine`, `wheelchair` (`yes`/`limited`/`no` only), and `description` come from the OSM
+  element's tags at lookup; a Wikipedia summary is consulted only when the element names an
+  article (its `wikipedia` tag) and fills `description` (`descriptionSource: "wikipedia"`),
+  `wikipediaUrl`, and the photo fallback. Captured facts fill only fields that are still
+  missing — enrichment never overwrites a user-visible value.
 - Post `body` link forms: `[text](place:<placeId>)` — a mention; the map focuses that place.
   `[text](post:<postId>)` — a cross-post link; this is how a list post links to place posts.
   Both are soft: a dangling target renders as plain text.

@@ -1,8 +1,14 @@
 /**
- * The place card (spec/src/map-view.md §The place card): the place's flat
- * facts — name, category, address, coordinates — its deep links out, Add to
- * list, and its posts with Write a post. Facts are the user's copy; wrong
- * upstream facts are corrected on OpenStreetMap itself via the OSM link.
+ * The place card (spec/src/map-view.md §The place card): a listing, not a
+ * record — photo, name, category · cuisine, the description paragraph (with
+ * its Wikipedia credit when the text came from Wikipedia), address, compact
+ * fact rows (website, phone, opening hours, wheelchair), then the deep links
+ * out, Add to list, and the posts with Write a post. Coordinates never
+ * render — the pin on the canvas is the coordinate display. Facts are the
+ * user's copy; wrong upstream facts are corrected on OpenStreetMap itself via
+ * the OSM link. Opening the card of a place with an `osmRef` fires one
+ * fire-and-forget enrichment pass so places added before their facts were
+ * captured gain them here.
  *
  * The card is position-agnostic: the composer supplies geometry via
  * `className`. PlaceSheet wraps it as the mobile bottom sheet (dialog
@@ -14,9 +20,12 @@ import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef } from "react";
 import { useLists, usePlaceView, usePostsFor } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
+import { geocoder } from "../../providers";
 import { useSelectionStore } from "../../state/projection";
 import { AddToList } from "./AddToList";
+import { enrichPlace } from "./enrichment";
 import { NavLinks } from "./NavLinks";
+import { PlaceFacts } from "./PlaceFacts";
 import { PlaceImage } from "./PlaceImage";
 
 export function PlaceDetailsSheet({
@@ -54,6 +63,15 @@ export function PlaceDetailsSheet({
   }, [hasPlace]);
   useEffect(() => () => previousFocus.current?.focus(), []);
 
+  // Already-added places gain their richer facts the first time their card
+  // opens: one best-effort, fire-and-forget enrichment pass
+  // (spec/src/map-view.md §The place card). enrichPlace itself skips places
+  // without an osmRef, dedups attempts per session, and never throws.
+  useEffect(() => {
+    if (place?.osmRef === undefined) return;
+    void enrichPlace(repo, geocoder, place);
+  }, [repo, place]);
+
   if (!place) return null;
 
   const writePost = () => {
@@ -88,23 +106,28 @@ export function PlaceDetailsSheet({
       {/* The photo tops the card when the place carries one (spec/src/map-view.md §The place card). */}
       {place.imageUrl !== undefined ? <PlaceImage url={place.imageUrl} name={place.name} /> : null}
 
-      {/* Flat facts (spec/src/data-model.md): the user's copy. */}
+      {/* The listing (spec/src/map-view.md §The place card): name, one muted
+          category · cuisine line, then the shared fact block — description,
+          address, compact fact rows. No coordinates: the pin is the
+          coordinate display. Facts are the user's copy (spec/src/data-model.md). */}
       <h2 className="pr-8 font-display text-base font-semibold text-ink" data-testid="place-name">
         {place.name}
       </h2>
-      {place.category ? (
+      {place.category || place.cuisine ? (
         <p className="mt-0.5 text-xs capitalize text-ink/70" data-testid="place-category">
-          {place.category}
+          {[place.category, place.cuisine].filter(Boolean).join(" · ")}
         </p>
       ) : null}
-      {place.address ? (
-        <p className="mt-0.5 text-sm text-ink/70" data-testid="place-address">
-          {place.address}
-        </p>
-      ) : null}
-      <p className="mt-0.5 font-mono text-[11px] text-ink/60" data-testid="place-coordinates">
-        {place.lat.toFixed(5)}, {place.lng.toFixed(5)}
-      </p>
+      <PlaceFacts
+        description={place.description}
+        wikipediaUrl={place.wikipediaUrl}
+        creditWikipedia={place.descriptionSource === "wikipedia"}
+        address={place.address}
+        website={place.website}
+        phone={place.phone}
+        openingHours={place.openingHours}
+        wheelchair={place.wheelchair}
+      />
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
         <NavLinks place={place} />

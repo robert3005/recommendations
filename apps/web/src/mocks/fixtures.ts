@@ -44,6 +44,7 @@ export const photonCafeResponse = {
   ],
 };
 
+/** The richly tagged element: every POI fact the lookup captures, plus a wikipedia tag. */
 export const osmNode101 = {
   version: "0.6",
   elements: [
@@ -56,9 +57,13 @@ export const osmNode101 = {
       tags: {
         name: "Café Central",
         amenity: "cafe",
-        website: "cafecentral.pt",
+        website: "https://cafecentral.pt",
         phone: "+351 21 000 0000",
         opening_hours: "Mo-Fr 08:00-18:00; Sa 09:00-14:00",
+        cuisine: "portuguese",
+        wheelchair: "limited",
+        description: "Historic café on Rua Example, pouring bica since 1923.",
+        wikipedia: "pt:Café Central (Lisboa)",
         wikimedia_commons: "File:Café Central (Lisboa).jpg",
         "addr:street": "Rua Example",
         "addr:housenumber": "12",
@@ -67,6 +72,27 @@ export const osmNode101 = {
       },
     },
   ],
+};
+
+/**
+ * Wikipedia REST summary for osmNode101's `wikipedia` tag ("pt:Café Central
+ * (Lisboa)") — the shape of /api/rest_v1/page/summary/<title>.
+ */
+export const wikipediaSummaryCafeCentral = {
+  type: "standard",
+  title: "Café Central (Lisboa)",
+  extract:
+    "O Café Central é um café histórico de Lisboa, fundado em 1923, conhecido pela sua fachada em azulejo e pela tertúlia literária.",
+  thumbnail: {
+    source:
+      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Cafe_Central_Lisboa.jpg/320px-Cafe_Central_Lisboa.jpg",
+    width: 320,
+    height: 240,
+  },
+  content_urls: {
+    desktop: { page: "https://pt.wikipedia.org/wiki/Caf%C3%A9_Central_(Lisboa)" },
+    mobile: { page: "https://pt.m.wikipedia.org/wiki/Caf%C3%A9_Central_(Lisboa)" },
+  },
 };
 
 /** A café with barely any tags — the sparse-lookup case. */

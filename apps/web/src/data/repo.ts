@@ -128,13 +128,31 @@ export interface LibraryArchive {
   publications: Publication[];
 }
 
+/** The place facts an edit (or enrichment) may patch — identity and provenance excluded. */
+export type PlaceFactsPatch = Partial<
+  Pick<
+    Place,
+    | "name"
+    | "address"
+    | "category"
+    | "lat"
+    | "lng"
+    | "imageUrl"
+    | "website"
+    | "phone"
+    | "openingHours"
+    | "cuisine"
+    | "wheelchair"
+    | "description"
+    | "descriptionSource"
+    | "wikipediaUrl"
+  >
+>;
+
 export interface LocalRepository {
   // places
   getPlace(id: PlaceId): Promise<Place | undefined>;
-  updatePlaceFacts(
-    id: PlaceId,
-    patch: Partial<Pick<Place, "name" | "address" | "category" | "lat" | "lng" | "imageUrl">>,
-  ): Promise<void>;
+  updatePlaceFacts(id: PlaceId, patch: PlaceFactsPatch): Promise<void>;
   listPlaceViews(): Promise<PlaceView[]>;
   findByGoogleFeatureId(fid: string): Promise<Place | undefined>;
   findByOsmRef(ref: OsmRef): Promise<Place | undefined>;
@@ -207,15 +225,13 @@ export class DexieRepository implements LocalRepository {
     return row ? stripPlaceRow(row) : undefined;
   }
 
-  async updatePlaceFacts(
-    id: PlaceId,
-    patch: Partial<Pick<Place, "name" | "address" | "category" | "lat" | "lng" | "imageUrl">>,
-  ): Promise<void> {
+  async updatePlaceFacts(id: PlaceId, patch: PlaceFactsPatch): Promise<void> {
     await this.db.transaction("rw", [this.db.places], async () => {
       const row = await this.db.places.get(id);
       if (!row) throw new Error("place not found");
       const place = stripPlaceRow(row);
       // Facts are the user's copy; identity and provenance never change here.
+      // Only defined patch keys land — an absent key never clears a fact.
       const next: Place = {
         ...place,
         ...(patch.name !== undefined ? { name: patch.name } : {}),
@@ -224,6 +240,16 @@ export class DexieRepository implements LocalRepository {
         ...(patch.lat !== undefined ? { lat: patch.lat } : {}),
         ...(patch.lng !== undefined ? { lng: patch.lng } : {}),
         ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl } : {}),
+        ...(patch.website !== undefined ? { website: patch.website } : {}),
+        ...(patch.phone !== undefined ? { phone: patch.phone } : {}),
+        ...(patch.openingHours !== undefined ? { openingHours: patch.openingHours } : {}),
+        ...(patch.cuisine !== undefined ? { cuisine: patch.cuisine } : {}),
+        ...(patch.wheelchair !== undefined ? { wheelchair: patch.wheelchair } : {}),
+        ...(patch.description !== undefined ? { description: patch.description } : {}),
+        ...(patch.descriptionSource !== undefined
+          ? { descriptionSource: patch.descriptionSource }
+          : {}),
+        ...(patch.wikipediaUrl !== undefined ? { wikipediaUrl: patch.wikipediaUrl } : {}),
         updatedAt: nowIso(),
       };
       assertValidCoords(next.lat, next.lng);

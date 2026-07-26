@@ -9,6 +9,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { PlaceFacts } from "../place/PlaceFacts";
 import { PlaceImage } from "../place/PlaceImage";
 import { usePlaceFragmentSelection } from "./placeFragment";
 import { fetchPublishedList, PublishedDocumentError } from "./publishedDoc";
@@ -84,7 +85,9 @@ export function PublishedListContent({ slug }: { slug: string }) {
               }`}
               data-selected={selectedId === place.id || undefined}
             >
-              {/* The photo, exactly as published — same rendering as the place card. */}
+              {/* The photo and facts, exactly as published — the same listing
+                  the place card renders (spec/src/map-view.md §The place
+                  card); no coordinates, the pin is the coordinate display. */}
               {place.imageUrl !== undefined ? (
                 <PlaceImage url={place.imageUrl} name={place.name} />
               ) : null}
@@ -95,13 +98,21 @@ export function PublishedListContent({ slug }: { slug: string }) {
                 className="block w-full text-left"
               >
                 <span className="text-sm font-medium text-ink">{place.name}</span>
-                <span className="block text-xs text-ink/70">
-                  {[place.category, place.address].filter(Boolean).join(" · ")}
-                </span>
-                <span className="block text-[11px] text-ink/55">
-                  {String(place.lat)}, {String(place.lng)}
-                </span>
+                {place.category || place.cuisine ? (
+                  <span className="block text-xs capitalize text-ink/70">
+                    {[place.category, place.cuisine].filter(Boolean).join(" · ")}
+                  </span>
+                ) : null}
               </button>
+              <PlaceFacts
+                description={place.description}
+                wikipediaUrl={place.wikipediaUrl}
+                address={place.address}
+                website={place.website}
+                phone={place.phone}
+                openingHours={place.openingHours}
+                wheelchair={place.wheelchair}
+              />
               <OsmPlaceLink place={place} />
             </div>
           </li>

@@ -42,6 +42,15 @@ const listDoc = {
       category: "cafe",
       osmRef: { type: "node", id: "101" },
       imageUrl: "https://commons.wikimedia.org/wiki/Special:FilePath/Central.jpg?width=640",
+      // The enriched facts travel with the document (spec/src/sharing.md
+      // §Published documents) — the viewer renders them, never re-resolves.
+      cuisine: "portuguese",
+      website: "https://cafecentral.pt",
+      phone: "+351 21 000 0000",
+      openingHours: "Mo-Fr 08:00-18:00; Sa 09:00-14:00",
+      wheelchair: "limited",
+      description: "Historic café on Rua Example, pouring bica since 1923.",
+      wikipediaUrl: "https://pt.wikipedia.org/wiki/Caf%C3%A9_Central_(Lisboa)",
     },
     { id: "place-pin", name: "Picnic Bench", lat: 38.72, lng: -9.15 },
   ],
@@ -63,6 +72,31 @@ describe("PublishedListView", () => {
     expect(await screen.findByText("Viewer Test Lisbon")).toBeInTheDocument();
     expect(screen.getByText("Café Central")).toBeInTheDocument();
     expect(screen.getByText("Picnic Bench")).toBeInTheDocument();
+    // The enriched facts render exactly as published — the same listing as
+    // the place card, and no coordinates row (spec/src/map-view.md §The
+    // place card: coordinates were chrome, not information).
+    expect(screen.getByText(/cafe · portuguese/)).toBeInTheDocument();
+    expect(screen.getByTestId("place-description")).toHaveTextContent("pouring bica since 1923");
+    const credit = screen.getByTestId("place-description-credit");
+    expect(credit).toHaveAttribute(
+      "href",
+      "https://pt.wikipedia.org/wiki/Caf%C3%A9_Central_(Lisboa)",
+    );
+    expect(credit.getAttribute("title")).toContain("CC BY-SA");
+    const website = screen.getByTestId("place-website").querySelector("a");
+    expect(website).toHaveAttribute("href", "https://cafecentral.pt/");
+    expect(website).toHaveTextContent("cafecentral.pt");
+    expect(screen.getByTestId("place-phone").querySelector("a")).toHaveAttribute(
+      "href",
+      "tel:+351210000000",
+    );
+    expect(screen.getByTestId("place-opening-hours")).toHaveTextContent(
+      "Mo-Fr 08:00-18:00; Sa 09:00-14:00",
+    );
+    expect(screen.getByTestId("place-wheelchair")).toHaveTextContent("Partly accessible");
+    expect(screen.queryByText("38.7139, -9.1394")).not.toBeInTheDocument();
+    // The sparse place renders no fact rows at all — only Café Central's.
+    expect(screen.getAllByTestId("place-facts")).toHaveLength(1);
     // The published posts sidebar, as published.
     expect(screen.getByTestId("published-list-post")).toHaveAttribute(
       "href",
@@ -120,7 +154,16 @@ describe("PublishedPostView", () => {
       kind: "post",
       title: "Viewer Test Post",
       body: "A paragraph about [Café Central](#place-place-central).",
-      places: [{ id: "place-central", name: "Café Central", lat: 38.7139, lng: -9.1394 }],
+      places: [
+        {
+          id: "place-central",
+          name: "Café Central",
+          lat: 38.7139,
+          lng: -9.1394,
+          website: "https://cafecentral.pt",
+          description: "Historic café on Rua Example.",
+        },
+      ],
       list: { title: "Viewer Test Lisbon", url: "https://example.test/l/viewer-test-lisbon" },
     });
 
@@ -136,6 +179,16 @@ describe("PublishedPostView", () => {
     expect(screen.getByTestId("published-post-body")).toHaveTextContent(
       /A paragraph about Café Central/,
     );
+    // The post's place cards carry the published facts too — and no
+    // coordinates row (spec/src/map-view.md §The place card).
+    expect(screen.getByTestId("place-description")).toHaveTextContent(
+      "Historic café on Rua Example.",
+    );
+    expect(screen.getByTestId("place-website").querySelector("a")).toHaveAttribute(
+      "href",
+      "https://cafecentral.pt/",
+    );
+    expect(screen.queryByText("38.7139, -9.1394")).not.toBeInTheDocument();
     expect(screen.queryByTestId("odbl-attribution")).not.toBeInTheDocument();
   });
 });

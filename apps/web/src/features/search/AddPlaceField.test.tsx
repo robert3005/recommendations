@@ -9,6 +9,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
+import { resetEnrichmentAttempts } from "../place/enrichment";
 import { AddPlaceField } from "./AddPlaceField";
 
 const geocoder = vi.hoisted(() => ({ search: vi.fn(), lookup: vi.fn() }));
@@ -35,6 +36,8 @@ function renderField() {
 beforeEach(() => {
   geocoder.search.mockReset();
   geocoder.lookup.mockReset();
+  // The shared enrichment pass attempts each place once per session.
+  resetEnrichmentAttempts();
 });
 
 describe("pasting map links", () => {

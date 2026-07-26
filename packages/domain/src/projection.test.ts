@@ -56,6 +56,35 @@ describe("toPublishedPlace", () => {
     });
   });
 
+  it("passes the richer POI facts through, but never descriptionSource", () => {
+    const published = toPublishedPlace(
+      place("p1", {
+        website: "https://ramiro.pt",
+        phone: "+351 21 885 1024",
+        openingHours: "Tu-Su 12:00-00:30",
+        cuisine: "seafood",
+        wheelchair: "limited",
+        description: "A Lisbon seafood institution.",
+        descriptionSource: "wikipedia",
+        wikipediaUrl: "https://pt.wikipedia.org/wiki/Cervejaria_Ramiro",
+      }),
+    );
+    expect(published).toEqual({
+      id: "p1",
+      name: "Place p1",
+      lat: 38.7,
+      lng: -9.1,
+      website: "https://ramiro.pt",
+      phone: "+351 21 885 1024",
+      openingHours: "Tu-Su 12:00-00:30",
+      cuisine: "seafood",
+      wheelchair: "limited",
+      description: "A Lisbon seafood institution.",
+      wikipediaUrl: "https://pt.wikipedia.org/wiki/Cervejaria_Ramiro",
+    });
+    expect("descriptionSource" in published).toBe(false);
+  });
+
   it("omits absent optionals rather than writing undefined keys", () => {
     const published = toPublishedPlace(place("p1"));
     expect(Object.keys(published)).toEqual(["id", "name", "lat", "lng"]);

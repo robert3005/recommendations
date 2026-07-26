@@ -53,9 +53,11 @@ never reused.
 
 ## Published documents
 
-A published document is self-contained: it embeds every fact the public page needs, keyed by the
-place's `PlaceId` so mentions rewrite to stable fragments. `OsmRef` and `ListMarker` are the
-types from the [data model](./data-model.md).
+A published document is self-contained: it embeds every fact the public page needs — including
+the enriched place facts (website, phone, opening hours, cuisine, wheelchair access, the
+description, and its Wikipedia link) — keyed by the place's `PlaceId` so mentions rewrite to
+stable fragments. The viewer renders exactly what was published and never re-resolves. `OsmRef`
+and `ListMarker` are the types from the [data model](./data-model.md).
 
 ```ts
 interface PublishedPlace {
@@ -65,6 +67,13 @@ interface PublishedPlace {
   lng: number;
   address?: string;
   category?: string;
+  cuisine?: string;
+  website?: string;           // https only, enforced by the schema
+  phone?: string;
+  openingHours?: string;      // the raw opening_hours tag value
+  wheelchair?: string;        // "yes" | "limited" | "no"
+  description?: string;       // OSM description tag or Wikipedia summary, as captured
+  wikipediaUrl?: string;      // the source article — the viewer's "Wikipedia" credit target
   osmRef?: OsmRef;            // attribution + OSM deep link on the public page
   imageUrl?: string;          // https + Wikimedia hosts only, enforced by the schema
 }

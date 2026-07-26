@@ -4,13 +4,22 @@
  * The mobile sheet carries dialog semantics; the desktop column is a labelled
  * aside in the shell's row, not a modal (§Accessibility and failure). Both
  * keep data-testid="place-details" and clear the selection on Close.
+ *
+ * The card reads as a listing (§The place card): category · cuisine on one
+ * muted line, the description with its Wikipedia credit exactly when the text
+ * came from Wikipedia, address, compact fact rows only when the fact exists —
+ * and never a coordinates row. Opening the card of a place with an osmRef
+ * fires one fire-and-forget enrichment pass (stubbed here; its own contract
+ * lives in enrichment.test.ts).
  */
 import type { List, Place } from "@placemarks/domain";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
+import { geocoder } from "../../providers";
 import { useSelectionStore } from "../../state/projection";
+import { enrichPlace } from "./enrichment";
 import { PlaceDetailsSheet } from "./PlaceDetailsSheet";
 
 const NOW = "2026-07-26T00:00:00.000Z";
@@ -48,19 +57,24 @@ vi.mock("../../data/hooks", () => ({
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => vi.fn(),
 }));
+// The enrichment pass is the data path's contract (enrichment.test.ts); here
+// only the card's fire-and-forget call site is under test.
+vi.mock("./enrichment", () => ({ enrichPlace: vi.fn() }));
 
 function renderCard(variant: "sheet" | "column", className = "test-geometry") {
   const repo = { createPost: vi.fn() };
-  return render(
+  const view = render(
     <RepoProvider repo={repo as never}>
       <PlaceDetailsSheet placeId={place.id} variant={variant} className={className} />
     </RepoProvider>,
   );
+  return { ...view, repo };
 }
 
 beforeEach(() => {
   hoisted.placeView = { place, listIds: ["list-1"] };
   useSelectionStore.setState({ selectedPlaceId: place.id });
+  vi.mocked(enrichPlace).mockClear();
 });
 
 describe("PlaceDetailsSheet presentation variants", () => {
@@ -133,5 +147,88 @@ describe("the place photo", () => {
     const img = screen.getByRole("img", { name: "Café Central" });
     img.dispatchEvent(new Event("error"));
     await waitFor(() => expect(screen.queryByTestId("place-image")).not.toBeInTheDocument());
+  });
+});
+
+describe("the enriched listing", () => {
+  const WIKIPEDIA_URL = "https://pt.wikipedia.org/wiki/Caf%C3%A9_Central_(Lisboa)";
+  const enriched: Place = {
+    ...place,
+    category: "cafe",
+    cuisine: "portuguese",
+    address: "Rua Example 12",
+    website: "https://cafecentral.pt",
+    phone: "+351 21 000 0000",
+    openingHours: "Mo-Fr 08:00-18:00; Sa 09:00-14:00",
+    wheelchair: "limited",
+    description: "Historic café on Rua Example, pouring bica since 1923.",
+    descriptionSource: "wikipedia",
+    wikipediaUrl: WIKIPEDIA_URL,
+  };
+
+  it("lays the card out as a listing: category · cuisine, description, address, fact rows", () => {
+    hoisted.placeView = { place: enriched, listIds: ["list-1"] };
+    renderCard("column");
+    expect(screen.getByTestId("place-category")).toHaveTextContent("cafe · portuguese");
+    expect(screen.getByTestId("place-description")).toHaveTextContent(
+      "Historic café on Rua Example, pouring bica since 1923.",
+    );
+    expect(screen.getByTestId("place-address")).toHaveTextContent("Rua Example 12");
+    // Website: a normalized https link showing its hostname as the text.
+    const website = screen.getByTestId("place-website").querySelector("a");
+    expect(website).toHaveAttribute("href", "https://cafecentral.pt/");
+    expect(website).toHaveTextContent("cafecentral.pt");
+    // Phone dials; the visible text stays as captured.
+    const phone = screen.getByTestId("place-phone").querySelector("a");
+    expect(phone).toHaveAttribute("href", "tel:+351210000000");
+    expect(phone).toHaveTextContent("+351 21 000 0000");
+    // Opening hours render the raw tag value.
+    expect(screen.getByTestId("place-opening-hours")).toHaveTextContent(
+      "Mo-Fr 08:00-18:00; Sa 09:00-14:00",
+    );
+    expect(screen.getByTestId("place-wheelchair")).toHaveTextContent("Partly accessible");
+  });
+
+  it("credits Wikipedia (CC BY-SA) exactly when the description came from Wikipedia", () => {
+    hoisted.placeView = { place: enriched, listIds: ["list-1"] };
+    renderCard("column");
+    const credit = screen.getByTestId("place-description-credit");
+    expect(credit).toHaveTextContent("Wikipedia");
+    expect(credit).toHaveAttribute("href", WIKIPEDIA_URL);
+    expect(credit).toHaveAttribute("rel", "noopener noreferrer");
+    expect(credit.getAttribute("title")).toContain("CC BY-SA");
+  });
+
+  it("shows no credit on an OSM-tag description", () => {
+    hoisted.placeView = {
+      place: { ...enriched, descriptionSource: "osm" },
+      listIds: ["list-1"],
+    };
+    renderCard("column");
+    expect(screen.getByTestId("place-description")).toBeInTheDocument();
+    expect(screen.queryByTestId("place-description-credit")).not.toBeInTheDocument();
+  });
+
+  it("renders no coordinates row, ever, and no fact rows for a sparse place", () => {
+    renderCard("column"); // the base fixture: no enriched facts at all
+    expect(screen.queryByTestId("place-coordinates")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("place-facts")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("place-description")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("place-address")).not.toBeInTheDocument();
+  });
+});
+
+describe("enrichment on open", () => {
+  it("fires one fire-and-forget enrichPlace for a place with an osmRef", async () => {
+    const withRef: Place = { ...place, osmRef: { type: "node", id: "101" } };
+    hoisted.placeView = { place: withRef, listIds: ["list-1"] };
+    const { repo } = renderCard("column");
+    await waitFor(() => expect(enrichPlace).toHaveBeenCalledWith(repo, geocoder, withRef));
+  });
+
+  it("skips enrichment when the place has no osmRef", async () => {
+    renderCard("column");
+    await waitFor(() => expect(screen.getByTestId("place-details")).toHaveFocus());
+    expect(enrichPlace).not.toHaveBeenCalled();
   });
 });

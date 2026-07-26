@@ -53,6 +53,8 @@ export interface MapViewProps {
   markPins?: MarkPinFeature[];
   /** The currently selected place — marked immediately with a ring. */
   selectionPin?: { lat: number; lng: number } | null;
+  /** Its id — the selected pin renders enlarged, undimmed, and on top. */
+  selectedPlaceId?: string | null;
   flyTo?: { lat: number; lng: number; zoom?: number } | null;
   /**
    * One camera move to frame a projection (route change / reveal). `key`
@@ -150,10 +152,21 @@ function paintMarkerImage(id: string): ImageData | undefined {
   return ctx.getImageData(0, 0, size, size);
 }
 
-function placesToGeoJSON(pins: PlacePinFeature[]): FeatureCollection {
+function placesToGeoJSON(
+  pins: PlacePinFeature[],
+  selectedPlaceId?: string | null,
+): FeatureCollection {
+  // The selected pin renders accentuated and on top of its neighbours
+  // (spec/src/map-view.md §Selection): last in source order with
+  // symbol-z-order "source", so it always wins the stack.
+  const ordered = selectedPlaceId
+    ? [...pins].sort(
+        (a, b) => Number(a.placeId === selectedPlaceId) - Number(b.placeId === selectedPlaceId),
+      )
+    : pins;
   return {
     type: "FeatureCollection",
-    features: pins.map((pin) => ({
+    features: ordered.map((pin) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [pin.lng, pin.lat] },
       properties: {
@@ -161,6 +174,7 @@ function placesToGeoJSON(pins: PlacePinFeature[]): FeatureCollection {
         name: pin.name,
         iconId: markerImageId(pin),
         dimmed: pin.dimmed ? 1 : 0,
+        selected: pin.placeId === selectedPlaceId ? 1 : 0,
       },
     })),
   };
@@ -186,6 +200,7 @@ export function MapView({
   placePins,
   markPins = [],
   selectionPin,
+  selectedPlaceId = null,
   flyTo,
   fitTo,
   onSelectPlace,
@@ -206,6 +221,8 @@ export function MapView({
   markPinsRef.current = markPins;
   const selectionPinRef = useRef(selectionPin);
   selectionPinRef.current = selectionPin;
+  const selectedIdRef = useRef(selectedPlaceId);
+  selectedIdRef.current = selectedPlaceId;
   // A basemap that never establishes itself is a designed state, not a blank
   // canvas (spec/src/map-view.md §Accessibility and failure).
   const [unavailable, setUnavailable] = useState(false);
@@ -282,7 +299,7 @@ export function MapView({
       // large lists stay responsive (spec/src/map-view.md §The grammar).
       map.addSource("saved", {
         type: "geojson",
-        data: placesToGeoJSON(placePinsRef.current),
+        data: placesToGeoJSON(placePinsRef.current, selectedIdRef.current),
         cluster: true,
         clusterRadius: 44,
       });
@@ -316,11 +333,21 @@ export function MapView({
         filter: ["!", ["has", "point_count"]],
         layout: {
           "icon-image": ["get", "iconId"],
-          "icon-size": 0.5,
+          // The selected pin is unmistakable next to its list-mates: half
+          // again as large, never dimmed, stacked above (source order).
+          "icon-size": ["case", ["==", ["get", "selected"], 1], 0.78, 0.5],
           "icon-allow-overlap": true,
+          "symbol-z-order": "source",
         },
         paint: {
-          "icon-opacity": ["case", ["==", ["get", "dimmed"], 1], 0.35, 1],
+          "icon-opacity": [
+            "case",
+            ["==", ["get", "selected"], 1],
+            1,
+            ["==", ["get", "dimmed"], 1],
+            0.35,
+            1,
+          ],
         },
       });
 
@@ -368,10 +395,12 @@ export function MapView({
         type: "circle",
         source: "selection",
         paint: {
-          "circle-radius": 13,
+          // Sized around the enlarged selected pin, with a paper halo under
+          // the ink ring so it separates from any basemap detail beneath.
+          "circle-radius": 19,
           "circle-color": "#000000",
           "circle-opacity": 0,
-          "circle-stroke-width": 3,
+          "circle-stroke-width": 3.5,
           "circle-stroke-color": PLATE_INK,
         },
       });
@@ -487,7 +516,7 @@ export function MapView({
     if (!map) return;
     const apply = () => {
       (map.getSource("saved") as maplibregl.GeoJSONSource | undefined)?.setData(
-        placesToGeoJSON(placePins),
+        placesToGeoJSON(placePins, selectedPlaceId),
       );
       // Observable projection state for tests and debugging. MapLibre paints
       // asynchronously, but the source has accepted this exact collection.
@@ -495,7 +524,7 @@ export function MapView({
     };
     if (map.getSource("saved")) apply();
     else map.once("load", apply);
-  }, [covered, placePins]);
+  }, [covered, placePins, selectedPlaceId]);
 
   useEffect(() => {
     if (covered) return;
@@ -552,7 +581,9 @@ export function MapView({
       if (fitTo) appliedFitKey.current = fitTo.key;
       map.flyTo({
         center: [flyTo.lng, flyTo.lat],
-        zoom: flyTo.zoom ?? 17,
+        // The requested zoom is a floor: centring a selection never zooms the
+        // user OUT of a closer view they already have.
+        zoom: Math.max(map.getZoom(), flyTo.zoom ?? 17),
         duration: reduceMotion ? 0 : 700,
         // Keep the target clear of the bottom sheet.
         offset: [0, -120],

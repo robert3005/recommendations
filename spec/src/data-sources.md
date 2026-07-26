@@ -44,12 +44,25 @@ policies and are development-only configurations. Production configuration is ex
 closed with either geocoder kind: a production build with any capability unconfigured refuses to
 run against public defaults.
 
+## Wikipedia summaries
+
+When an OSM element's `wikipedia` tag names an article, the app may fetch that one article's
+summary from the Wikipedia REST API (`https://<lang>.wikipedia.org/api/rest_v1/page/summary/…`,
+keyless and CORS-open; the language defaults to `en` when the tag has no prefix) to fill a
+place's still-missing description and photo ([Data Model](./data-model.md) §Normative rules).
+Extracts are CC BY-SA and the place card credits them with a link to the article
+(`wikipediaUrl`); thumbnails are used only when Wikimedia-hosted — the standing wikimedia-only
+image rule. The call is best-effort and silent: offline or failing, nothing queues and nothing
+changes.
+
 ## Privacy
 
 Each provider observes exactly one slice of activity:
 
 - tile servers see requested tile coordinates and network metadata;
 - the geocoder sees typed search text and, during the import ladder, a row's Title and Address;
+- Wikipedia sees only the article title an OSM element itself names — never search text, place
+  names, or anything the user wrote;
 - the share service sees the documents the owner explicitly publishes
   ([Sharing & Publishing](./sharing.md)).
 

@@ -187,6 +187,7 @@ export function MapCanvas() {
         placePins={placePins}
         markPins={markPins}
         selectionPin={selectionPin}
+        selectedPlaceId={selectedPlaceId}
         flyTo={flyTo}
         fitTo={fitTo}
         onSelectPlace={onPinTap}

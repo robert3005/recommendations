@@ -75,27 +75,32 @@ export const useProjectionStore = create<ProjectionStore>((set) => ({
 }));
 
 /**
- * Selection is bidirectional (spec/src/map-view.md §The grammar). A pin tap
- * sets `selectedPlaceId` so the notebook can raise the place card or scroll to
- * the mention; the notebook (place rows, PostPage mentions, the public viewer)
- * calls `focusPlace` to select AND fly the camera — one flight per call.
+ * Selection is bidirectional (spec/src/map-view.md §The grammar), and every
+ * selection centres the place on the canvas — a pin tap, a row, a mention,
+ * and the viewer all read the same way. `focusPlace` and `selectPlace` are
+ * kept as separate names for their call sites, but they mean the same thing:
+ * select and centre, one camera move per call.
  */
 interface SelectionStore {
   selectedPlaceId: string | null;
-  /** Bumped by focusPlace: the canvas performs one camera flight per bump. */
+  /** Bumped on every selection: the canvas performs one camera move per bump. */
   focusNonce: number;
-  /** Notebook → canvas: select the place and fly to it. */
+  /** Notebook → canvas: select the place and centre it. */
   focusPlace: (placeId: string) => void;
-  /** Canvas → notebook: select without moving the camera. */
+  /** Canvas → notebook: select the place — and centre it all the same. */
   selectPlace: (placeId: string) => void;
   clearSelection: () => void;
 }
 
+const selectAndCentre =
+  (set: (fn: (s: SelectionStore) => Partial<SelectionStore>) => void) => (placeId: string) =>
+    set((s) => ({ selectedPlaceId: placeId, focusNonce: s.focusNonce + 1 }));
+
 export const useSelectionStore = create<SelectionStore>((set) => ({
   selectedPlaceId: null,
   focusNonce: 0,
-  focusPlace: (placeId) => set((s) => ({ selectedPlaceId: placeId, focusNonce: s.focusNonce + 1 })),
-  selectPlace: (placeId) => set({ selectedPlaceId: placeId }),
+  focusPlace: selectAndCentre(set),
+  selectPlace: selectAndCentre(set),
   clearSelection: () => set({ selectedPlaceId: null }),
 }));
 

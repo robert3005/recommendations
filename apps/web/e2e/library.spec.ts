@@ -38,9 +38,12 @@ test.describe("places exist through lists", () => {
     // (spec/src/map-view.md §The place card: it "rises in the notebook").
     await expect(page.getByRole("complementary", { name: "Café Central" })).toBeVisible();
     await expect(details.getByRole("button", { name: "Save" })).toHaveCount(0);
-    // Flat facts on the card (spec/src/map-view.md §The place card).
+    // The card reads as a listing (spec/src/map-view.md §The place card): the
+    // enriched MSW fixture (osmNode101) fills the fact rows after the add,
+    // and coordinates never render — they were chrome, not information.
     await expect(details.getByTestId("place-name")).toHaveText("Café Central");
-    await expect(details.getByTestId("place-coordinates")).toBeVisible();
+    await expect(details.getByTestId("place-website")).toContainText("cafecentral.pt");
+    await expect(details.getByTestId("place-coordinates")).toHaveCount(0);
     // Deep links out come from the one domain link module.
     await expect(details.getByTestId("open-google-maps")).toBeVisible();
     await expect(details.getByTestId("open-apple-maps")).toBeVisible();

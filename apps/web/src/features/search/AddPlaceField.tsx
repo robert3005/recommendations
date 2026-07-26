@@ -14,7 +14,7 @@
  * exact `lookup` fetches that element's facts. Offline it fails politely —
  * nothing queues; the user retries online (spec/src/interop.md).
  */
-import type { GeocoderCandidate, OsmRef, Place } from "@placemarks/domain";
+import type { GeocoderCandidate, OsmRef } from "@placemarks/domain";
 import { parsePastedLink } from "@placemarks/domain";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
@@ -24,6 +24,7 @@ import type { NewPlaceFacts } from "../../data/repo";
 import { geocoder } from "../../providers";
 import { useSelectionStore } from "../../state/projection";
 import { AddToList } from "../place/AddToList";
+import { enrichPlace } from "../place/enrichment";
 
 type Pending =
   | { mode: "notice"; text: string }
@@ -96,33 +97,6 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
         message: "Could not reach OpenStreetMap to look this up. Try again when you are online.",
       });
     }
-  };
-
-  /**
-   * Add-time enrichment (spec/src/map-view.md §The place card): a search pick
-   * carries an osmRef but no element tags, so after a successful add one exact
-   * lookup fills a missing photo or address. Best-effort only — a failure or
-   * being offline changes nothing, and nothing queues.
-   */
-  const enrichSearchPick = (place: Place, ref: OsmRef) => {
-    geocoder
-      .lookup(ref)
-      .then((candidate) => {
-        if (!candidate) return;
-        const patch = {
-          ...(candidate.imageUrl !== undefined && place.imageUrl === undefined
-            ? { imageUrl: candidate.imageUrl }
-            : {}),
-          ...(candidate.address !== undefined && place.address === undefined
-            ? { address: candidate.address }
-            : {}),
-        };
-        if (Object.keys(patch).length === 0) return;
-        return repo.updatePlaceFacts(place.id, patch);
-      })
-      .catch(() => {
-        // Silent by design: enrichment never surfaces an error.
-      });
   };
 
   /** Returns true when the input was taken as a map link. */
@@ -385,10 +359,11 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
               lists={lists}
               idPrefix="field"
               onAdded={(place) => {
-                const ref = pending.facts.osmRef;
-                if (pending.facts.origin === "search" && ref && place.imageUrl === undefined) {
-                  enrichSearchPick(place, ref);
-                }
+                // Post-add enrichment (spec/src/data-model.md §Normative
+                // rules): one shared best-effort pass fills missing facts
+                // from the element's tags and its Wikipedia article. It
+                // skips pins without an osmRef and never blocks the add.
+                void enrichPlace(repo, geocoder, place);
                 reset();
                 focusPlace(place.id);
               }}

@@ -84,6 +84,42 @@ describe("parsePublishedDocument", () => {
     ).toThrow();
   });
 
+  it("caps the richer POI facts and constrains wheelchair to its enum", () => {
+    const withFacts = (facts: Record<string, unknown>) => ({
+      ...listDoc,
+      places: [{ ...place, ...facts }],
+    });
+    const ok = withFacts({
+      website: "https://ramiro.pt",
+      phone: "+351 21 885 1024",
+      openingHours: "Tu-Su 12:00-00:30",
+      cuisine: "seafood",
+      wheelchair: "limited",
+      description: "d".repeat(600),
+      wikipediaUrl: "https://pt.wikipedia.org/wiki/Cervejaria_Ramiro",
+    });
+    expect(() => parsePublishedDocument("list", ok)).not.toThrow();
+
+    // https-only URL facts.
+    expect(() =>
+      parsePublishedDocument("list", withFacts({ website: "http://ramiro.pt" })),
+    ).toThrow();
+    expect(() =>
+      parsePublishedDocument("list", withFacts({ wikipediaUrl: "http://pt.wikipedia.org/x" })),
+    ).toThrow();
+    // Length caps: description 600, phone 60, openingHours 300, cuisine 120.
+    expect(() =>
+      parsePublishedDocument("list", withFacts({ description: "d".repeat(601) })),
+    ).toThrow();
+    expect(() => parsePublishedDocument("list", withFacts({ phone: "9".repeat(61) }))).toThrow();
+    expect(() =>
+      parsePublishedDocument("list", withFacts({ openingHours: "h".repeat(301) })),
+    ).toThrow();
+    expect(() => parsePublishedDocument("list", withFacts({ cuisine: "c".repeat(121) }))).toThrow();
+    // wheelchair is the three-value enum, nothing else.
+    expect(() => parsePublishedDocument("list", withFacts({ wheelchair: "designated" }))).toThrow();
+  });
+
   it("rejects non-https post URLs and malformed osmRefs", () => {
     expect(() =>
       parsePublishedDocument("list", {

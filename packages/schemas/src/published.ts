@@ -59,6 +59,15 @@ export const publishedPlaceSchema = z.object({
   category: z.string().max(120).optional(),
   osmRef: osmRefSchema.optional(), // attribution + OSM deep link on the public page
   imageUrl: wikimediaImageUrlSchema.optional(), // Wikimedia-hosted photo, when the place carries one
+  // Richer POI facts (spec/src/data-model.md §Normative rules): captured from
+  // OSM tags and Wikipedia summaries, published verbatim when present.
+  website: httpsUrlSchema.optional(),
+  phone: z.string().max(60).optional(),
+  openingHours: z.string().max(300).optional(),
+  cuisine: z.string().max(120).optional(),
+  wheelchair: z.enum(["yes", "limited", "no"]).optional(),
+  description: z.string().max(600).optional(),
+  wikipediaUrl: httpsUrlSchema.optional(), // credits a Wikipedia-sourced description
 });
 
 const placesSchema = z.array(publishedPlaceSchema).max(PUBLISHED_LIMITS.maxPlaces);
