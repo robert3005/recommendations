@@ -60,6 +60,9 @@ if (!("ResizeObserver" in window)) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
+// jsdom defines window.scrollTo but throws "Not implemented" — the router's
+// scroll restoration calls it on every navigation in the route smoke test.
+window.scrollTo = (() => {}) as typeof window.scrollTo;
 if (!URL.createObjectURL) {
   URL.createObjectURL = () => "blob:jsdom-stub";
   URL.revokeObjectURL = () => {};

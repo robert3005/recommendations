@@ -5,6 +5,7 @@
  * file of the whole library, preserving all entity ids; editor tokens ride
  * along only on an explicit credentials-included export.
  */
+import { MARKER_SHAPES } from "@placemarks/domain";
 import type { LibraryArchive, LocalRepository } from "../../data/repo";
 import { downloadText } from "../../lib/download";
 
@@ -48,7 +49,80 @@ export async function importArchiveFile(
   if (archive?.v !== 1 || archive.kind !== "placemarks-library") {
     throw new Error("not a Placemarks library archive");
   }
+  validateArchiveRows(archive as LibraryArchive);
   return repo.importLibrary(archive as LibraryArchive, now);
+}
+
+const SHAPES = new Set<string>(MARKER_SHAPES);
+
+function malformed(what: string): never {
+  throw new Error(`not a valid Placemarks library archive — ${what}`);
+}
+
+/**
+ * Row-level validation before anything is written: a hand-edited or truncated
+ * archive must be refused, not inserted — a marker-less list row would crash
+ * every page that draws its pin.
+ */
+export function validateArchiveRows(a: LibraryArchive): void {
+  const sections = [a.places, a.lists, a.listEntries, a.posts, a.publications];
+  if (!sections.every(Array.isArray)) malformed("a section is missing");
+  for (const p of a.places) {
+    if (
+      typeof p.id !== "string" ||
+      typeof p.name !== "string" ||
+      !Number.isFinite(p.lat) ||
+      !Number.isFinite(p.lng)
+    ) {
+      malformed("a place row is malformed");
+    }
+  }
+  for (const l of a.lists) {
+    if (
+      typeof l.id !== "string" ||
+      typeof l.name !== "string" ||
+      !SHAPES.has(l.marker?.shape) ||
+      typeof l.marker?.color !== "string"
+    ) {
+      malformed("a list row is malformed");
+    }
+  }
+  for (const e of a.listEntries) {
+    if (
+      typeof e.id !== "string" ||
+      typeof e.listId !== "string" ||
+      typeof e.placeId !== "string" ||
+      typeof e.rank !== "string"
+    ) {
+      malformed("a list entry row is malformed");
+    }
+  }
+  for (const p of a.posts) {
+    const target = p.target;
+    const targetOk =
+      target?.kind === "list"
+        ? typeof target.listId === "string"
+        : target?.kind === "place" && typeof target.placeId === "string";
+    if (
+      typeof p.id !== "string" ||
+      typeof p.title !== "string" ||
+      typeof p.body !== "string" ||
+      !targetOk
+    ) {
+      malformed("a post row is malformed");
+    }
+  }
+  for (const p of a.publications) {
+    const kindOk = p.target?.kind === "list" || p.target?.kind === "post";
+    if (
+      typeof p.id !== "string" ||
+      typeof p.slug !== "string" ||
+      !kindOk ||
+      typeof p.target.id !== "string"
+    ) {
+      malformed("a publication row is malformed");
+    }
+  }
 }
 
 export async function recordArchiveExport(repo: LocalRepository, now: string): Promise<void> {

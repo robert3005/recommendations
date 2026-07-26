@@ -80,6 +80,43 @@ describe("importArchiveFile", () => {
     expect(result.mode).toBe("fresh");
     expect(imported).toHaveLength(1);
   });
+
+  it("refuses malformed rows before anything is written — a marker-less list crashes pages", async () => {
+    const { repo, imported } = repoStub();
+    const base = {
+      v: 1,
+      kind: "placemarks-library",
+      exportedAt: NOW,
+      places: [],
+      lists: [],
+      listEntries: [],
+      posts: [],
+      publications: [],
+    };
+    const bad = (patch: Record<string, unknown>) =>
+      importArchiveFile(repo, fileOf(JSON.stringify({ ...base, ...patch })), NOW);
+
+    // The exact stale-shape that took the home page down: no marker.shape.
+    await expect(
+      bad({ lists: [{ id: "l", name: "L", marker: { color: "#123456", icon: "star" } }] }),
+    ).rejects.toThrow(/a list row is malformed/);
+    await expect(bad({ lists: [{ id: "l", name: "L" }] })).rejects.toThrow(
+      /a list row is malformed/,
+    );
+    await expect(bad({ places: [{ id: "p", name: "P", lat: "x", lng: 2 }] })).rejects.toThrow(
+      /a place row is malformed/,
+    );
+    await expect(
+      bad({ posts: [{ id: "po", title: "T", body: "b", target: { kind: "list" } }] }),
+    ).rejects.toThrow(/a post row is malformed/);
+    await expect(bad({ listEntries: [{ id: "e" }] })).rejects.toThrow(
+      /a list entry row is malformed/,
+    );
+    await expect(
+      bad({ publications: [{ id: "pub", slug: "s", target: { kind: "note" } }] }),
+    ).rejects.toThrow(/a publication row is malformed/);
+    expect(imported).toHaveLength(0);
+  });
 });
 
 describe("shouldRemindArchiveExport", () => {

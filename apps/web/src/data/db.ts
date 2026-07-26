@@ -48,7 +48,7 @@ export class PlacemarksDb extends Dexie {
 
   constructor(name = "placemarks") {
     super(name);
-    this.version(1).stores({
+    const stores = {
       places: "id, updatedAt, googleFeatureId, osmKey",
       lists: "id, sourceKey",
       listEntries: "id, listId, placeId, [listId+placeId]",
@@ -57,6 +57,20 @@ export class PlacemarksDb extends Dexie {
       importBatches: "id, status",
       importItems: "id, batchId, status",
       settings: "key",
-    });
+    };
+    // Version 2 is a flush of pre-refocus DEV databases, not a migration:
+    // nothing has shipped (spec/src/storage.md — one schema version until it
+    // does), but a developer machine can hold a database from the old build
+    // whose rows crash the new model (a list without marker.shape took the
+    // home page down). Upgrading clears every declared table; stores only the
+    // old build knew are left behind inert. A fresh install creates version 2
+    // directly and never runs this.
+    this.version(2)
+      .stores(stores)
+      .upgrade(async (tx) => {
+        for (const table of Object.keys(stores)) {
+          await tx.table(table).clear();
+        }
+      });
   }
 }
