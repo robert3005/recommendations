@@ -1,9 +1,10 @@
 /**
- * Share-service contract (spec/src/sharing.md §Share service): atomic slug
- * claims, bearer-hash auth with constant-time compare, If-Match conditional
- * mutations, idempotent retries, tombstoned slugs, limits, and cache headers.
+ * Share-service contract (spec/src/sharing.md §The share service): PUT is
+ * create-or-update under a Bearer editor token (201 claim / 200 update / 403
+ * foreign / 410 tombstoned), GET is public with ETag + shared-cache headers,
+ * DELETE tombstones idempotently. No accounts, no If-Match, no idempotency
+ * keys — retrying means sending the same request again.
  */
-import type { SharedGuide } from "@placemarks/schemas";
 import { describe, expect, it } from "vitest";
 import { createShareApp } from "./app";
 import { MemoryStorage } from "./storage";
@@ -11,190 +12,179 @@ import { MemoryStorage } from "./storage";
 const TOKEN = "a".repeat(43); // shaped like 256 bits of base64url
 const OTHER_TOKEN = "b".repeat(43);
 
-function guide(title = "Lisbon weekend"): SharedGuide {
-  return { v: 1, kind: "list", title, blocks: [], contentHash: "hash" };
+function listDoc(title = "Lisbon weekend") {
+  return {
+    v: 1,
+    kind: "list",
+    title,
+    marker: { shape: "circle", color: "#F97316" },
+    places: [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Café A Brasileira",
+        lat: 38.7107,
+        lng: -9.1421,
+        address: "R. Garrett 122, Lisboa",
+        category: "cafe",
+        osmRef: { type: "node", id: "3775257522" },
+      },
+    ],
+  };
+}
+
+function postDoc(title = "A Lisbon walk") {
+  return {
+    v: 1,
+    kind: "post",
+    title,
+    body: "Start at [Brasileira](#place-11111111-1111-4111-8111-111111111111).",
+    places: listDoc().places,
+    list: { title: "Lisbon weekend" },
+  };
 }
 
 function harness() {
   const storage = new MemoryStorage();
-  const app = createShareApp({ storage, now: () => "2026-07-19T15:00:00.000Z" });
+  const app = createShareApp({ storage, now: () => "2026-07-26T15:00:00.000Z" });
   const request = (path: string, init?: RequestInit) =>
     app.request(`https://share.test${path}`, init);
-  const create = (slug: string, token = TOKEN, idKey = `create-${slug}`) =>
-    request("/s/lists", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "idempotency-key": idKey,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ desiredSlug: slug, document: guide() }),
+  const put = (slug: string, doc: unknown = listDoc(), token = TOKEN, collection = "lists") =>
+    request(`/s/${collection}/${slug}`, {
+      method: "PUT",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify(doc),
     });
-  return { storage, app, request, create };
+  return { storage, app, request, put };
 }
 
 describe("share service", () => {
-  it("claims a slug once, replays the create idempotently, and 409s a second owner", async () => {
-    const { request, create } = harness();
-    const first = await create("lisbon-trip");
-    expect(first.status).toBe(201);
-    expect(await first.json()).toEqual({ slug: "lisbon-trip", revision: 1 });
-    expect(first.headers.get("cache-control")).toBe("no-store");
+  it("claims a slug with the first PUT and replaces the document with the same token", async () => {
+    const { request, put } = harness();
+    const created = await put("lisbon-trip");
+    expect(created.status).toBe(201);
+    expect(await created.json()).toEqual({ slug: "lisbon-trip" });
+    expect(created.headers.get("cache-control")).toBe("no-store");
 
-    // The same job id replays the original result — a retry, not a conflict.
-    const replay = await create("lisbon-trip");
-    expect(replay.status).toBe(201);
+    const updated = await put("lisbon-trip", listDoc("Lisbon, updated"));
+    expect(updated.status).toBe(200);
+    expect(await updated.json()).toEqual({ slug: "lisbon-trip" });
 
-    // A different creation attempt on the taken slug fails.
-    const rival = await request("/s/lists", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${OTHER_TOKEN}`,
-        "idempotency-key": "rival-1",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ desiredSlug: "lisbon-trip", document: guide() }),
-    });
-    expect(rival.status).toBe(409);
-  });
-
-  it("serves public reads with ETag, cache bounds, and noindex; 304 on If-None-Match", async () => {
-    const { request, create } = harness();
-    await create("lisbon-trip");
     const read = await request("/s/lists/lisbon-trip");
     expect(read.status).toBe(200);
-    expect(read.headers.get("etag")).toBe('"1"');
+    expect(((await read.json()) as { title: string }).title).toBe("Lisbon, updated");
+  });
+
+  it("refuses a foreign token with 403 and leaves the document untouched", async () => {
+    const { request, put } = harness();
+    await put("lisbon-trip");
+    const rival = await put("lisbon-trip", listDoc("Hijacked"), OTHER_TOKEN);
+    expect(rival.status).toBe(403);
+    const read = await request("/s/lists/lisbon-trip");
+    expect(((await read.json()) as { title: string }).title).toBe("Lisbon weekend");
+  });
+
+  it("serves public reads with ETag, s-maxage, noindex, and CORS; 304 on If-None-Match", async () => {
+    const { request, put } = harness();
+    await put("lisbon-trip");
+    const read = await request("/s/lists/lisbon-trip");
+    expect(read.status).toBe(200);
+    const etag = read.headers.get("etag");
+    expect(etag).toMatch(/^"[0-9a-f]{64}"$/); // hash of the body
+    expect(read.headers.get("cache-control")).toBe("public, s-maxage=60");
     expect(read.headers.get("x-robots-tag")).toBe("noindex");
-    expect(read.headers.get("cache-control")).toContain("max-age=60");
-    expect(((await read.json()) as SharedGuide).title).toBe("Lisbon weekend");
+    expect(read.headers.get("access-control-allow-origin")).toBe("*");
 
     const conditional = await request("/s/lists/lisbon-trip", {
-      headers: { "if-none-match": '"1"' },
+      headers: { "if-none-match": etag ?? "" },
     });
     expect(conditional.status).toBe(304);
+
+    // An update changes the body, so it changes the ETag.
+    await put("lisbon-trip", listDoc("Lisbon, updated"));
+    const after = await request("/s/lists/lisbon-trip", {
+      headers: { "if-none-match": etag ?? "" },
+    });
+    expect(after.status).toBe(200);
+    expect(after.headers.get("etag")).not.toBe(etag);
   });
 
-  it("updates only with the right token AND matching revision", async () => {
-    const { request, create } = harness();
-    await create("lisbon-trip");
+  it("404s an unknown slug and keeps lists and posts as separate namespaces", async () => {
+    const { request, put } = harness();
+    expect((await request("/s/lists/never-was")).status).toBe(404);
 
-    const put = (token: string, ifMatch: string, idKey: string) =>
-      request("/s/lists/lisbon-trip", {
-        method: "PUT",
-        headers: {
-          authorization: `Bearer ${token}`,
-          "if-match": ifMatch,
-          "idempotency-key": idKey,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ document: guide("Updated title") }),
-      });
-
-    expect((await put(OTHER_TOKEN, '"1"', "u1")).status).toBe(403);
-    expect((await put(TOKEN, '"9"', "u2")).status).toBe(412);
-    const ok = await put(TOKEN, '"1"', "u3");
-    expect(ok.status).toBe(200);
-    expect(await ok.json()).toEqual({ slug: "lisbon-trip", revision: 2 });
-    // A stale If-Match whose stored document is byte-identical to what the
-    // request asks for is acknowledged, not refused: the requested end state
-    // already holds, produced by this token, with nothing written since. That
-    // is what lets a lost replay handle recover instead of stranding the page.
-    // It still cannot roll the document back — the read below proves it.
-    const recovered = await put(TOKEN, '"1"', "u4");
-    expect(recovered.status).toBe(200);
-    expect(await recovered.json()).toEqual({ slug: "lisbon-trip", revision: 2 });
-    // A stale If-Match with DIFFERENT content is still a conflict.
-    expect(
-      (
-        await request("/s/lists/lisbon-trip", {
-          method: "PUT",
-          headers: {
-            authorization: `Bearer ${TOKEN}`,
-            "if-match": '"1"',
-            "idempotency-key": "u5",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ document: guide("Something else") }),
-        })
-      ).status,
-    ).toBe(412);
-
-    const read = await request("/s/lists/lisbon-trip");
-    expect(((await read.json()) as SharedGuide).title).toBe("Updated title");
+    expect((await put("walk", postDoc(), TOKEN, "posts")).status).toBe(201);
+    expect((await request("/s/posts/walk")).status).toBe(200);
+    expect((await request("/s/lists/walk")).status).toBe(404);
   });
 
-  it("revokes into a non-readable, non-reusable tombstone; replaying the DELETE succeeds", async () => {
-    const { request, create } = harness();
-    await create("lisbon-trip");
-    const del = () =>
+  it("tombstones on DELETE: 204, idempotent repeat, 410 reads, 410 PUTs, no reclaim ever", async () => {
+    const { request, put } = harness();
+    await put("lisbon-trip");
+    const del = (token = TOKEN) =>
       request("/s/lists/lisbon-trip", {
         method: "DELETE",
-        headers: {
-          authorization: `Bearer ${TOKEN}`,
-          "if-match": '"1"',
-          "idempotency-key": "revoke-1",
-        },
+        headers: { authorization: `Bearer ${token}` },
       });
     expect((await del()).status).toBe(204);
-    expect((await del()).status).toBe(204); // idempotent replay
-    expect((await request("/s/lists/lisbon-trip")).status).toBe(404);
-    // The slug is reserved forever — a new owner cannot claim it.
-    const reclaim = await request("/s/lists", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${OTHER_TOKEN}`,
-        "idempotency-key": "reclaim-1",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ desiredSlug: "lisbon-trip", document: guide() }),
+    expect((await del()).status).toBe(204); // idempotent by nature
+
+    expect((await request("/s/lists/lisbon-trip")).status).toBe(410);
+    // Neither the owner nor anyone else can write over a tombstone.
+    expect((await put("lisbon-trip")).status).toBe(410);
+    expect((await put("lisbon-trip", listDoc(), OTHER_TOKEN)).status).toBe(410);
+  });
+
+  it("refuses a foreign-token DELETE and a missing token on any mutation", async () => {
+    const { request, put } = harness();
+    await put("lisbon-trip");
+    const foreign = await request("/s/lists/lisbon-trip", {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${OTHER_TOKEN}` },
     });
-    expect(reclaim.status).toBe(409);
+    expect(foreign.status).toBe(403);
+    expect((await request("/s/lists/lisbon-trip")).status).toBe(200);
+
+    const bare = (method: string) => request("/s/lists/lisbon-trip", { method });
+    expect((await bare("PUT")).status).toBe(401);
+    expect((await bare("DELETE")).status).toBe(401);
+    expect(
+      (
+        await request("/s/lists/ghost", {
+          method: "DELETE",
+          headers: { authorization: `Bearer ${TOKEN}` },
+        })
+      ).status,
+    ).toBe(404);
   });
 
-  it("rejects reserved slugs, schema-invalid documents, and missing auth/idempotency", async () => {
+  it("rejects schema-invalid documents, malformed JSON, and reserved or malformed slugs", async () => {
+    const { request, put } = harness();
+    expect((await put("ok-slug", { v: 99 })).status).toBe(400);
+    expect((await put("settings")).status).toBe(400); // reserved
+    expect((await put("Not-A-Slug!")).status).toBe(400);
+    const malformed = await request("/s/lists/ok-slug", {
+      method: "PUT",
+      headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+      body: "{not json",
+    });
+    expect(malformed.status).toBe(400);
+  });
+
+  it("413s an oversized request body", async () => {
     const { request } = harness();
-    const post = (body: unknown, headers: Record<string, string>) =>
-      request("/s/lists", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...headers },
-        body: JSON.stringify(body),
-      });
-
-    expect(
-      (
-        await post(
-          { desiredSlug: "settings", document: guide() },
-          { authorization: `Bearer ${TOKEN}`, "idempotency-key": "r1" },
-        )
-      ).status,
-    ).toBe(409);
-    expect(
-      (
-        await post(
-          { desiredSlug: "ok-slug", document: { v: 99 } },
-          { authorization: `Bearer ${TOKEN}`, "idempotency-key": "r2" },
-        )
-      ).status,
-    ).toBe(400);
-    expect(
-      (await post({ desiredSlug: "ok-slug", document: guide() }, { "idempotency-key": "r3" }))
-        .status,
-    ).toBe(401);
-    expect(
-      (
-        await post(
-          { desiredSlug: "ok-slug", document: guide() },
-          { authorization: `Bearer ${TOKEN}` },
-        )
-      ).status,
-    ).toBe(400);
+    const oversize = await request("/s/lists/ok-slug", {
+      method: "PUT",
+      headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+      body: "x".repeat(1_048_577),
+    });
+    expect(oversize.status).toBe(413);
   });
 
-  it("rate-limits mutations per token", async () => {
-    const { create } = harness();
+  it("rate-limits mutations per token+source bucket", async () => {
+    const { put } = harness();
     let limited = false;
     for (let i = 0; i < 40; i += 1) {
-      const response = await create(`slug-number-${i.toString()}`, TOKEN, `k${i.toString()}`);
+      const response = await put(`slug-number-${i.toString()}`);
       if (response.status === 429) {
         limited = true;
         break;
@@ -203,24 +193,11 @@ describe("share service", () => {
     expect(limited).toBe(true);
   });
 
-  it("stores only the token hash and refuses a wrong-token write", async () => {
-    const { storage, create, request } = harness();
-    await create("lisbon-trip");
+  it("stores only the token hash, never the token", async () => {
+    const { storage, put } = harness();
+    await put("lisbon-trip");
     const doc = await storage.get("list", "lisbon-trip");
     expect(doc?.tokenHash).toHaveLength(64);
     expect(doc?.tokenHash).not.toContain(TOKEN);
-
-    await request("/s/lists/lisbon-trip", {
-      method: "PUT",
-      headers: {
-        authorization: `Bearer ${OTHER_TOKEN}`,
-        "if-match": '"1"',
-        "idempotency-key": "d1",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ document: guide() }),
-    });
-    // The wrong token never mutates the document.
-    expect((await storage.get("list", "lisbon-trip"))?.revision).toBe(1);
   });
 });

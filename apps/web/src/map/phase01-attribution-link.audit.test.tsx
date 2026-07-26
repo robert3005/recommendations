@@ -60,7 +60,6 @@ describe("Phase 0 map attribution", () => {
         initialCenter={{ lat: 51.5, lng: -0.12 }}
         initialZoom={12}
         placePins={[]}
-        poiPins={[]}
       />,
     );
 

@@ -11,8 +11,6 @@ export interface Viewport {
   zoom: number;
 }
 
-const STORAGE_KEY = "placemarks:viewport";
-
 /** World view fallback when the timezone is unknown. */
 const WORLD: Viewport = { lng: 0, lat: 25, zoom: 1.6 };
 
@@ -108,48 +106,4 @@ export function viewportFromTimezone(zone: string | undefined): Viewport {
   const region = REGION_CENTERS[zone.split("/")[0] ?? ""];
   if (region) return { lng: region[0], lat: region[1], zoom: REGION_ZOOM };
   return WORLD;
-}
-
-function storedViewport(storage: Pick<Storage, "getItem">): Viewport | undefined {
-  try {
-    const raw = storage.getItem(STORAGE_KEY);
-    if (!raw) return undefined;
-    const parsed = JSON.parse(raw) as Partial<Viewport>;
-    const { lng, lat, zoom } = parsed;
-    if (
-      typeof lng !== "number" ||
-      typeof lat !== "number" ||
-      typeof zoom !== "number" ||
-      !Number.isFinite(lng) ||
-      !Number.isFinite(lat) ||
-      !Number.isFinite(zoom) ||
-      lat < -90 ||
-      lat > 90 ||
-      lng < -180 ||
-      lng > 180
-    ) {
-      return undefined;
-    }
-    return { lng, lat, zoom };
-  } catch {
-    return undefined;
-  }
-}
-
-export function initialViewport(
-  storage: Pick<Storage, "getItem"> = localStorage,
-  zone: string | undefined = Intl.DateTimeFormat().resolvedOptions().timeZone,
-): Viewport {
-  return storedViewport(storage) ?? viewportFromTimezone(zone);
-}
-
-export function persistViewport(
-  viewport: Viewport,
-  storage: Pick<Storage, "setItem"> = localStorage,
-): void {
-  try {
-    storage.setItem(STORAGE_KEY, JSON.stringify(viewport));
-  } catch {
-    // Storage full or unavailable — the next launch simply starts approximate.
-  }
 }

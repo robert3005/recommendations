@@ -1,69 +1,157 @@
 import { describe, expect, it } from "vitest";
+import type { ListMarker, MarkerShape } from "./entities";
 import {
-  completeMarker,
-  MARKER_COLORS,
-  MARKER_ICONS,
-  markerAt,
+  ACCENT_COLORS,
+  assignMarker,
+  MARKER_SHAPE_PATHS,
+  MARKER_SHAPES,
   markerKey,
-  nextUnusedMarker,
+  nearestAccent,
 } from "./markers";
 
-describe("marker enumeration", () => {
-  it("yields every (colour, icon) combination exactly once before wrapping", () => {
-    const total = MARKER_COLORS.length * MARKER_ICONS.length;
-    const seen = new Set<string>();
-    for (let k = 0; k < total; k += 1) {
-      seen.add(markerKey(markerAt(k)));
+const ORANGE = "#F97316";
+const COBALT = "#2457E6";
+const GREEN = "#17A34A";
+
+describe("the palette", () => {
+  it("is the spec's eight shapes in order", () => {
+    expect(MARKER_SHAPES).toEqual([
+      "circle",
+      "diamond",
+      "triangle",
+      "square",
+      "hexagon",
+      "star",
+      "semicircle",
+      "chevron",
+    ]);
+  });
+
+  it("is the spec's eight accents in order, fills and deeps", () => {
+    expect(ACCENT_COLORS.map((a) => a.name)).toEqual([
+      "orange",
+      "cobalt",
+      "green",
+      "magenta",
+      "cyan",
+      "gold",
+      "vermilion",
+      "violet",
+    ]);
+    expect(ACCENT_COLORS.map((a) => a.fill)).toEqual([
+      "#F97316",
+      "#2457E6",
+      "#17A34A",
+      "#D6219C",
+      "#08AECE",
+      "#F0B100",
+      "#E43D1F",
+      "#7C3AED",
+    ]);
+    expect(ACCENT_COLORS.map((a) => a.deep)).toEqual([
+      "#B04A08",
+      "#1B3EA9",
+      "#0E6B33",
+      "#96156C",
+      "#0E7490",
+      "#8A6400",
+      "#AC2410",
+      "#5B21B6",
+    ]);
+  });
+
+  it("has one solid closed path per shape", () => {
+    for (const shape of MARKER_SHAPES) {
+      const path = MARKER_SHAPE_PATHS[shape];
+      expect(path.startsWith("M")).toBe(true);
+      expect(path.endsWith("Z")).toBe(true);
     }
-    expect(seen.size).toBe(total);
-  });
-
-  it("varies both colour and icon across the first assignments", () => {
-    const first = Array.from({ length: MARKER_COLORS.length }, (_, k) => markerAt(k));
-    expect(new Set(first.map((m) => m.color)).size).toBe(MARKER_COLORS.length);
-    expect(new Set(first.map((m) => m.icon)).size).toBeGreaterThan(1);
+    expect(Object.keys(MARKER_SHAPE_PATHS)).toHaveLength(8);
   });
 });
 
-describe("nextUnusedMarker", () => {
-  it("assigns the first combination to the first list", () => {
-    expect(nextUnusedMarker([])).toEqual(markerAt(0));
-  });
-
-  it("skips used combinations", () => {
-    const used = [markerAt(0), markerAt(1)];
-    expect(nextUnusedMarker(used)).toEqual(markerAt(2));
-  });
-
-  it("fills gaps left by deleted or re-marked lists", () => {
-    const used = [markerAt(0), markerAt(2)];
-    expect(nextUnusedMarker(used)).toEqual(markerAt(1));
+describe("markerKey", () => {
+  it("is shape:colour", () => {
+    expect(markerKey({ shape: "circle", color: ORANGE })).toBe(`circle:${ORANGE}`);
   });
 });
 
-describe("completeMarker (colour-only migration, KML import)", () => {
-  it("keeps a known colour and picks an icon keeping the pair unique", () => {
-    const color = MARKER_COLORS[3] as string;
-    const existing = [{ color, icon: MARKER_ICONS[0] as string }];
-    const completed = completeMarker({ color }, existing);
-    expect(completed.color).toBe(color);
-    expect(completed.icon).not.toBe(MARKER_ICONS[0]);
+describe("assignMarker", () => {
+  it("assigns the first free pair, and never a badge while pairs remain", () => {
+    const { marker, badge } = assignMarker([]);
+    expect(marker).toEqual({ shape: "circle", color: ORANGE });
+    expect(badge).toBeUndefined();
   });
 
-  it("keeps an already-unique full pair", () => {
-    const marker = { color: MARKER_COLORS[1] as string, icon: MARKER_ICONS[4] as string };
-    expect(completeMarker(marker, [])).toEqual(marker);
+  it("makes the first eight lists differ in BOTH shape and colour", () => {
+    const taken: ListMarker[] = [];
+    for (let i = 0; i < 8; i += 1) taken.push(assignMarker(taken).marker);
+    expect(new Set(taken.map((m) => m.shape)).size).toBe(8);
+    expect(new Set(taken.map((m) => m.color)).size).toBe(8);
   });
 
-  it("assigns the next unused combination when nothing is known", () => {
-    expect(completeMarker({}, [markerAt(0)])).toEqual(markerAt(1));
+  it("walks all 64 pairs before repeating any", () => {
+    const taken: ListMarker[] = [];
+    for (let i = 0; i < 64; i += 1) {
+      const { marker, badge } = assignMarker(taken);
+      expect(badge).toBeUndefined();
+      taken.push(marker);
+    }
+    expect(new Set(taken.map(markerKey)).size).toBe(64);
   });
 
-  it("moves off a taken pair while preserving the colour", () => {
-    const color = MARKER_COLORS[0] as string;
-    const existing = MARKER_ICONS.slice(0, 3).map((icon) => ({ color, icon }));
-    const completed = completeMarker({ color, icon: MARKER_ICONS[1] as string }, existing);
-    expect(completed.color).toBe(color);
-    expect(existing.some((m) => m.icon === completed.icon)).toBe(false);
+  it("tries the preferred colour's free shapes first", () => {
+    const first = assignMarker([], GREEN);
+    expect(first.marker).toEqual({ shape: "circle", color: GREEN });
+    const second = assignMarker([first.marker], GREEN);
+    expect(second.marker).toEqual({ shape: "diamond", color: GREEN });
+  });
+
+  it("snaps a source style colour to the nearest accent", () => {
+    expect(assignMarker([], "#00FF00").marker.color).toBe(GREEN);
+  });
+
+  it("falls back to the general walk when the preferred colour is exhausted", () => {
+    const taken = MARKER_SHAPES.map((shape) => ({ shape, color: GREEN }));
+    const { marker, badge } = assignMarker(taken, GREEN);
+    expect(marker.color).not.toBe(GREEN);
+    expect(badge).toBeUndefined();
+  });
+
+  it("repeats deterministically with a numeral badge beyond 64 live lists", () => {
+    const taken: ListMarker[] = [];
+    for (let i = 0; i < 64; i += 1) taken.push(assignMarker(taken).marker);
+
+    const sixtyFifth = assignMarker(taken);
+    expect(sixtyFifth.marker).toEqual({ shape: "circle", color: ORANGE });
+    expect(sixtyFifth.badge).toBe(2);
+
+    taken.push(sixtyFifth.marker);
+    const sixtySixth = assignMarker(taken);
+    expect(sixtySixth.marker).toEqual({ shape: "diamond", color: COBALT });
+    expect(sixtySixth.badge).toBe(2);
+  });
+});
+
+describe("nearestAccent", () => {
+  it("returns the exact accent for its own fill", () => {
+    for (const accent of ACCENT_COLORS) expect(nearestAccent(accent.fill)).toBe(accent);
+  });
+
+  it("matches nearby hues, not just exact values", () => {
+    expect(nearestAccent("#0000ff").name).toBe("cobalt");
+    expect(nearestAccent("#FF0000").name).toBe("vermilion");
+    expect(nearestAccent("#0f0").name).toBe("green");
+  });
+
+  it("falls back deterministically on unparsable input", () => {
+    expect(nearestAccent("not-a-colour")).toBe(ACCENT_COLORS[0]);
+  });
+});
+
+describe("shape typing", () => {
+  it("MARKER_SHAPE_PATHS covers exactly the MarkerShape union", () => {
+    const shapes: MarkerShape[] = [...MARKER_SHAPES];
+    for (const shape of shapes) expect(MARKER_SHAPE_PATHS[shape]).toBeTypeOf("string");
   });
 });

@@ -15,9 +15,8 @@
   },
   "dependencies": {
     "@placemarks/schemas": "workspace:*",
-    "hono": "^4.6.0",
-    "zod": "^4.0.0",
-    "@placemarks/service-kit": "workspace:*"
+    "@placemarks/service-kit": "workspace:*",
+    "hono": "^4.6.0"
   },
   "devDependencies": {
     "typescript": "^5.6.0",

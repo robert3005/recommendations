@@ -1,39 +1,36 @@
 /**
- * Choose the list a new place is born into — an existing one, or one created
- * here. Places do not exist outside lists (spec/src/data-model.md: membership is
- * existence), so every creation path needs this control, which is why it is one
- * component rather than a copy per dialog.
+ * Pick the list a place joins — an existing one, or one created here by name
+ * (the repository auto-assigns its marker). Every add path ends in "pick a
+ * list" because membership is existence (spec/src/data-model.md), which is why
+ * this is one component rather than a copy per dialog.
  */
-import type { List, ListMarker } from "@placemarks/domain";
+import type { List } from "@placemarks/domain";
 import { useState } from "react";
-import { suggestMarker } from "../../lib/markers";
-import { MarkerSwatches } from "./MarkerSwatches";
 
-export type ListTarget =
-  | { kind: "existing"; listId: string }
-  | { kind: "new"; name: string; marker: ListMarker };
+export type ListTarget = { kind: "existing"; listId: string } | { kind: "new"; name: string };
 
 export interface ListTargetPickerProps {
   lists: List[] | undefined;
   onChange: (target: ListTarget | undefined) => void;
-  /** Distinguishes the radio group and test hooks when several exist on a page. */
+  /** Distinguishes controls and test hooks when several exist on a page. */
   idPrefix: string;
+  /** Lists the place already belongs to — not offered again. */
+  excludeListIds?: string[];
 }
 
-export function ListTargetPicker({ lists, onChange, idPrefix }: ListTargetPickerProps) {
-  const available = lists ?? [];
+export function ListTargetPicker({
+  lists,
+  onChange,
+  idPrefix,
+  excludeListIds = [],
+}: ListTargetPickerProps) {
+  const available = (lists ?? []).filter((list) => !excludeListIds.includes(list.id));
   const [choice, setChoice] = useState<string>(available.length > 0 ? "" : "__new__");
   const [newListName, setNewListName] = useState("");
-  const [marker, setMarker] = useState<ListMarker>();
-  const selectedMarker = marker ?? suggestMarker(available);
 
-  const emit = (nextChoice: string, nextName: string, nextMarker: ListMarker) => {
+  const emit = (nextChoice: string, nextName: string) => {
     if (nextChoice === "__new__") {
-      onChange(
-        nextName.trim() === ""
-          ? undefined
-          : { kind: "new", name: nextName.trim(), marker: nextMarker },
-      );
+      onChange(nextName.trim() === "" ? undefined : { kind: "new", name: nextName.trim() });
       return;
     }
     onChange(nextChoice === "" ? undefined : { kind: "existing", listId: nextChoice });
@@ -41,15 +38,15 @@ export function ListTargetPicker({ lists, onChange, idPrefix }: ListTargetPicker
 
   return (
     <>
-      <label className="mt-2 block text-xs font-medium text-ink-2">
+      <label className="mt-2 block text-xs font-medium text-ink">
         List
         <select
           value={choice}
           onChange={(e) => {
             setChoice(e.target.value);
-            emit(e.target.value, newListName, selectedMarker);
+            emit(e.target.value, newListName);
           }}
-          className="mt-1 w-full rounded border border-rule px-2 py-1.5 text-sm"
+          className="mt-1 w-full rounded-crisp border border-hairline bg-paper px-2 py-1.5 text-sm text-ink"
           data-testid={`${idPrefix}-list-choice`}
         >
           <option value="">Choose a list…</option>
@@ -62,29 +59,18 @@ export function ListTargetPicker({ lists, onChange, idPrefix }: ListTargetPicker
         </select>
       </label>
       {choice === "__new__" ? (
-        <div className="mt-2">
-          <input
-            type="text"
-            value={newListName}
-            onChange={(e) => {
-              setNewListName(e.target.value);
-              emit(choice, e.target.value, selectedMarker);
-            }}
-            placeholder="New list name"
-            aria-label="New list name"
-            className="w-full rounded border border-rule px-2 py-1.5 text-sm"
-            data-testid={`${idPrefix}-new-list-name`}
-          />
-          <MarkerSwatches
-            radioName={`${idPrefix}-list-marker`}
-            selected={selectedMarker}
-            used={available.map((l) => l.marker)}
-            onSelect={(next) => {
-              setMarker(next);
-              emit(choice, newListName, next);
-            }}
-          />
-        </div>
+        <input
+          type="text"
+          value={newListName}
+          onChange={(e) => {
+            setNewListName(e.target.value);
+            emit(choice, e.target.value);
+          }}
+          placeholder="New list name"
+          aria-label="New list name"
+          className="mt-2 w-full rounded-crisp border border-hairline bg-paper px-2 py-1.5 text-sm text-ink"
+          data-testid={`${idPrefix}-new-list-name`}
+        />
       ) : null}
     </>
   );

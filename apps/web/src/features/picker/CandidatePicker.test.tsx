@@ -1,44 +1,108 @@
 /**
- * Missing-POI escape paths (spec/src/place-identity.md): when nothing is mapped
- * at a location the picker offers "Add it on OpenStreetMap" (preferred for real
- * public POIs) and, when wired, "Save as unlinked pin" for spots that don't
- * belong in OSM.
+ * The review queue's candidate picker (spec/src/interop.md §The review queue):
+ * lettered candidates matching the canvas pins, a skip that stays in the
+ * report, and dialog focus management.
  */
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { GeocoderCandidate } from "@placemarks/domain";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { CandidatePicker } from "./CandidatePicker";
 
-function renderPicker(onSaveManual?: (pos: { lat: number; lng: number }) => void) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <CandidatePicker
-        lat={0}
-        lng={0}
-        onSelect={vi.fn()}
-        onClose={vi.fn()}
-        {...(onSaveManual ? { onSaveManual } : {})}
-      />
-    </QueryClientProvider>,
-  );
-}
+const candidates: GeocoderCandidate[] = [
+  {
+    name: "Mercado da Ribeira",
+    lat: 38.7071,
+    lng: -9.1461,
+    address: "Av. 24 de Julho",
+    osmRef: { type: "way", id: "1" },
+  },
+  { name: "Time Out Market", lat: 38.707, lng: -9.1458, osmRef: { type: "node", id: "2" } },
+];
 
-describe("missing-POI escape paths", () => {
-  it("always offers the upstream path: Add it on OpenStreetMap", () => {
-    renderPicker();
-    expect(screen.getByRole("link", { name: "Add it on OpenStreetMap" })).toHaveAttribute(
-      "href",
-      expect.stringContaining("openstreetmap.org/edit"),
+describe("import review candidate picker", () => {
+  it("letters candidates in stored order and reports the pick", async () => {
+    const onPick = vi.fn();
+    render(
+      <CandidatePicker title="Mercado" candidates={candidates} onPick={onPick} onClose={vi.fn()} />,
     );
-    // Without a manual-save handler wired, no unlinked-pin button is offered.
-    expect(screen.queryByRole("button", { name: "Save as unlinked pin" })).not.toBeInTheDocument();
+    const options = screen.getAllByTestId("candidate-option");
+    expect(options[0]?.textContent).toContain("A");
+    expect(options[1]?.textContent).toContain("B");
+    await userEvent.click(options[1] as HTMLElement);
+    expect(onPick).toHaveBeenCalledWith(candidates[1]);
   });
 
-  it("offers the unlinked-pin path when wired, alongside the upstream path", () => {
-    const onSaveManual = vi.fn();
-    renderPicker(onSaveManual);
-    expect(screen.getByRole("button", { name: "Save as unlinked pin" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Add it on OpenStreetMap" })).toBeInTheDocument();
+  it("shows distances from the row's own coordinates when it has any", () => {
+    render(
+      <CandidatePicker
+        title="Mercado"
+        candidates={candidates}
+        origin={{ lat: 38.7071, lng: -9.1461 }}
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByTestId("candidate-option")[0]?.textContent).toContain("0 m");
+  });
+
+  it("offers skip when wired, and an escape hatch when nothing matched", async () => {
+    const onSkip = vi.fn();
+    render(
+      <CandidatePicker
+        title="Nowhere"
+        candidates={[]}
+        onPick={vi.fn()}
+        onSkip={onSkip}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("no-candidates")).toBeVisible();
+    await userEvent.click(screen.getByTestId("candidate-skip"));
+    expect(onSkip).toHaveBeenCalledTimes(1);
+  });
+
+  it("manages dialog focus: enters on open, restores on close", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button type="button" data-testid="invoker" onClick={() => setOpen(true)}>
+            open
+          </button>
+          {open ? (
+            <CandidatePicker
+              title="Mercado"
+              candidates={candidates}
+              onPick={vi.fn()}
+              onClose={() => setOpen(false)}
+            />
+          ) : null}
+        </>
+      );
+    }
+    render(<Harness />);
+    const invoker = screen.getByTestId("invoker");
+    await userEvent.click(invoker);
+    // The dialog takes focus on open…
+    expect(screen.getByTestId("candidate-picker")).toHaveFocus();
+    // …and hands it back to the invoking control on dismissal.
+    await userEvent.keyboard("{Escape}");
+    expect(invoker).toHaveFocus();
+  });
+
+  it("closes on Escape", async () => {
+    const onClose = vi.fn();
+    render(
+      <CandidatePicker
+        title="Mercado"
+        candidates={candidates}
+        onPick={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+    await userEvent.keyboard("{Escape}");
+    expect(onClose).toHaveBeenCalled();
   });
 });

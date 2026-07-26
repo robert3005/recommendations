@@ -1,30 +1,24 @@
 /**
- * One contract, run against BOTH `ShareStorage` adapters.
- *
- * This replaces ten hand-written D1 fakes that each asserted on SQL string
- * prefixes for a different corner of the old multi-statement commit unit. With
- * each verb a single statement, what matters is that the memory adapter and the
- * D1 adapter agree on the semantics the service depends on — atomic claim,
- * conditional update, conditional revoke, immutable replay handles, fixed-window
+ * One contract, run against BOTH `ShareStorage` adapters: the memory adapter
+ * and the D1 adapter must agree on the semantics the service depends on —
+ * atomic slug claim, live-row-only update, idempotent tombstone, fixed-window
  * counters — so those are stated once, here.
  */
 import { describe, expect, it } from "vitest";
 import { type D1Like, D1Storage } from "./d1";
 import { MemoryStorage, type ShareStorage, type StoredDocument } from "./storage";
 
-const NOW = "2026-07-20T12:00:00.000Z";
-const LATER = "2026-07-20T13:00:00.000Z";
+const NOW = "2026-07-26T12:00:00.000Z";
+const LATER = "2026-07-26T13:00:00.000Z";
 
 function doc(overrides: Partial<StoredDocument> = {}): StoredDocument {
   return {
-    slug: "lisbon-eats",
     kind: "list",
-    revision: 1,
+    slug: "lisbon-eats",
     tokenHash: "a".repeat(64),
     body: '{"v":1}',
-    createdAt: NOW,
+    revokedAt: null,
     updatedAt: NOW,
-    revoked: false,
     ...overrides,
   };
 }
@@ -35,8 +29,7 @@ function doc(overrides: Partial<StoredDocument> = {}): StoredDocument {
  */
 function fakeD1(): D1Like {
   const documents = new Map<string, Record<string, unknown>>();
-  const idempotency = new Map<string, Record<string, unknown>>();
-  const rate = new Map<string, { windowStart: number; count: number }>();
+  const rate = new Map<string, { count: number; reset_at: string }>();
   const key = (kind: unknown, slug: unknown) => `${String(kind)}:${String(slug)}`;
 
   return {
@@ -49,66 +42,37 @@ function fakeD1(): D1Like {
         },
         async run() {
           if (/^INSERT INTO documents/i.test(sql)) {
-            const [slug, kind, revision, tokenHash, body, createdAt, updatedAt] = bound;
+            const [kind, slug, token_hash, body, updated_at] = bound;
             const id = key(kind, slug);
-            if (documents.has(id)) throw new Error("UNIQUE constraint failed: documents.slug");
-            documents.set(id, {
-              slug,
-              kind,
-              revision,
-              tokenHash,
-              body,
-              createdAt,
-              updatedAt,
-              revoked: 0,
-            });
+            if (documents.has(id)) {
+              throw new Error("UNIQUE constraint failed: documents.kind, documents.slug");
+            }
+            documents.set(id, { kind, slug, token_hash, body, revoked_at: null, updated_at });
             return { meta: { changes: 1 } };
           }
-          if (/^UPDATE documents SET revoked = 1/i.test(sql)) {
-            const [updatedAt, kind, slug, expected] = bound;
+          if (/^UPDATE documents SET revoked_at/i.test(sql)) {
+            const [revokedAt, kind, slug] = bound;
             const row = documents.get(key(kind, slug));
-            if (!row || row.revoked === 1 || row.revision !== expected) {
-              return { meta: { changes: 0 } };
-            }
-            Object.assign(row, {
-              revoked: 1,
-              body: "",
-              revision: (row.revision as number) + 1,
-              updatedAt,
-            });
+            if (!row || row.revoked_at !== null) return { meta: { changes: 0 } };
+            Object.assign(row, { revoked_at: revokedAt, body: "", updated_at: revokedAt });
             return { meta: { changes: 1 } };
           }
-          if (/^UPDATE documents SET revision/i.test(sql)) {
-            const [body, updatedAt, kind, slug, expected] = bound;
+          if (/^UPDATE documents SET body/i.test(sql)) {
+            const [body, updatedAt, kind, slug] = bound;
             const row = documents.get(key(kind, slug));
-            if (!row || row.revoked === 1 || row.revision !== expected) {
-              return { meta: { changes: 0 } };
-            }
-            Object.assign(row, { revision: (row.revision as number) + 1, body, updatedAt });
-            return { meta: { changes: 1 } };
-          }
-          if (/^INSERT OR IGNORE INTO idempotency/i.test(sql)) {
-            const [k, response, status] = bound;
-            // OR IGNORE: handles are immutable once written.
-            if (!idempotency.has(String(k))) {
-              idempotency.set(String(k), { key: k, response, status, createdAt: NOW });
-            }
+            if (!row || row.revoked_at !== null) return { meta: { changes: 0 } };
+            Object.assign(row, { body, updated_at: updatedAt });
             return { meta: { changes: 1 } };
           }
           if (/^INSERT INTO rate/i.test(sql)) {
-            const bucket = String(bound[0]);
-            const windowStart = Number(bound[1]);
+            const [bucket, resetAt, now] = bound as [string, string, string];
             const current = rate.get(bucket);
             rate.set(
               bucket,
-              current && current.windowStart === windowStart
-                ? { windowStart, count: current.count + 1 }
-                : { windowStart, count: 1 },
+              current && current.reset_at > now
+                ? { count: current.count + 1, reset_at: current.reset_at }
+                : { count: 1, reset_at: resetAt },
             );
-            return { meta: { changes: 1 } };
-          }
-          if (/^DELETE FROM idempotency/i.test(sql)) {
-            idempotency.clear();
             return { meta: { changes: 1 } };
           }
           throw new Error(`unhandled SQL: ${sql}`);
@@ -118,10 +82,7 @@ function fakeD1(): D1Like {
             const [kind, slug] = bound;
             return (documents.get(key(kind, slug)) as T) ?? null;
           }
-          if (/^SELECT \* FROM idempotency/i.test(sql)) {
-            return (idempotency.get(String(bound[0])) as T) ?? null;
-          }
-          if (/rate/i.test(sql)) {
+          if (/^SELECT count FROM rate/i.test(sql)) {
             return (rate.get(String(bound[0])) as T) ?? null;
           }
           throw new Error(`unhandled SQL: ${sql}`);
@@ -146,44 +107,42 @@ describe.each(adapters)("ShareStorage contract: %s", (_name, make) => {
     expect((await storage.get("list", "lisbon-eats"))?.tokenHash).toBe("a".repeat(64));
   });
 
-  it("updates only on a matching revision, and bumps it", async () => {
+  it("keeps kinds as separate namespaces", async () => {
     const storage = make();
     await storage.create(doc());
-
-    expect(await storage.update("list", "lisbon-eats", 9, '{"v":2}', LATER)).toBe("conflict");
-    expect(await storage.update("post", "lisbon-eats", 1, '{"v":2}', LATER)).toBe("missing");
-
-    const updated = await storage.update("list", "lisbon-eats", 1, '{"v":2}', LATER);
-    expect(updated).toMatchObject({ revision: 2, body: '{"v":2}', updatedAt: LATER });
-    // The old revision cannot be replayed over the new one.
-    expect(await storage.update("list", "lisbon-eats", 1, '{"v":3}', LATER)).toBe("conflict");
+    expect(await storage.get("post", "lisbon-eats")).toBeUndefined();
+    expect(await storage.create(doc({ kind: "post" }))).toBe(true);
   });
 
-  it("revokes into a tombstone that no longer reads and cannot be re-revoked", async () => {
+  it("updates only a live row", async () => {
     const storage = make();
     await storage.create(doc());
 
-    expect(await storage.revoke("list", "lisbon-eats", 9, LATER)).toBe("conflict");
-    expect(await storage.revoke("list", "lisbon-eats", 1, LATER)).toBe("ok");
+    expect(await storage.update("post", "lisbon-eats", '{"v":2}', LATER)).toBe(false);
+    expect(await storage.update("list", "lisbon-eats", '{"v":2}', LATER)).toBe(true);
+    expect(await storage.get("list", "lisbon-eats")).toMatchObject({
+      body: '{"v":2}',
+      updatedAt: LATER,
+    });
+
+    await storage.revoke("list", "lisbon-eats", LATER);
+    expect(await storage.update("list", "lisbon-eats", '{"v":3}', LATER)).toBe(false);
+  });
+
+  it("revokes into a bodiless tombstone and leaves an existing tombstone alone", async () => {
+    const storage = make();
+    await storage.create(doc());
+    await storage.revoke("list", "lisbon-eats", LATER);
 
     const tombstone = await storage.get("list", "lisbon-eats");
-    expect(tombstone).toMatchObject({ revoked: true, body: "" });
-    // A tombstone reads as absent to both verbs — it is gone, not stale.
-    expect(await storage.revoke("list", "lisbon-eats", 1, LATER)).toBe("missing");
-    expect(await storage.update("list", "lisbon-eats", 2, '{"v":9}', LATER)).toBe("missing");
-  });
+    expect(tombstone).toMatchObject({ revokedAt: LATER, body: "" });
 
-  it("stores replay handles immutably", async () => {
-    const storage = make();
-    await storage.putIdempotent({ key: "job-1", response: '{"revision":1}', status: 201 });
-    // A second write under the same key never overwrites the first.
-    await storage.putIdempotent({ key: "job-1", response: '{"revision":99}', status: 200 });
-
-    expect(await storage.getIdempotent("job-1")).toMatchObject({
-      response: '{"revision":1}',
-      status: 201,
-    });
-    expect(await storage.getIdempotent("job-absent")).toBeUndefined();
+    // Idempotent: a repeat revoke does not move the tombstone's timestamp.
+    await storage.revoke("list", "lisbon-eats", "2026-07-27T00:00:00.000Z");
+    expect((await storage.get("list", "lisbon-eats"))?.revokedAt).toBe(LATER);
+    // Revoking a slug that never existed is a no-op, not an error.
+    await storage.revoke("list", "never-was", LATER);
+    expect(await storage.get("list", "never-was")).toBeUndefined();
   });
 
   it("counts hits within a fixed window and resets in the next one", async () => {

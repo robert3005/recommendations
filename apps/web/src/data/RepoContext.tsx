@@ -1,6 +1,5 @@
-import type { PlacemarksRepository } from "@placemarks/domain";
 import { createContext, useContext } from "react";
-import { DexieRepository } from "./repo";
+import { DexieRepository, type LocalRepository } from "./repo";
 
 let defaultRepo: DexieRepository | undefined;
 
@@ -10,28 +9,28 @@ export function getDefaultRepo(): DexieRepository {
   return defaultRepo;
 }
 
-const RepoContext = createContext<PlacemarksRepository | undefined>(undefined);
+const RepoContext = createContext<LocalRepository | undefined>(undefined);
 
 export function RepoProvider({
   repo,
   children,
 }: {
-  repo: PlacemarksRepository;
+  repo: LocalRepository;
   children?: React.ReactNode;
 }) {
   return <RepoContext.Provider value={repo}>{children}</RepoContext.Provider>;
 }
 
-export function useRepo(): PlacemarksRepository {
+export function useRepo(): LocalRepository {
   const repo = useContext(RepoContext);
   if (!repo) throw new Error("RepoProvider missing");
   return repo;
 }
 
 /**
- * The concrete Dexie repository — for surfaces that need beyond-the-port state
- * (backup archives, the import review queue). Falls back to the default
- * singleton when the provided repository is a test double without a db.
+ * The concrete Dexie repository — for reads beyond the port (the import review
+ * queue's cross-batch query). Falls back to the default singleton when the
+ * provided repository is a test double without a db.
  */
 export function useDexieRepo(): DexieRepository {
   const repo = useRepo();

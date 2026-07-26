@@ -1,83 +1,107 @@
-/** Provider adapter tests against MSW fixtures. */
+/**
+ * Geocoder adapter tests against MSW fixtures (spec/src/data-sources.md
+ * §Geocoder): search and lookup both normalize to domain GeocoderCandidate,
+ * and every result records its osmRef — geocoder results are OSM data.
+ */
+import { HttpResponse, http } from "msw";
 import { describe, expect, it } from "vitest";
-import { OsmApiResolver } from "./osmApi";
-import { OverpassProvider } from "./overpass";
-import { PhotonSearchProvider } from "./photon";
+import { server } from "../mocks/server";
+import { OsmApiGeocoder } from "./osmApi";
+import { PhotonGeocoder } from "./photon";
 
-describe("PhotonSearchProvider", () => {
-  it("normalizes features to typed OSM candidates and drops ref-less ones", async () => {
-    const provider = new PhotonSearchProvider();
-    const results = await provider.search("cafe");
+describe("PhotonGeocoder.search", () => {
+  it("normalizes features to candidates recording osmRef, dropping ref-less ones", async () => {
+    const results = await new PhotonGeocoder().search("cafe");
     expect(results).toHaveLength(2); // the third fixture has no osm_id
     expect(results[0]).toMatchObject({
-      ref: { type: "node", id: "101" },
       name: "Café Central",
-      category: "cafe",
       address: "Rua Example 12, Lisboa 1100-000",
+      osmRef: { type: "node", id: "101" },
     });
-    expect(results[1]?.ref).toEqual({ type: "way", id: "201" });
+    expect(results[1]?.osmRef).toEqual({ type: "way", id: "201" });
+  });
+
+  it("enforces the caller's result budget when the upstream ignores its limit", async () => {
+    const baseUrl = "https://search-budget.test";
+    server.use(
+      http.get(`${baseUrl}/api`, () =>
+        HttpResponse.json({
+          features: Array.from({ length: 5 }, (_, index) => ({
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [-0.12 + index / 10_000, 51.5] },
+            properties: { osm_type: "N", osm_id: index + 1, name: `Café ${index + 1}` },
+          })),
+        }),
+      ),
+    );
+
+    const results = await new PhotonGeocoder(baseUrl).search("cafe", undefined, { limit: 2 });
+    expect(results).toHaveLength(2);
+  });
+
+  it("retries a transient upstream failure once — adapter policy, not caller policy", async () => {
+    const baseUrl = "https://search-retry.test";
+    let requests = 0;
+    server.use(
+      http.get(`${baseUrl}/api`, () => {
+        requests += 1;
+        return requests === 1
+          ? HttpResponse.text("upstream unavailable", { status: 503 })
+          : HttpResponse.json({
+              features: [
+                {
+                  type: "Feature",
+                  geometry: { type: "Point", coordinates: [-0.12, 51.5] },
+                  properties: { osm_type: "N", osm_id: 7, name: "Café Retry" },
+                },
+              ],
+            });
+      }),
+    );
+
+    const results = await new PhotonGeocoder(baseUrl).search("cafe");
+    expect(requests).toBe(2);
+    expect(results[0]?.name).toBe("Café Retry");
   });
 });
 
-describe("OsmApiResolver", () => {
-  const resolver = new OsmApiResolver(undefined, () => "2026-07-18T12:00:00.000Z");
+describe("OsmApiGeocoder.lookup", () => {
+  const geocoder = new OsmApiGeocoder();
 
-  it("resolves a node with derived fields", async () => {
-    const outcome = await resolver.resolveExact({ type: "node", id: "101" });
-    expect(outcome.type).toBe("ok");
-    if (outcome.type === "ok") {
-      expect(outcome.poi.name).toBe("Café Central");
-      expect(outcome.poi.website).toBe("https://cafecentral.pt/");
-      expect(outcome.poi.osmVersion).toBe(5);
-      expect(outcome.poi.address).toContain("Rua Example 12");
-    }
+  it("resolves a node to a candidate with assembled address and its ref", async () => {
+    const candidate = await geocoder.lookup({ type: "node", id: "101" });
+    expect(candidate).toMatchObject({
+      name: "Café Central",
+      osmRef: { type: "node", id: "101" },
+    });
+    expect(candidate?.address).toContain("Rua Example 12");
   });
 
   it("computes a representative point for ways from member nodes", async () => {
-    const outcome = await resolver.resolveExact({ type: "way", id: "201" });
-    expect(outcome.type).toBe("ok");
-    if (outcome.type === "ok") {
-      expect(outcome.poi.lat).toBeCloseTo(38.7107, 3);
-      expect(outcome.poi.lng).toBeCloseTo(-9.1421, 3);
-      expect(outcome.poi.website).toBe("https://cafedorio.pt/");
-    }
+    const candidate = await geocoder.lookup({ type: "way", id: "201" });
+    expect(candidate?.lat).toBeCloseTo(38.7107, 3);
+    expect(candidate?.lng).toBeCloseTo(-9.1421, 3);
+    expect(candidate?.name).toBe("Café do Rio");
   });
 
-  it("maps 404 and 410 to gone — the only definitive disappearance signals", async () => {
-    expect((await resolver.resolveExact({ type: "node", id: "404" })).type).toBe("gone");
-    expect((await resolver.resolveExact({ type: "node", id: "410" })).type).toBe("gone");
+  it("maps 404 and 410 to undefined — the only definitive disappearance signals", async () => {
+    expect(await geocoder.lookup({ type: "node", id: "404" })).toBeUndefined();
+    expect(await geocoder.lookup({ type: "node", id: "410" })).toBeUndefined();
   });
 
-  it("maps server failures to error, never gone", async () => {
-    expect((await resolver.resolveExact({ type: "node", id: "500" })).type).toBe("error");
-  });
-});
-
-describe("OverpassProvider", () => {
-  const provider = new OverpassProvider(undefined, () => "2026-07-18T12:00:00.000Z");
-
-  it("parses nearby candidates including way centers", async () => {
-    const pois = await provider.searchNearby({ lat: 38.7139, lng: -9.1394, radiusM: 80 });
-    expect(pois).toHaveLength(3);
-    const way = pois.find((p) => p.osmRef.type === "way");
-    expect(way?.lat).toBeCloseTo(38.7107, 3);
-    expect(way?.name).toBe("Café do Rio");
+  it("throws on server failure — unavailability is not disappearance", async () => {
+    await expect(geocoder.lookup({ type: "node", id: "500" })).rejects.toThrow(/osm api 500/);
   });
 
-  it("refuses oversized viewport queries as truncated instead of querying", async () => {
-    const result = await provider.discover({ west: -10, south: 38, east: -8, north: 40 });
-    expect(result.pois).toHaveLength(0);
-    expect(result.truncated).toBe(true);
-  });
-
-  it("discovers POIs within a small bbox", async () => {
-    const result = await provider.discover({
-      west: -9.145,
-      south: 38.71,
-      east: -9.135,
-      north: 38.717,
-    });
-    expect(result.pois.length).toBeGreaterThan(0);
-    expect(result.truncated).toBe(false);
+  it("throws when a successful response is missing the requested element", async () => {
+    const baseUrl = "https://lookup-malformed.test";
+    server.use(
+      http.get(`${baseUrl}/api/0.6/node/42.json`, () =>
+        HttpResponse.json({ version: "0.6", elements: [] }),
+      ),
+    );
+    await expect(new OsmApiGeocoder(baseUrl).lookup({ type: "node", id: "42" })).rejects.toThrow(
+      /element missing/,
+    );
   });
 });

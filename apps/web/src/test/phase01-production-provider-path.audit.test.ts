@@ -13,7 +13,6 @@ test("a production build rejects the known development/demo provider path", () =
     VITE_MAP_STYLE_URL: "https://tiles.openfreemap.org/styles/bright",
     VITE_PHOTON_URL: "https://photon.komoot.io",
     VITE_OSM_API_URL: "https://api.openstreetmap.org",
-    VITE_OVERPASS_URL: "https://overpass-api.de/api/interpreter",
   };
   delete env.PLACEMARKS_STORYBOOK;
 

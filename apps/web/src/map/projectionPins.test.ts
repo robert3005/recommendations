@@ -1,61 +1,62 @@
 /**
- * The canvas's drawing rules, tested without a map.
- *
- * These were inline in a 726-line component, reachable only by rendering it with
- * a query client, a Dexie repo and a mocked MapLibre — which is why the subtle
- * ones (which marker wins for a place in three lists; a place hiding only when
- * EVERY containing list is toggled off) had no direct coverage.
+ * The canvas's drawing rules, tested without a map: which marker a place in
+ * several lists wears, when a home toggle hides a place, which places a post
+ * projects, and which bounds a camera move frames.
  */
-import type { List, PlaceView } from "@placemarks/domain";
-import { markerAt } from "@placemarks/domain";
+import type { List } from "@placemarks/domain";
+import { ACCENT_COLORS, MARKER_SHAPES } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PIN_COLOR } from "../lib/markers";
-import type { PlacePinFeature } from "./MapView";
-import { boundsOf, fitForProjection, libraryPins } from "./projectionPins";
+import {
+  boundsOf,
+  DEFAULT_PUBLISHED_MARKER,
+  fitForProjection,
+  importItemMarks,
+  libraryPins,
+  type ProjectablePlace,
+  publishedPins,
+} from "./projectionPins";
 
-const NOW = "2026-07-20T10:00:00.000Z";
+const NOW = "2026-07-26T10:00:00.000Z";
 
 function list(id: string, markerIndex: number): List {
-  return { id, name: id, marker: markerAt(markerIndex), createdAt: NOW, updatedAt: NOW };
-}
-
-function place(id: string, lat: number, lng: number, unlinked = true): PlaceView {
   return {
-    place: {
-      id,
-      origin: "manual",
-      pastOsmRefs: [],
-      manual: { name: id, lat, lng },
-      resolutionState: unlinked ? "unlinked" : "resolved",
-      createdAt: NOW,
-      updatedAt: NOW,
+    id,
+    name: id,
+    marker: {
+      shape: MARKER_SHAPES[markerIndex % 8] as List["marker"]["shape"],
+      color: (ACCENT_COLORS[markerIndex % 8] as { fill: string }).fill,
     },
-    tags: [],
-  } as unknown as PlaceView;
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
 }
 
-describe("libraryPins", () => {
-  const lists = [list("l-c", 2), list("l-a", 0), list("l-b", 1)];
+function place(id: string, lat: number, lng: number, listIds: string[]): ProjectablePlace {
+  return { place: { id, name: id.toUpperCase(), lat, lng }, listIds };
+}
 
-  it("gives a place in several lists the lowest list id's marker, badged", () => {
+const lists = [list("l-a", 0), list("l-b", 1), list("l-c", 2)];
+
+describe("libraryPins — lists overlay", () => {
+  it("gives a place in several lists the lowest list id's marker, stacked and counted", () => {
     const [pin] = libraryPins({
-      projection: { kind: "all" },
-      places: [place("p1", 1, 2)],
-      membership: { p1: ["l-c", "l-a", "l-b"] },
+      projection: { kind: "lists-overlay" },
+      places: [place("p1", 1, 2, ["l-c", "l-a", "l-b"])],
       lists,
       hiddenListIds: [],
     });
 
-    // Deterministic across membership order: sorted ids, so l-a wins.
-    expect(pin?.color).toBe(markerAt(0).color);
-    expect(pin?.multi).toBe(true);
+    // Deterministic across membership order: sorted ids, so l-a leads.
+    expect(pin?.marker).toEqual(lists[0]?.marker);
+    expect(pin?.stackedMarker).toEqual(lists[1]?.marker);
+    expect(pin?.listCount).toBe(3);
+    expect(pin?.dimmed).toBe(false);
   });
 
   it("hides a place only when EVERY list containing it is toggled off", () => {
     const input = {
-      projection: { kind: "all" as const },
-      places: [place("p1", 1, 2)],
-      membership: { p1: ["l-a", "l-b"] },
+      projection: { kind: "lists-overlay" } as const,
+      places: [place("p1", 1, 2, ["l-a", "l-b"])],
       lists,
       hiddenListIds: ["l-a"],
     };
@@ -63,55 +64,101 @@ describe("libraryPins", () => {
     expect(libraryPins({ ...input, hiddenListIds: ["l-a", "l-b"] })).toHaveLength(0);
   });
 
-  it("uses the projected list's marker, not another membership's", () => {
+  it("does not let a hidden list lend its marker to a still-visible place", () => {
     const [pin] = libraryPins({
+      projection: { kind: "lists-overlay" },
+      places: [place("p1", 1, 2, ["l-a", "l-b"])],
+      lists,
+      hiddenListIds: ["l-a"],
+    });
+    expect(pin?.marker).toEqual(lists[1]?.marker);
+    expect(pin?.listCount).toBe(1);
+    expect(pin?.stackedMarker).toBeUndefined();
+  });
+});
+
+describe("libraryPins — list projection", () => {
+  it("shows members solid in the list's marker and the rest of the library dimmed", () => {
+    const pins = libraryPins({
       projection: { kind: "list", listId: "l-b" },
-      places: [place("p1", 1, 2)],
-      membership: { p1: ["l-a", "l-b"] },
+      places: [place("member", 1, 2, ["l-a", "l-b"]), place("other", 3, 4, ["l-a"])],
       lists,
       hiddenListIds: [],
     });
 
+    const member = pins.find((pin) => pin.placeId === "member");
+    const other = pins.find((pin) => pin.placeId === "other");
     // l-a sorts first, but the projection is l-b's.
-    expect(pin?.color).toBe(markerAt(1).color);
-    expect(pin?.multi).toBe(false);
+    expect(member?.marker).toEqual(lists[1]?.marker);
+    expect(member?.dimmed).toBe(false);
+    expect(other?.dimmed).toBe(true);
+    expect(other?.marker).toEqual(lists[0]?.marker);
   });
+});
 
-  it("shows a post's embeds solid and only the editor's candidates dimmed", () => {
-    const base = {
-      places: [place("embedded", 1, 2), place("candidate", 3, 4), place("elsewhere", 5, 6)],
-      membership: { embedded: ["l-a"], candidate: ["l-a"], elsewhere: ["l-b"] },
+describe("libraryPins — post projection", () => {
+  it("projects exactly the target's places, wearing the target list's marker", () => {
+    const pins = libraryPins({
+      projection: { kind: "post", postId: "post-1" },
+      places: [place("member", 1, 2, ["l-b"]), place("elsewhere", 3, 4, ["l-a"])],
       lists,
       hiddenListIds: [],
-      postListId: "l-a",
-      focusPlaceIds: new Set(["embedded"]),
-    };
-
-    // Reading: embeds only.
-    const reading = libraryPins({ ...base, projection: { kind: "post", postId: "post-1" } });
-    expect(reading.map((pin) => pin.placeId)).toEqual(["embedded"]);
-
-    // Editing: the rest of the post's list joins, dimmed; other lists do not.
-    const editing = libraryPins({
-      ...base,
-      projection: { kind: "post", postId: "post-1", editing: true },
-      candidatePlaceIds: new Set(["candidate"]),
+      postTargetPlaceIds: new Set(["member"]),
+      postListId: "l-b",
     });
-    expect(editing.map((pin) => pin.placeId)).toEqual(["embedded", "candidate"]);
-    expect(editing.find((pin) => pin.placeId === "embedded")?.dimmed).toBe(false);
-    expect(editing.find((pin) => pin.placeId === "candidate")?.dimmed).toBe(true);
+
+    expect(pins.map((pin) => pin.placeId)).toEqual(["member"]);
+    expect(pins[0]?.marker).toEqual(lists[1]?.marker);
+    expect(pins[0]?.dimmed).toBe(false);
   });
 
-  it("marks a place belonging to no live list with the transient colour", () => {
-    const [pin] = libraryPins({
-      projection: { kind: "list", listId: "l-a" },
-      places: [place("orphan", 1, 2)],
-      membership: {},
+  it("projects a place post's one place without a list marker to borrow", () => {
+    const pins = libraryPins({
+      projection: { kind: "post", postId: "post-2" },
+      places: [place("solo", 1, 2, ["l-c"])],
       lists,
       hiddenListIds: [],
+      postTargetPlaceIds: new Set(["solo"]),
     });
-    expect(pin?.color).toBe(DEFAULT_PIN_COLOR);
-    expect(pin?.unlinked).toBe(true);
+    expect(pins).toHaveLength(1);
+    expect(pins[0]?.marker).toEqual(lists[2]?.marker);
+  });
+});
+
+describe("publishedPins and importItemMarks", () => {
+  it("dresses a published list's places in the document's marker", () => {
+    const marker = lists[2]?.marker as List["marker"];
+    const pins = publishedPins({
+      kind: "published-doc",
+      docKey: "list:lisbon",
+      marker,
+      places: [{ id: "pp-1", name: "Café", lat: 1, lng: 2 }],
+    });
+    expect(pins[0]).toMatchObject({ placeId: "pp-1", marker, dimmed: false });
+  });
+
+  it("falls back to the default marker for post documents", () => {
+    const pins = publishedPins({
+      kind: "published-doc",
+      docKey: "post:weekend",
+      places: [{ id: "pp-1", name: "Café", lat: 1, lng: 2 }],
+    });
+    expect(pins[0]?.marker).toEqual(DEFAULT_PUBLISHED_MARKER);
+  });
+
+  it("labels the item's own coordinates and its candidates deterministically", () => {
+    const marks = importItemMarks({
+      kind: "import-item",
+      itemId: "item-1",
+      title: "Imported café",
+      coords: { lat: 1, lng: 2 },
+      candidates: [
+        { key: "c-1", name: "First", lat: 3, lng: 4 },
+        { key: "c-2", name: "Second", lat: 5, lng: 6 },
+      ],
+    });
+    expect(marks.map((mark) => mark.label)).toEqual(["•", "A", "B"]);
+    expect(marks[0]?.key).toBe("item-1:imported");
   });
 });
 
@@ -128,18 +175,22 @@ describe("boundsOf", () => {
 });
 
 describe("fitForProjection", () => {
-  const pin = (placeId: string, lat: number, lng: number, dimmed: boolean): PlacePinFeature => ({
+  const pin = (placeId: string, lat: number, lng: number, dimmed: boolean) => ({
     placeId,
     name: placeId.toUpperCase(),
     lat,
     lng,
-    color: "#000000",
-    icon: "circle",
-    unlinked: false,
-    multi: false,
+    marker: lists[0]?.marker as List["marker"],
+    listCount: 1,
     dimmed,
   });
   const pins = [pin("a", 1, 2, false), pin("b", 5, 6, true)];
+
+  it("never frames the lists overlay — the home keeps the persisted viewport", () => {
+    expect(
+      fitForProjection({ projection: { kind: "lists-overlay" }, placePins: pins, markPins: [] }),
+    ).toBeNull();
+  });
 
   it("frames only the undimmed pins of a list", () => {
     const fit = fitForProjection({
@@ -152,7 +203,7 @@ describe("fitForProjection", () => {
     expect(fit?.bounds.north).toBeCloseTo(1.001);
   });
 
-  it("keys a post's follow camera by the section in view, so scrolling re-frames", () => {
+  it("keys a post's follow camera by the mentions in view, so scrolling re-frames", () => {
     const first = fitForProjection({
       projection: { kind: "post", postId: "p", focusPlaceIds: ["a"] },
       placePins: pins,
@@ -164,16 +215,45 @@ describe("fitForProjection", () => {
       markPins: [],
     });
     expect(first?.key).not.toBe(second?.key);
-    // A focused embed frames even when dimmed for the article's sake.
     expect(second?.bounds.north).toBeCloseTo(5.001);
   });
 
-  it("does not frame a review with no loaded item, or the settings route", () => {
-    expect(
-      fitForProjection({ projection: { kind: "review" }, placePins: pins, markPins: [] }),
-    ).toBeNull();
-    expect(
-      fitForProjection({ projection: { kind: "settings" }, placePins: pins, markPins: [] }),
-    ).toBeNull();
+  it("frames an import item by its marks, keyed by the item", () => {
+    const fit = fitForProjection({
+      projection: {
+        kind: "import-item",
+        itemId: "item-1",
+        title: "Imported café",
+        candidates: [{ key: "c-1", name: "First", lat: 3, lng: 4 }],
+      },
+      placePins: [],
+      markPins: [{ key: "c-1", name: "First", label: "A", lat: 3, lng: 4 }],
+    });
+    expect(fit?.key).toBe("import-item:item-1");
+  });
+
+  it("frames a published document by its pins, narrowed by the viewer's focus", () => {
+    const all = fitForProjection({
+      projection: {
+        kind: "published-doc",
+        docKey: "list:lisbon",
+        places: [{ id: "a", name: "A", lat: 1, lng: 2 }],
+      },
+      placePins: pins,
+      markPins: [],
+    });
+    const focused = fitForProjection({
+      projection: {
+        kind: "published-doc",
+        docKey: "list:lisbon",
+        places: [{ id: "a", name: "A", lat: 1, lng: 2 }],
+        focusPlaceIds: ["b"],
+      },
+      placePins: pins,
+      markPins: [],
+    });
+    expect(all?.key).toBe("list:lisbon");
+    expect(focused?.key).toBe("list:lisbon:b");
+    expect(focused?.bounds.north).toBeCloseTo(5.001);
   });
 });

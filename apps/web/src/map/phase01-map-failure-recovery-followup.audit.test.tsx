@@ -91,7 +91,6 @@ describe("Phase 0 basemap recovery evidence", () => {
         initialCenter={{ lat: 51.5, lng: -0.12 }}
         initialZoom={12}
         placePins={[]}
-        poiPins={[]}
       />,
     );
     const map = maplibre.instances[0];
@@ -113,7 +112,6 @@ describe("Phase 0 basemap recovery evidence", () => {
         initialCenter={{ lat: 51.5, lng: -0.12 }}
         initialZoom={12}
         placePins={[]}
-        poiPins={[]}
       />,
     );
     const map = maplibre.instances[0];
@@ -140,7 +138,6 @@ describe("Phase 0 basemap recovery evidence", () => {
         initialCenter={{ lat: 51.5, lng: -0.12 }}
         initialZoom={12}
         placePins={[]}
-        poiPins={[]}
       />,
     );
     const map = maplibre.instances[0];

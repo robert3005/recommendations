@@ -1,31 +1,21 @@
--- Share-service D1 schema snapshot (spec/src/sharing.md §Share service).
--- Production and fresh databases use the ordered migrations/ workflow; this
--- file is a reference, not an upgrade command.
+-- Share-service D1 schema snapshot (spec/src/sharing.md §The share service).
+-- Two tables, nothing else: published documents (tombstoned in place, never
+-- reassigned) and fixed-window rate counters. Production and fresh databases
+-- use the ordered migrations/ workflow; this file is a reference, not an
+-- upgrade command.
 CREATE TABLE IF NOT EXISTS documents (
-  slug TEXT NOT NULL,
   kind TEXT NOT NULL CHECK (kind IN ('list', 'post')),
-  revision INTEGER NOT NULL,
-  tokenHash TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  token_hash TEXT NOT NULL,
   body TEXT NOT NULL,
-  createdAt TEXT NOT NULL,
-  updatedAt TEXT NOT NULL,
-  revoked INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (slug, kind)
+  revoked_at TEXT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (kind, slug)
 );
 
--- Replay handles for retried publish/revoke jobs. Written AFTER the mutation
--- they acknowledge: an interrupted write simply re-executes, and recovery runs
--- through slug ownership and stored-body comparison, which carry the weight.
-CREATE TABLE IF NOT EXISTS idempotency (
-  key TEXT PRIMARY KEY,
-  response TEXT NOT NULL,
-  status INTEGER NOT NULL,
-  -- ISO-8601 "T" so TEXT comparison against a purge cutoff is chronological.
-  createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-
+-- Transient fixed-window counters; rows past reset_at may be purged any time.
 CREATE TABLE IF NOT EXISTS rate (
   bucket TEXT PRIMARY KEY,
-  windowStart INTEGER NOT NULL,
-  count INTEGER NOT NULL
+  count INTEGER NOT NULL,
+  reset_at TEXT NOT NULL
 );

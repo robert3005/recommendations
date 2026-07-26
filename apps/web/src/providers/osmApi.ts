@@ -1,17 +1,11 @@
 /**
- * Exact OSM element resolution via the OSM API 0.6 (spec/src/tech-stack.md:
- * per-element reads at save/refresh volume; Overpass handles area queries).
- *
- * Outcome mapping is the identity-critical part (spec/src/place-identity.md):
- * only a definitive 404/410 is `gone`; every other failure is `error`
- * (unavailability), which must never trigger relinking.
+ * Exact OSM element lookup via the OSM API 0.6 (spec/src/data-sources.md
+ * §Geocoder): serves OSM element URL paste. A definitive 404/410 means the
+ * element does not exist — `undefined`. Every other failure throws:
+ * unavailability fails politely, nothing queues, the user retries online
+ * (spec/src/storage.md §Offline behaviour).
  */
-import {
-  type ExactOutcome,
-  type OsmElementRef,
-  type ResolvedPoi,
-  resolvedPoiFromTags,
-} from "@placemarks/domain";
+import type { GeocoderCandidate, OsmRef } from "@placemarks/domain";
 import { OSM_API_URL } from "../config";
 
 interface OsmElement {
@@ -19,9 +13,7 @@ interface OsmElement {
   id: number;
   lat?: number;
   lon?: number;
-  version?: number;
   tags?: Record<string, string>;
-  nodes?: number[];
 }
 
 function representativePoint(
@@ -41,48 +33,47 @@ function representativePoint(
   return { lat, lng };
 }
 
-export class OsmApiResolver {
-  constructor(
-    private readonly baseUrl: string = OSM_API_URL,
-    private readonly nowIso: () => string = () => new Date().toISOString(),
-  ) {}
+function addressOf(tags: Record<string, string>): string | undefined {
+  const address = [
+    [tags["addr:street"], tags["addr:housenumber"]].filter(Boolean).join(" "),
+    [tags["addr:city"], tags["addr:postcode"]].filter(Boolean).join(" "),
+  ]
+    .filter((part) => part !== "")
+    .join(", ");
+  return address || undefined;
+}
 
-  async resolveExact(ref: OsmElementRef, opts?: { signal?: AbortSignal }): Promise<ExactOutcome> {
+export class OsmApiGeocoder {
+  constructor(private readonly baseUrl: string = OSM_API_URL) {}
+
+  async lookup(
+    ref: OsmRef,
+    opts?: { signal?: AbortSignal },
+  ): Promise<GeocoderCandidate | undefined> {
     const path =
       ref.type === "node"
         ? `/api/0.6/node/${ref.id}.json`
         : `/api/0.6/${ref.type}/${ref.id}/full.json`;
-    let response: Response;
-    try {
-      response = await fetch(`${this.baseUrl}${path}`, { signal: opts?.signal ?? null });
-    } catch (err) {
-      if (err instanceof DOMException && err.name === "AbortError") throw err;
-      return { type: "error" };
-    }
+    const response = await fetch(`${this.baseUrl}${path}`, { signal: opts?.signal ?? null });
     // 404 (never existed / not current) and 410 (deleted) are definitive.
-    if (response.status === 404 || response.status === 410) return { type: "gone" };
-    if (!response.ok) return { type: "error" };
-    let body: { elements?: OsmElement[] };
-    try {
-      body = (await response.json()) as { elements?: OsmElement[] };
-    } catch {
-      return { type: "error" };
-    }
+    if (response.status === 404 || response.status === 410) return undefined;
+    if (!response.ok) throw new Error(`osm api ${response.status}`);
+    const body = (await response.json()) as { elements?: OsmElement[] };
     const elements = body.elements ?? [];
     const target = elements.find((el) => el.type === ref.type && String(el.id) === ref.id);
-    // A successful response without the requested element is malformed provider
-    // output — unavailability, never a definitive disappearance (only 404/410 are).
-    if (!target) return { type: "error" };
+    // A successful response without the requested element is malformed
+    // provider output — unavailability, never a definitive disappearance.
+    if (!target) throw new Error("osm api: element missing from response");
     const point = representativePoint(target, elements);
-    if (!point) return { type: "error" };
-    const poi: ResolvedPoi = resolvedPoiFromTags({
-      ref,
-      tags: target.tags ?? {},
+    if (!point) throw new Error("osm api: element carries no coordinates");
+    const tags = target.tags ?? {};
+    const address = addressOf(tags);
+    return {
+      name: tags.name ?? tags["name:en"] ?? `${ref.type}/${ref.id}`,
       lat: point.lat,
       lng: point.lng,
-      ...(target.version !== undefined ? { osmVersion: target.version } : {}),
-      resolvedAt: this.nowIso(),
-    });
-    return { type: "ok", poi };
+      ...(address ? { address } : {}),
+      osmRef: ref,
+    };
   }
 }

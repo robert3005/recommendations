@@ -1,19 +1,76 @@
 /**
- * Hosted publication (spec/src/sharing.md §Mode B, §Local publication record):
- * the client generates a ≥256-bit editor token and persists it before the
- * first request; jobs are durable, idempotent (job id = Idempotency-Key), and
- * conditional (If-Match on the server revision). A failed or offline publish
- * never rolls back the public document; the UI derives "changes pending" by
- * comparing the target's current projection hash with lastPublishedHash.
+ * Foreground publishing (spec/src/sharing.md): Publish, Publish update, and
+ * Unpublish are awaited network calls — each visibly succeeds or fails in the
+ * UI, and retrying means pressing the button again. No outbox, no jobs.
+ *
+ * The published document is the domain projection of repository reads; its
+ * SHA-256 (of `stableStringify`) becomes `lastPublishedHash`, and "unpublished
+ * changes" is a comparison of that hash with the current projection's.
  */
-import type { Publication } from "@placemarks/domain";
-import { normalizeSlug, RESERVED_SLUGS } from "@placemarks/schemas";
+import {
+  extractPostLinkIds,
+  type List,
+  type ListEntry,
+  type Place,
+  type Post,
+  type PostTarget,
+  type Publication,
+  type PublishedList,
+  type PublishedPost,
+  projectList,
+  projectPost,
+  slugCandidates,
+  slugFromTitle,
+  stableStringify,
+} from "@placemarks/domain";
 import { SHARE_API_URL } from "../../config";
-import type { DexieRepository } from "../../data/repo";
-import { newId } from "../../lib/id";
-import { count, reportError } from "../../lib/metrics";
-import { projectList, projectPost } from "../share/project";
+import { nowIso } from "../../lib/time";
+import { shareDocumentUrl } from "../share/publishedDoc";
 
+/**
+ * The slice of the LocalRepository contract (src/data/repo.ts) that publishing
+ * reads and writes. Structural, so tests can run against a seeded stub.
+ */
+export interface PublishRepo {
+  getList(id: string): Promise<List | undefined>;
+  entriesOf(listId: string): Promise<{ entry: ListEntry; place: Place }[]>;
+  getPlace(id: string): Promise<Place | undefined>;
+  getPost(id: string): Promise<Post | undefined>;
+  postsFor(target: PostTarget): Promise<Post[]>;
+  publicationFor(target: Publication["target"]): Promise<Publication | undefined>;
+  createPublication(
+    target: Publication["target"],
+    slug: string,
+    editorToken: string,
+    now: string,
+  ): Promise<Publication>;
+  recordPublished(id: string, lastPublishedHash: string, now: string): Promise<void>;
+  markRevoked(id: string, now: string): Promise<void>;
+  livePublications(): Promise<Publication[]>;
+}
+
+/** A publish/unpublish failure with a message fit for the controls to show. */
+export class PublishError extends Error {}
+
+/**
+ * The row publish controls act on: whichever of the live query's row and the
+ * last foreground action's result is newer.
+ */
+export function fresher(
+  a: Publication | undefined,
+  b: Publication | undefined,
+): Publication | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return a.updatedAt >= b.updatedAt ? a : b;
+}
+
+export interface PublishOptions {
+  fetcher?: typeof fetch;
+  now?: string;
+}
+
+/** ≥256 random bits, base64url — the per-publication editor secret. */
 export function newEditorToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   let binary = "";
@@ -21,492 +78,409 @@ export function newEditorToken(): string {
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-function slugFor(name: string): string {
-  const base = normalizeSlug(name);
-  // A name with no ASCII slug characters still publishes — under a generated
-  // slug rather than a broken empty one.
-  const slug =
-    base.length >= 3
-      ? base
-      : base.length > 0
-        ? `list-${base}`.slice(0, 60)
-        : `guide-${newId().slice(0, 8)}`;
-  return RESERVED_SLUGS.has(slug) ? `${slug}-guide` : slug;
+export async function sha256Hex(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-export async function publicationForList(
-  repo: DexieRepository,
-  listId: string,
-): Promise<Publication | undefined> {
-  const rows = (await repo.db.publications.toArray()).filter(
-    (p) => !p.deleted && p.target.kind === "list" && p.target.id === listId,
-  );
-  // A live publication outranks a revoked tombstone of the same target.
-  return rows.find((p) => p.status !== "revoked") ?? rows[0];
+/** The hash "unpublished changes" compares (spec/src/sharing.md §Explicit publish). */
+export async function documentHash(doc: PublishedList | PublishedPost): Promise<string> {
+  return sha256Hex(stableStringify(doc));
 }
 
-async function projectListDocument(
-  repo: DexieRepository,
-  listId: string,
-): Promise<{ body: string; revision: string } | undefined> {
-  const projection = await projectList(repo, listId);
-  if (!projection) return undefined;
-  return { body: JSON.stringify(projection.guide), revision: projection.guide.contentHash };
-}
-
-/** The hosted publication for a post, if any. */
-export async function publicationForPost(
-  repo: DexieRepository,
-  postId: string,
-): Promise<Publication | undefined> {
-  const rows = (await repo.db.publications.toArray()).filter(
-    (p) => !p.deleted && p.target.kind === "post" && p.target.id === postId,
-  );
-  // A live publication outranks a revoked tombstone of the same target.
-  return rows.find((p) => p.status !== "revoked") ?? rows[0];
+export function publicPath(kind: "list" | "post", slug: string): string {
+  return `/${kind === "list" ? "l" : "p"}/${slug}`;
 }
 
 /**
- * The list's public slug a shared post may carry (spec/src/posts.md
- * §Publishing): only a slug that has actually been claimed publicly; a
- * revoked list page drops the link at the next successful post publish.
+ * Published URLs are canonical https (the wire schema requires it, and the
+ * service only ever lives behind TLS) even when a dev server runs over http.
  */
-export async function publicListSlug(
-  repo: DexieRepository,
-  listId: string,
-): Promise<string | undefined> {
-  const publication = await publicationForList(repo, listId);
-  if (!publication?.slug) return undefined;
-  if (publication.status === "revoked" || publication.status === "revoking") return undefined;
-  return publication.publishedRevision !== undefined ? publication.slug : undefined;
+function httpsOrigin(): string {
+  const origin = window.location.origin;
+  return origin.startsWith("http://") ? origin.replace(/^http:/, "https:") : origin;
 }
 
-/** Create (or re-queue) the hosted publication for a list and run the outbox. */
-export async function publishList(
-  repo: DexieRepository,
-  listId: string,
-  now: string,
-  fetcher: typeof fetch = fetch,
-): Promise<Publication | undefined> {
-  const list = await repo.getList(listId);
-  const document = await projectListDocument(repo, listId);
-  if (!list || !document) return undefined;
+export function publicUrl(kind: "list" | "post", slug: string): string {
+  return `${httpsOrigin()}${publicPath(kind, slug)}`;
+}
 
-  let publication = await publicationForList(repo, listId);
-  // A revoked slug is tombstoned forever — publishing again means a fresh
-  // publication with a fresh claim, never an update to the tombstone.
-  if (publication?.status === "revoked") publication = undefined;
-  let newCredential:
-    | { id: string; token: string; createdAt: string; updatedAt: string }
-    | undefined;
-  if (!publication) {
-    // The token exists durably before the first network request ever fires.
-    const credentialId = newId();
-    newCredential = {
-      id: credentialId,
-      token: newEditorToken(),
-      createdAt: now,
-      updatedAt: now,
-    };
-    publication = {
-      id: newId(),
-      target: { kind: "list", id: listId },
-      slug: slugFor(list.name),
-      credentialId,
-      status: "queued",
-      createdAt: now,
-      updatedAt: now,
-    };
-  } else {
-    publication = {
-      ...publication,
-      status: publication.status === "published" ? "queued" : publication.status,
-      updatedAt: now,
-    };
+function isLive(p: Publication | undefined): p is Publication {
+  return p !== undefined && !p.revokedAt;
+}
+
+/** On the wire: at least one PUT succeeded for this publication. */
+function onWire(p: Publication): boolean {
+  return p.lastPublishedHash !== undefined;
+}
+
+/**
+ * Publishing needs the network and a transport the Bearer token may cross:
+ * an absolute non-localhost http: share URL never sees the editor token.
+ */
+function ensureReady(): void {
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    throw new PublishError("You are offline — publishing needs the network.");
   }
-  await repo.db.transaction(
-    "rw",
-    [repo.db.credentials, repo.db.publications, repo.db.publicationJobs],
-    async () => {
-      if (newCredential) await repo.db.credentials.put(newCredential);
-      await repo.db.publications.put(publication);
-      await enqueuePublish(repo, publication.id, document.revision, document.body, now);
-    },
-  );
-  await runPublicationOutbox(repo, fetcher);
-  return (await repo.db.publications.get(publication.id)) ?? publication;
+  if (!SHARE_API_URL) return; // same-origin relative path
+  try {
+    const url = new URL(SHARE_API_URL, "https://placeholder.invalid");
+    if (url.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
+      throw new PublishError(
+        "The share service URL is not HTTPS — refusing to send the editor token.",
+      );
+    }
+  } catch (err) {
+    if (err instanceof PublishError) throw err;
+    // Unparsable configuration fails at fetch time with its own error.
+  }
 }
 
-/** Create (or re-queue) the hosted publication for a post and run the outbox. */
-export async function publishPost(
-  repo: DexieRepository,
+// ---------- documents ----------
+
+/** postId → public URL, for every live post publication that is on the wire. */
+async function publishedPostUrls(repo: PublishRepo): Promise<Map<string, string>> {
+  const live = await repo.livePublications();
+  const urls = new Map<string, string>();
+  for (const p of live) {
+    if (p.target.kind === "post" && onWire(p)) urls.set(p.target.id, publicUrl("post", p.slug));
+  }
+  return urls;
+}
+
+/** The list's projection right now — places in list order, published posts linked. */
+export async function buildListDocument(
+  repo: PublishRepo,
+  listId: string,
+): Promise<PublishedList | undefined> {
+  const list = await repo.getList(listId);
+  if (!list) return undefined;
+  const entries = await repo.entriesOf(listId);
+  const posts = await repo.postsFor({ kind: "list", listId });
+  const urls = await publishedPostUrls(repo);
+  const publishedPosts = posts
+    .filter((post) => urls.has(post.id))
+    .map((post) => ({ title: post.title, url: urls.get(post.id) as string }));
+  return projectList(
+    list,
+    entries.map((e) => e.place),
+    publishedPosts,
+  );
+}
+
+/**
+ * The post's projection right now: its target's places, the body rewritten so
+ * no custom protocol survives, and — for list posts — the list named, linked
+ * when the list has a live public page.
+ */
+export async function buildPostDocument(
+  repo: PublishRepo,
   postId: string,
-  now: string,
-  fetcher: typeof fetch = fetch,
-): Promise<Publication | undefined> {
+): Promise<PublishedPost | undefined> {
   const post = await repo.getPost(postId);
   if (!post) return undefined;
-  // The shared post names its list and carries the list's public slug when
-  // one exists (spec/src/posts.md §Publishing).
-  const listSlug = await publicListSlug(repo, post.listId);
-  const projection = await projectPost(repo, postId, listSlug);
-  if (!projection) return undefined;
-  const document = {
-    body: JSON.stringify(projection.guide),
-    revision: projection.guide.contentHash,
-  };
-
-  let publication = await publicationForPost(repo, postId);
-  // A revoked slug is tombstoned forever — publishing again means a fresh
-  // publication with a fresh claim, never an update to the tombstone.
-  if (publication?.status === "revoked") publication = undefined;
-  let newCredential:
-    | { id: string; token: string; createdAt: string; updatedAt: string }
-    | undefined;
-  if (!publication) {
-    const credentialId = newId();
-    newCredential = {
-      id: credentialId,
-      token: newEditorToken(),
-      createdAt: now,
-      updatedAt: now,
-    };
-    publication = {
-      id: newId(),
-      target: { kind: "post", id: postId },
-      slug: slugFor(post.title),
-      credentialId,
-      status: "queued",
-      createdAt: now,
-      updatedAt: now,
-    };
+  let places: Place[] = [];
+  let listRef: { title: string; url?: string } | undefined;
+  if (post.target.kind === "list") {
+    const list = await repo.getList(post.target.listId);
+    if (!list) return undefined;
+    places = (await repo.entriesOf(list.id)).map((e) => e.place);
+    const listPublication = await repo.publicationFor({ kind: "list", id: list.id });
+    listRef =
+      isLive(listPublication) && onWire(listPublication)
+        ? { title: list.name, url: publicUrl("list", listPublication.slug) }
+        : { title: list.name };
   } else {
-    publication = {
-      ...publication,
-      status: publication.status === "published" ? "queued" : publication.status,
-      updatedAt: now,
-    };
+    const place = await repo.getPlace(post.target.placeId);
+    if (place) places = [place];
   }
-  await repo.db.transaction(
-    "rw",
-    [repo.db.credentials, repo.db.publications, repo.db.publicationJobs],
-    async () => {
-      if (newCredential) await repo.db.credentials.put(newCredential);
-      await repo.db.publications.put(publication);
-      await enqueuePublish(repo, publication.id, document.revision, document.body, now);
-    },
-  );
-  await runPublicationOutbox(repo, fetcher);
-  return (await repo.db.publications.get(publication.id)) ?? publication;
-}
-
-/** The share-service path segment for a publication, implied by its target kind. */
-export function publicationChannel(publication: Publication): "lists" | "posts" {
-  return publication.target.kind === "post" ? "posts" : "lists";
-}
-
-/**
- * One pending publish per publication. A retry reuses the failed job's key; a
- * newer revision replaces the pending payload — unless the key has already been
- * attempted, in which case it may have committed server-side and the new
- * revision must go out under a fresh key.
- */
-async function enqueuePublish(
-  repo: DexieRepository,
-  publicationId: string,
-  hash: string,
-  payload: string | undefined,
-  now: string,
-): Promise<void> {
-  const row = (await repo.db.publicationJobs.get(publicationId)) ?? { publicationId };
-  const pending = row.publish;
-  const reusable = pending && (pending.attempts === 0 || pending.hash === hash);
-  await repo.db.publicationJobs.put({
-    ...row,
-    publish: reusable
-      ? { ...pending, hash, ...(payload !== undefined ? { payload } : {}) }
-      : {
-          key: newId(),
-          hash,
-          ...(payload !== undefined ? { payload } : {}),
-          createdAt: now,
-          attempts: 0,
-        },
+  return projectPost(post, places, {
+    ...(listRef !== undefined ? { listRef } : {}),
+    postUrls: await publishedPostUrls(repo),
   });
 }
 
-export async function revokePublication(
-  repo: DexieRepository,
-  publicationId: string,
-  now: string,
-  fetcher: typeof fetch = fetch,
-): Promise<void> {
-  // The state change, publish-job supersession, and durable DELETE job are one
-  // IndexedDB commit. Process death at any await boundary therefore leaves
-  // either the complete old state or the complete revocation transition.
-  const scheduled = await repo.db.transaction(
-    "rw",
-    [repo.db.publications, repo.db.publicationJobs],
-    async () => {
-      const prior = await repo.db.publications.get(publicationId);
-      if (!prior) return false;
-      const row = await repo.db.publicationJobs.get(publicationId);
-      await repo.db.publications.put({ ...prior, status: "revoking", updatedAt: now });
-      // Dropping `publish` is how an explicit revocation supersedes an unsent
-      // update; a failed earlier revocation keeps its original key so the retry
-      // is idempotent.
-      await repo.db.publicationJobs.put({
-        publicationId,
-        revoke: row?.revoke ?? { key: newId(), createdAt: now, attempts: 0 },
-      });
-      return true;
-    },
-  );
-  if (!scheduled) return;
-  await runPublicationOutbox(repo, fetcher);
-}
-
-const RETRYABLE = new Set([408, 429, 500, 502, 503, 504]);
-
-/**
- * The private Bearer credential never crosses an explicitly insecure
- * transport: an absolute non-localhost http: share URL blocks all mutations
- * (spec/src/sharing.md: TLS is mandatory).
- */
-function insecureShareTransport(): boolean {
-  if (!SHARE_API_URL) return false; // same-origin relative path
-  try {
-    const url = new URL(SHARE_API_URL, "https://placeholder.invalid");
-    return url.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Drain the durable outbox. Jobs process in order per publication; a completed
- * older job can never roll back a newer one (If-Match + captured payloads).
- */
-/** The hash the publication's target projects to right now, if it still exists. */
-async function currentProjectionHash(
-  repo: DexieRepository,
-  target: { kind: "list" | "post"; id: string },
+/** The hash the target projects to right now — the "unpublished changes" side. */
+export async function currentDocumentHash(
+  repo: PublishRepo,
+  target: Publication["target"],
 ): Promise<string | undefined> {
-  try {
-    if (target.kind === "list") return (await projectList(repo, target.id))?.guide.contentHash;
-    // A post's document names its list's public slug, so the hash must be
-    // computed the same way publishPost computes it or every job looks stale.
-    const post = await repo.getPost(target.id);
-    if (!post) return undefined;
-    const listSlug = await publicListSlug(repo, post.listId);
-    return (await projectPost(repo, target.id, listSlug))?.guide.contentHash;
-  } catch {
-    return undefined; // database closing, or a target mid-teardown
-  }
+  const doc =
+    target.kind === "list"
+      ? await buildListDocument(repo, target.id)
+      : await buildPostDocument(repo, target.id);
+  return doc ? documentHash(doc) : undefined;
 }
 
-export async function runPublicationOutbox(
-  repo: DexieRepository,
-  fetcher: typeof fetch = fetch,
+// ---------- preflight ----------
+
+export interface PublishOffer {
+  id: string;
+  title: string;
+}
+
+export interface ListPreflight {
+  doc: PublishedList;
+  /** This list's posts that have no live public page — offered for publishing alongside. */
+  unpublishedPosts: PublishOffer[];
+}
+
+export interface PostPreflight {
+  doc: PublishedPost;
+  /** Set when the post targets a list that has no live public page. */
+  listOffer?: { listId: string; title: string };
+  /** Existing posts linked from the body that have no live public page. */
+  unpublishedLinkedPosts: PublishOffer[];
+}
+
+async function hasLivePage(repo: PublishRepo, target: Publication["target"]): Promise<boolean> {
+  const publication = await repo.publicationFor(target);
+  return isLive(publication) && onWire(publication);
+}
+
+export async function listPreflight(
+  repo: PublishRepo,
+  listId: string,
+): Promise<ListPreflight | undefined> {
+  const doc = await buildListDocument(repo, listId);
+  if (!doc) return undefined;
+  const posts = await repo.postsFor({ kind: "list", listId });
+  const unpublishedPosts: PublishOffer[] = [];
+  for (const post of posts) {
+    if (!(await hasLivePage(repo, { kind: "post", id: post.id }))) {
+      unpublishedPosts.push({ id: post.id, title: post.title });
+    }
+  }
+  return { doc, unpublishedPosts };
+}
+
+export async function postPreflight(
+  repo: PublishRepo,
+  postId: string,
+): Promise<PostPreflight | undefined> {
+  const post = await repo.getPost(postId);
+  const doc = await buildPostDocument(repo, postId);
+  if (!post || !doc) return undefined;
+  let listOffer: PostPreflight["listOffer"];
+  if (post.target.kind === "list") {
+    const list = await repo.getList(post.target.listId);
+    if (list && !(await hasLivePage(repo, { kind: "list", id: list.id }))) {
+      listOffer = { listId: list.id, title: list.name };
+    }
+  }
+  const unpublishedLinkedPosts: PublishOffer[] = [];
+  for (const linkedId of extractPostLinkIds(post.body)) {
+    if (linkedId === postId) continue;
+    const linked = await repo.getPost(linkedId);
+    if (!linked) continue; // dangling links stay soft — nothing to offer
+    if (!(await hasLivePage(repo, { kind: "post", id: linkedId }))) {
+      unpublishedLinkedPosts.push({ id: linkedId, title: linked.title });
+    }
+  }
+  return { doc, ...(listOffer !== undefined ? { listOffer } : {}), unpublishedLinkedPosts };
+}
+
+// ---------- the wire ----------
+
+function defaultFetcher(): typeof fetch {
+  return (input, init) => fetch(input, init);
+}
+
+async function putDocument(
+  fetcher: typeof fetch,
+  kind: "list" | "post",
+  slug: string,
+  token: string,
+  body: string,
+): Promise<Response> {
+  return fetcher(shareDocumentUrl(kind, slug), {
+    method: "PUT",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body,
+  });
+}
+
+function failureMessage(status: number): string {
+  if (status === 429) return "Rate limited by the share service — try again in a minute.";
+  if (status === 413) return "This page is too large to publish.";
+  return `Publishing failed (${status.toString()}) — try again.`;
+}
+
+/**
+ * PUT the document under the target's publication. A live publication updates
+ * in place with its stored token; otherwise (first publish, or publishing
+ * again after a revoke) a fresh token claims a fresh slug, walking `-2…-9`
+ * suffixes on 403 (owned by another token) and 410 (tombstoned).
+ */
+async function publishDocument(
+  repo: PublishRepo,
+  target: Publication["target"],
+  doc: PublishedList | PublishedPost,
+  opts: PublishOptions,
+): Promise<Publication> {
+  const fetcher = opts.fetcher ?? defaultFetcher();
+  const now = opts.now ?? nowIso();
+  const body = JSON.stringify(doc);
+  const hash = await documentHash(doc);
+
+  const existing = await repo.publicationFor(target);
+  if (isLive(existing)) {
+    if (!existing.editorToken) {
+      throw new PublishError(
+        "This page's editor token is missing — it cannot be updated from this device. Publish as a new page instead.",
+      );
+    }
+    const response = await putDocument(
+      fetcher,
+      target.kind,
+      existing.slug,
+      existing.editorToken,
+      body,
+    );
+    if (response.status === 200 || response.status === 201) {
+      await repo.recordPublished(existing.id, hash, now);
+      return (await repo.publicationFor(target)) ?? existing;
+    }
+    if (response.status === 410) {
+      throw new PublishError(
+        "This page's slug was revoked — unpublish, then publish again for a new link.",
+      );
+    }
+    throw new PublishError(failureMessage(response.status));
+  }
+
+  const token = newEditorToken();
+  const base = slugFromTitle(doc.title);
+  for (const candidate of slugCandidates(base)) {
+    const response = await putDocument(fetcher, target.kind, candidate, token, body);
+    if (response.status === 201) {
+      // The row is written only after the claim succeeds: the contract has no
+      // way to move a publication between slugs, so an unclaimed row would lie.
+      const publication = await repo.createPublication(target, candidate, token, now);
+      await repo.recordPublished(publication.id, hash, now);
+      return (await repo.publicationFor(target)) ?? publication;
+    }
+    // 403: owned by another token. 410: tombstoned — including our own earlier
+    // revoke. Both walk to the next suffix (spec/src/sharing.md §The share service).
+    if (response.status === 403 || response.status === 410) continue;
+    throw new PublishError(failureMessage(response.status));
+  }
+  throw new PublishError("Every candidate slug is taken — rename it and publish again.");
+}
+
+async function publishPostDocument(
+  repo: PublishRepo,
+  postId: string,
+  opts: PublishOptions,
+): Promise<Publication> {
+  const doc = await buildPostDocument(repo, postId);
+  if (!doc) throw new PublishError("This post no longer exists.");
+  return publishDocument(repo, { kind: "post", id: postId }, doc, opts);
+}
+
+async function publishListDocument(
+  repo: PublishRepo,
+  listId: string,
+  opts: PublishOptions,
+): Promise<Publication> {
+  const doc = await buildListDocument(repo, listId);
+  if (!doc) throw new PublishError("This list no longer exists.");
+  return publishDocument(repo, { kind: "list", id: listId }, doc, opts);
+}
+
+// ---------- foreground actions ----------
+
+/**
+ * Publish (or update) a list's public page. `alsoPublishPostIds` — accepted
+ * offers from the preflight — publish after the list has its slug so their
+ * documents can link it; the list document is then republished to link them
+ * back. A failure part-way leaves what already succeeded standing; retrying
+ * is pressing Publish again.
+ */
+export async function publishList(
+  repo: PublishRepo,
+  listId: string,
+  opts: PublishOptions & { alsoPublishPostIds?: readonly string[] } = {},
+): Promise<Publication> {
+  ensureReady();
+  const alsoPublish = opts.alsoPublishPostIds ?? [];
+  let publication = await publishListDocument(repo, listId, opts);
+  if (alsoPublish.length > 0) {
+    for (const postId of alsoPublish) await publishPostDocument(repo, postId, opts);
+    publication = await publishListDocument(repo, listId, opts);
+  }
+  return publication;
+}
+
+/**
+ * Publish (or update) a post's public page. Accepted preflight offers publish
+ * first — linked posts so the body rewrite can link them, then a list post's
+ * list so the document can carry its URL. A list published in this flow is
+ * republished at the end so its posts sidebar links this post.
+ */
+export async function publishPost(
+  repo: PublishRepo,
+  postId: string,
+  opts: PublishOptions & {
+    publishListAlongside?: boolean;
+    alsoPublishPostIds?: readonly string[];
+  } = {},
+): Promise<Publication> {
+  ensureReady();
+  for (const linkedId of opts.alsoPublishPostIds ?? []) {
+    await publishPostDocument(repo, linkedId, opts);
+  }
+  let listId: string | undefined;
+  if (opts.publishListAlongside) {
+    const post = await repo.getPost(postId);
+    if (post?.target.kind === "list") {
+      listId = post.target.listId;
+      await publishListDocument(repo, listId, opts);
+    }
+  }
+  const publication = await publishPostDocument(repo, postId, opts);
+  // Only a list published in THIS confirmed flow updates again; an already
+  // published list just shows "unpublished changes" until its owner updates it.
+  if (listId !== undefined) await publishListDocument(repo, listId, opts);
+  return publication;
+}
+
+/**
+ * Unpublish: DELETE the hosted document, then keep the local row as a revoked
+ * tombstone. Repeats are 204 server-side; 404 (nothing hosted) revokes too.
+ */
+export async function unpublish(
+  repo: PublishRepo,
+  publication: Publication,
+  opts: PublishOptions = {},
 ): Promise<void> {
-  const rows = await repo.db.publicationJobs.toArray();
-  if (rows.length > 0 && insecureShareTransport()) {
-    const nowIso = new Date().toISOString();
-    for (const row of rows) {
-      const publication = await repo.db.publications.get(row.publicationId);
-      if (!publication) continue;
-      await repo.db.publications.put({
-        ...publication,
-        status: "failed",
-        lastError: "the share service URL is not HTTPS — refusing to send the editor token",
-        updatedAt: nowIso,
-      });
-    }
-    return;
+  ensureReady();
+  if (!publication.editorToken) {
+    throw new PublishError(
+      "This page's editor token is missing — it cannot be unpublished from this device. Ask the service operator to take it down.",
+    );
   }
-  // One row per publication, so a failing page cannot starve another: each
-  // iteration is an independent publication.
-  for (const row of rows) {
-    const publication = await repo.db.publications.get(row.publicationId);
-    if (!publication?.slug || !publication.credentialId) {
-      await repo.db.publicationJobs.delete(row.publicationId);
-      continue;
-    }
-    const credential = await repo.db.credentials.get(publication.credentialId);
-    if (!credential) {
-      // The editor token is device-held by design: losing the device means the
-      // page can no longer be updated or revoked from anywhere else.
-      await repo.db.publications.put({
-        ...publication,
-        status: "failed",
-        lastError:
-          "editor credential missing — this page can only be updated from the device that published it",
-        updatedAt: new Date().toISOString(),
-      });
-      continue;
-    }
-    // Revocation always wins: precedence is which slot is set, not a scan.
-    const revoking = row.revoke !== undefined;
-    const job = row.revoke ?? row.publish;
-    if (!job) {
-      await repo.db.publicationJobs.delete(row.publicationId);
-      continue;
-    }
-    // A publish job carries the hash it was created for. If the library has
-    // moved on — a delayed or offline job resurfacing after a newer revision
-    // won — it must never overwrite the newer public document; the owner
-    // republishes instead. Revocations carry no revision and always apply.
-    if (!revoking) {
-      const currentHash = await currentProjectionHash(repo, publication.target);
-      if (job.hash === undefined || (currentHash !== undefined && job.hash !== currentHash)) {
-        await repo.db.publicationJobs.delete(row.publicationId);
-        continue;
-      }
-    }
-    const payload = job.payload;
-    const headers: Record<string, string> = {
-      authorization: `Bearer ${credential.token}`,
-      "idempotency-key": job.key,
-      "content-type": "application/json",
-    };
-    const base = `${SHARE_API_URL}/s/${publicationChannel(publication)}`;
-    const nowIso = new Date().toISOString();
-
-    try {
-      if (revoking) {
-        const response = await fetcher(`${base}/${publication.slug}`, {
-          method: "DELETE",
-          headers: {
-            ...headers,
-            "if-match": `"${(publication.publishedRevision ?? 1).toString()}"`,
-          },
-        });
-        if (response.status === 204 || response.status === 404) {
-          await repo.db.publications.put({
-            ...publication,
-            status: "revoked",
-            updatedAt: nowIso,
-          });
-          await repo.db.publicationJobs.delete(row.publicationId);
-          continue;
-        }
-        throw new Error(`revoke failed (${response.status.toString()})`);
-      }
-
-      await repo.db.publications.put({ ...publication, status: "publishing", updatedAt: nowIso });
-      let outcome: { slug: string; revision: number } | undefined;
-      if (publication.publishedRevision === undefined) {
-        // First publish: claim the slug, walking suffixes on collisions.
-        const candidates = [
-          publication.slug,
-          ...Array.from({ length: 8 }, (_, i) => `${publication.slug}-${(i + 2).toString()}`),
-        ];
-        for (const candidate of candidates) {
-          const document = JSON.parse(payload ?? "{}") as { slug?: string };
-          const response = await fetcher(base, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ desiredSlug: candidate, document }),
-          });
-          if (response.status === 201) {
-            outcome = (await response.json()) as { slug: string; revision: number };
-            break;
-          }
-          if (response.status !== 409)
-            throw new Error(`publish failed (${response.status.toString()})`);
-          // The slug may already be ours from a commit whose ack was lost —
-          // reclaim with our token before walking away from it.
-          const probe = await fetcher(`${base}/${candidate}`, { method: "GET" });
-          if (probe.status === 200) {
-            const revision = Number(
-              (probe.headers.get("etag") ?? "").match(/^"(\d+)"$/)?.[1] ?? Number.NaN,
-            );
-            if (Number.isFinite(revision)) {
-              const reclaim = await fetcher(`${base}/${candidate}`, {
-                method: "PUT",
-                headers: { ...headers, "if-match": `"${revision.toString()}"` },
-                body: JSON.stringify({ document }),
-              });
-              if (reclaim.status === 200) {
-                outcome = (await reclaim.json()) as { slug: string; revision: number };
-                break;
-              }
-            }
-          }
-        }
-        if (!outcome) throw new Error("no available slug — try renaming the list");
-      } else {
-        const response = await fetcher(`${base}/${publication.slug}`, {
-          method: "PUT",
-          headers: { ...headers, "if-match": `"${publication.publishedRevision.toString()}"` },
-          body: JSON.stringify({ document: JSON.parse(payload ?? "{}") }),
-        });
-        if (response.status !== 200)
-          throw new Error(`update failed (${response.status.toString()})`);
-        outcome = (await response.json()) as { slug: string; revision: number };
-      }
-
-      const fresh = (await repo.db.publications.get(row.publicationId)) ?? publication;
-      const current = await repo.db.publicationJobs.get(row.publicationId);
-      // An edit that landed while this revision was in flight left a newer
-      // pending publish; the completed older one must not clear it. Its key has
-      // now been sent for THIS payload, so the survivor gets a fresh one.
-      const superseded = current?.publish !== undefined && current.publish.hash !== job.hash;
-      await repo.db.publications.put({
-        ...fresh,
-        slug: outcome.slug,
-        status: superseded ? "queued" : "published",
-        publishedRevision: outcome.revision,
-        ...(job.hash !== undefined ? { lastPublishedHash: job.hash } : {}),
-        publishedAt: nowIso,
-        updatedAt: nowIso,
-      });
-      if (superseded && current?.publish) {
-        await repo.db.publicationJobs.put({
-          ...current,
-          publish: { ...current.publish, key: newId(), attempts: 0 },
-        });
-      } else {
-        await repo.db.publicationJobs.delete(row.publicationId);
-      }
-      count("publish.success");
-    } catch (err) {
-      reportError("publish", err);
-      const fresh = (await repo.db.publications.get(row.publicationId)) ?? publication;
-      const transient =
-        err instanceof TypeError || // network failure
-        (err instanceof Error && RETRYABLE.has(Number(err.message.match(/\((\d+)\)/)?.[1])));
-      const message = err instanceof Error ? err.message : String(err);
-      await repo.db.publications.put({
-        ...fresh,
-        status: "failed",
-        lastError: message,
-        updatedAt: nowIso,
-      });
-      const attempted = { ...job, attempts: job.attempts + 1, lastError: message };
-      // Exhausted PUBLISH drafts are dropped — but a revocation is never
-      // abandoned: the pending DELETE (under its original idempotency key) is
-      // what keeps Retry an unpublish and can never turn it back into a publish
-      // (spec/src/sharing.md §Failure isolation and revocation precedence).
-      if (!revoking && !transient && attempted.attempts >= 5) {
-        const remaining = await repo.db.publicationJobs.get(row.publicationId);
-        if (remaining?.revoke) {
-          await repo.db.publicationJobs.put({
-            publicationId: row.publicationId,
-            revoke: remaining.revoke,
-          });
-        } else {
-          await repo.db.publicationJobs.delete(row.publicationId);
-        }
-        continue;
-      }
-      const stored = (await repo.db.publicationJobs.get(row.publicationId)) ?? {
-        publicationId: row.publicationId,
-      };
-      await repo.db.publicationJobs.put({
-        ...stored,
-        ...(revoking ? { revoke: attempted } : { publish: attempted }),
-      });
-    }
+  const fetcher = opts.fetcher ?? defaultFetcher();
+  const response = await fetcher(shareDocumentUrl(publication.target.kind, publication.slug), {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${publication.editorToken}` },
+  });
+  if (response.status !== 204 && response.status !== 404) {
+    throw new PublishError(`Unpublishing failed (${response.status.toString()}) — try again.`);
   }
+  await repo.markRevoked(publication.id, opts.now ?? nowIso());
+}
+
+/**
+ * Token loss is permanent (spec/src/sharing.md §The editor token): a live
+ * publication without its token can never be updated or revoked through the
+ * API. Revoking the local record lets the owner republish under a new slug;
+ * the stale page is removed via the service's takedown contact.
+ */
+export async function abandonLostPublication(
+  repo: PublishRepo,
+  publication: Publication,
+  now?: string,
+): Promise<void> {
+  await repo.markRevoked(publication.id, now ?? nowIso());
 }

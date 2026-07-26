@@ -1,38 +1,24 @@
 /**
- * Navigation handoff (spec/src/interop.md §Navigation handoff): Placemarks
- * curates; navigation happens in the tools people prefer. The retained imported
- * Google URL reopens the exact listing; otherwise a coordinate/name search.
- * Routing itself stays external — a non-goal.
- *
- * The URLs come from `placeLinks`, so the place card, the public share page and
- * the text export all hand out the same links.
+ * Deep links out (spec/src/map-view.md §The place card): Placemarks curates;
+ * navigation happens in the tools people prefer. All three URLs come from the
+ * one domain deep-link module, so the place card, the exports, and the public
+ * viewer hand out the same links (spec/src/architecture.md).
  */
-import type { OsmElementRef } from "@placemarks/domain";
-import { placeLinksFor } from "../interop/placeLinks";
-import { OsmLink } from "./OsmLink";
+import type { Place } from "@placemarks/domain";
+import { appleLink, googleLink, osmLink } from "@placemarks/domain";
 
-export interface NavLinksProps {
-  lat: number;
-  lng: number;
-  name?: string;
-  /** The place's retained external-ref URL, when it was imported or pasted. */
-  externalUrl?: string;
-  /** Present on an OSM-bound place — adds the portal link. */
-  osmRef?: OsmElementRef;
-}
+export type NavLinksPlace = Pick<
+  Place,
+  "name" | "lat" | "lng" | "googleUrl" | "appleUrl" | "osmRef"
+>;
 
-export function NavLinks({ lat, lng, name, externalUrl, osmRef }: NavLinksProps) {
-  const links = placeLinksFor({
-    lat,
-    lng,
-    ...(name ? { name } : {}),
-    ...(externalUrl ? { externalUrl } : {}),
-  });
-  const linkClass = "text-[11px] text-ink-3 underline hover:text-ink-2";
+const linkClass = "text-[11px] text-ink/60 underline hover:text-ink";
+
+export function NavLinks({ place }: { place: NavLinksPlace }) {
   return (
     <>
       <a
-        href={links.google}
+        href={googleLink(place)}
         target="_blank"
         rel="noopener noreferrer"
         className={linkClass}
@@ -41,7 +27,7 @@ export function NavLinks({ lat, lng, name, externalUrl, osmRef }: NavLinksProps)
         Open in Google Maps
       </a>
       <a
-        href={links.apple}
+        href={appleLink(place)}
         target="_blank"
         rel="noopener noreferrer"
         className={linkClass}
@@ -49,7 +35,19 @@ export function NavLinks({ lat, lng, name, externalUrl, osmRef }: NavLinksProps)
       >
         Open in Apple Maps
       </a>
-      {osmRef ? <OsmLink osmRef={osmRef} /> : null}
+      {/* The OSM element page is also where fact corrections happen —
+          upstream, never here (spec/src/interop.md §Licensing). */}
+      {place.osmRef ? (
+        <a
+          href={osmLink(place)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={linkClass}
+          data-testid="osm-link"
+        >
+          View on OpenStreetMap
+        </a>
+      ) : null}
     </>
   );
 }

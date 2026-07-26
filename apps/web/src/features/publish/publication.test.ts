@@ -1,179 +1,162 @@
 /**
- * Phase 5 client publication (spec/src/sharing.md §Local publication record):
- * token generated and persisted before any request; durable jobs retry after
- * failure without rolling the public document back; publish/update/revoke walk
- * the queued→publishing→published / revoking→revoked state machine against the
- * real service protocol.
+ * Foreground publish flow against the real share-service protocol (MSW mounts
+ * the actual service app — spec/src/sharing.md §The share service): first
+ * publish claims a slug and stores the token, update reuses both, 403/410 walk
+ * suffixes, unpublish tombstones, republish gets a new slug.
  */
-import { markerAt, type ResolvedPoi } from "@placemarks/domain";
-import { createShareApp, MemoryStorage } from "@placemarks/share-service";
 import { describe, expect, it } from "vitest";
-import { DexieRepository } from "../../data/repo";
-import { projectList } from "../share/project";
-import {
-  publicationForList,
-  publishList,
-  revokePublication,
-  runPublicationOutbox,
-} from "./publication";
+import { currentDocumentHash, publishList, publishPost, unpublish } from "./publication";
+import { getHosted, minimalListDoc, putHosted, StubRepo } from "./testSupport";
 
-const NOW = "2026-07-19T16:00:00.000Z";
+const PLACES = [
+  { name: "Café Central", lat: 38.7139, lng: -9.1394, address: "Rua Example 12" },
+  { name: "Tasca do Zé", lat: 38.71, lng: -9.14 },
+];
 
-function poi(): ResolvedPoi {
-  return {
-    osmRef: { type: "node", id: "101" },
-    name: "Café Central",
-    category: "cafe",
-    lat: 38.7139,
-    lng: -9.1394,
-    identityTags: { name: "Café Central" },
-    resolvedAt: NOW,
-  };
-}
+describe("publishList", () => {
+  it("first publish claims the title slug and stores a fresh ≥256-bit token", async () => {
+    const repo = new StubRepo();
+    const list = repo.seedList("First Claim Weekend", PLACES);
 
-async function seeded(): Promise<DexieRepository> {
-  const repo = new DexieRepository(`publish-${crypto.randomUUID()}`);
-  await repo.createList({
-    id: "list-1",
-    name: "Lisbon Weekend",
-    marker: markerAt(0),
-    createdAt: NOW,
-    updatedAt: NOW,
-  });
-  await repo.addToList("list-1", { kind: "poi", poi: poi() }, NOW);
-  return repo;
-}
+    const publication = await publishList(repo, list.id);
 
-function serviceFetcher(storage = new MemoryStorage()) {
-  const app = createShareApp({ storage });
-  const fetcher: typeof fetch = async (input, init) =>
-    app.request(new URL(String(input), "https://share.test").toString(), init);
-  return { fetcher, storage };
-}
+    expect(publication.slug).toBe("first-claim-weekend");
+    expect(publication.target).toEqual({ kind: "list", id: list.id });
+    // 32 random bytes → 43 base64url chars, never sent in a URL or document.
+    expect(publication.editorToken?.length ?? 0).toBeGreaterThanOrEqual(43);
+    expect(publication.lastPublishedHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(publication.publishedAt).toBeDefined();
+    expect(publication.revokedAt).toBeUndefined();
 
-describe("hosted publication", () => {
-  it("publishes: token persisted first, slug from the name, published state + revision", async () => {
-    const repo = await seeded();
-    const { fetcher, storage } = serviceFetcher();
-    try {
-      await publishList(repo, "list-1", NOW, fetcher);
-
-      const publication = await publicationForList(repo, "list-1");
-      expect(publication).toMatchObject({
-        status: "published",
-        slug: "lisbon-weekend",
-        publishedRevision: 1,
-      });
-      expect(publication?.lastPublishedHash).toBe(publication?.lastPublishedHash);
-
-      const credential = publication?.credentialId
-        ? await repo.db.credentials.get(publication.credentialId)
-        : undefined;
-      expect(credential?.token.length ?? 0).toBeGreaterThanOrEqual(43);
-      // The server holds only a hash of it.
-      const stored = await storage.get("list", "lisbon-weekend");
-      expect(stored?.tokenHash).not.toContain(credential?.token);
-      expect(await repo.db.publicationJobs.count()).toBe(0);
-    } finally {
-      repo.db.close();
-    }
+    const response = await getHosted("lists", "first-claim-weekend");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("etag")).toBeTruthy();
+    const doc = (await response.json()) as {
+      title: string;
+      places: { name: string; lat: number }[];
+    };
+    expect(doc.title).toBe("First Claim Weekend");
+    expect(doc.places.map((p) => p.name)).toEqual(["Café Central", "Tasca do Zé"]);
+    expect(JSON.stringify(doc)).not.toContain(publication.editorToken);
   });
 
-  it("updates conditionally and never rolls back; revoke tombstones", async () => {
-    const repo = await seeded();
-    const { fetcher, storage } = serviceFetcher();
-    try {
-      await publishList(repo, "list-1", NOW, fetcher);
+  it("update reuses the slug and token and refreshes the published hash", async () => {
+    const repo = new StubRepo();
+    const list = repo.seedList("Update In Place", PLACES);
+    const first = await publishList(repo, list.id);
 
-      // A content change → new local revision → queued update → revision 2.
-      await repo.addToList(
-        "list-1",
-        { kind: "manual", facts: { name: "Picnic bench", lat: 38.72, lng: -9.15 } },
-        NOW,
-      );
-      await publishList(repo, "list-1", "2026-07-19T17:00:00.000Z", fetcher);
-      let publication = await publicationForList(repo, "list-1");
-      expect(publication).toMatchObject({ status: "published", publishedRevision: 2 });
+    const renamed = { ...list, name: "Update In Place, Revised" };
+    repo.lists.set(list.id, renamed);
+    expect(await currentDocumentHash(repo, { kind: "list", id: list.id })).not.toBe(
+      first.lastPublishedHash,
+    );
 
-      await revokePublication(repo, publication?.id ?? "", "2026-07-19T18:00:00.000Z", fetcher);
-      publication = await publicationForList(repo, "list-1");
-      expect(publication?.status).toBe("revoked");
-      const gone = await storage.get("list", "lisbon-weekend");
-      expect(gone?.revoked).toBe(true);
-      // The tombstoned slug can never be claimed by someone else.
-      const rival = await createShareApp({ storage }).request("https://share.test/s/lists", {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${"c".repeat(43)}`,
-          "idempotency-key": "rival",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          desiredSlug: "lisbon-weekend",
-          document: { v: 1, kind: "list", title: "Impostor", blocks: [], contentHash: "x" },
-        }),
-      });
-      expect(rival.status).toBe(409);
-    } finally {
-      repo.db.close();
-    }
+    const second = await publishList(repo, list.id);
+
+    expect(second.id).toBe(first.id);
+    expect(second.slug).toBe(first.slug);
+    expect(second.editorToken).toBe(first.editorToken);
+    expect(second.lastPublishedHash).not.toBe(first.lastPublishedHash);
+    expect(await currentDocumentHash(repo, { kind: "list", id: list.id })).toBe(
+      second.lastPublishedHash,
+    );
+
+    const doc = (await (await getHosted("lists", first.slug)).json()) as { title: string };
+    // The public page changed only on explicit update — and to the new title.
+    expect(doc.title).toBe("Update In Place, Revised");
+    expect(repo.publications).toHaveLength(1);
   });
 
-  it("a service failure leaves the public document untouched and the job retryable", async () => {
-    const repo = await seeded();
-    const { fetcher } = serviceFetcher();
-    try {
-      await publishList(repo, "list-1", NOW, fetcher); // published, revision 1
+  it("walks -2… suffixes when the base slug is owned by another token", async () => {
+    const rival = await putHosted(
+      "lists",
+      "foreign-owner-walk",
+      minimalListDoc("Rival"),
+      "rival-token-owning-the-base-slug-0000000000",
+    );
+    expect(rival.status).toBe(201);
 
-      await repo.addToList(
-        "list-1",
-        { kind: "manual", facts: { name: "New spot", lat: 38.73, lng: -9.16 } },
-        NOW,
-      );
-      const failing: typeof fetch = async () => new Response("boom", { status: 503 });
-      await publishList(repo, "list-1", "2026-07-19T17:00:00.000Z", failing);
+    const repo = new StubRepo();
+    const list = repo.seedList("Foreign Owner Walk", PLACES);
+    const publication = await publishList(repo, list.id);
 
-      let publication = await publicationForList(repo, "list-1");
-      expect(publication?.status).toBe("failed");
-      // Still exactly one durable job; the published revision is untouched.
-      expect(await repo.db.publicationJobs.count()).toBe(1);
-      expect(publication?.publishedRevision).toBe(1);
-      // Unpublished changes are visible as a projection-hash divergence.
-      const stale = await projectList(repo, "list-1");
-      expect(stale?.guide.contentHash).not.toBe(publication?.lastPublishedHash);
-
-      await runPublicationOutbox(repo, fetcher);
-      publication = await publicationForList(repo, "list-1");
-      expect(publication).toMatchObject({ status: "published", publishedRevision: 2 });
-      const fresh = await projectList(repo, "list-1");
-      expect(fresh?.guide.contentHash).toBe(publication?.lastPublishedHash);
-    } finally {
-      repo.db.close();
-    }
+    expect(publication.slug).toBe("foreign-owner-walk-2");
+    expect((await getHosted("lists", "foreign-owner-walk-2")).status).toBe(200);
+    // The rival's document is untouched.
+    const base = (await (await getHosted("lists", "foreign-owner-walk")).json()) as {
+      title: string;
+    };
+    expect(base.title).toBe("Rival");
   });
 
-  it("walks slug collisions instead of failing the first publish", async () => {
-    const { fetcher, storage } = serviceFetcher();
-    // Somebody else owns the natural slug.
-    await createShareApp({ storage }).request("https://share.test/s/lists", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${"d".repeat(43)}`,
-        "idempotency-key": "occupier",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        desiredSlug: "lisbon-weekend",
-        document: { v: 1, kind: "list", title: "First come", blocks: [], contentHash: "x" },
-      }),
-    });
-    const repo = await seeded();
-    try {
-      await publishList(repo, "list-1", NOW, fetcher);
-      const publication = await publicationForList(repo, "list-1");
-      expect(publication).toMatchObject({ status: "published", slug: "lisbon-weekend-2" });
-    } finally {
-      repo.db.close();
-    }
+  it("unpublish tombstones the slug; republish claims a new one under a new token", async () => {
+    const repo = new StubRepo();
+    const list = repo.seedList("Tombstone Then Return", PLACES);
+    const first = await publishList(repo, list.id);
+
+    await unpublish(repo, first);
+    const revoked = await repo.publicationFor({ kind: "list", id: list.id });
+    expect(revoked?.revokedAt).toBeDefined();
+    expect((await getHosted("lists", first.slug)).status).toBe(410);
+
+    // A tombstoned slug is never reused: the walk skips it on 410.
+    const second = await publishList(repo, list.id);
+    expect(second.id).not.toBe(first.id);
+    expect(second.slug).toBe(`${first.slug}-2`);
+    expect(second.editorToken).not.toBe(first.editorToken);
+    expect(second.revokedAt).toBeUndefined();
+    expect((await getHosted("lists", second.slug)).status).toBe(200);
+    expect((await getHosted("lists", first.slug)).status).toBe(410);
+    // The tombstone row persists locally beside the live one.
+    expect(repo.publications).toHaveLength(2);
+  });
+});
+
+describe("publishPost", () => {
+  it("a published list post carries the list's title and live URL, and the list shows unpublished changes", async () => {
+    const repo = new StubRepo();
+    const list = repo.seedList("Backlink Crawl", PLACES);
+    const post = repo.seedPost({ kind: "list", listId: list.id }, "Backlink Crawl Notes", "Words.");
+
+    const listPublication = await publishList(repo, list.id);
+    await publishPost(repo, post.id);
+
+    const postPublication = await repo.publicationFor({ kind: "post", id: post.id });
+    const doc = (await (await getHosted("posts", postPublication?.slug ?? "")).json()) as {
+      list?: { title: string; url?: string };
+      places: unknown[];
+    };
+    expect(doc.list?.title).toBe("Backlink Crawl");
+    expect(doc.list?.url).toContain(`/l/${listPublication.slug}`);
+    expect(doc.list?.url).toMatch(/^https:\/\//);
+    // A list post projects its list's members.
+    expect(doc.places).toHaveLength(2);
+
+    // The list's projection now links this post — its public page lags until
+    // its owner presses Publish update, and the hash comparison says so.
+    expect(await currentDocumentHash(repo, { kind: "list", id: list.id })).not.toBe(
+      listPublication.lastPublishedHash,
+    );
+  });
+
+  it("a place post projects its one place and carries no list back-link", async () => {
+    const repo = new StubRepo();
+    const list = repo.seedList("One Place Holder", PLACES);
+    const entry = repo.entries.find((e) => e.listId === list.id);
+    const post = repo.seedPost(
+      { kind: "place", placeId: entry?.placeId ?? "" },
+      "Just The One Cafe",
+      "A single place.",
+    );
+
+    await publishPost(repo, post.id);
+
+    const publication = await repo.publicationFor({ kind: "post", id: post.id });
+    const doc = (await (await getHosted("posts", publication?.slug ?? "")).json()) as {
+      list?: unknown;
+      places: { name: string }[];
+    };
+    expect(doc.list).toBeUndefined();
+    expect(doc.places.map((p) => p.name)).toEqual(["Café Central"]);
   });
 });

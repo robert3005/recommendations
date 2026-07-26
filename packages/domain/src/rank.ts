@@ -1,4 +1,4 @@
-/** Fractional ranks for ordered guide blocks — thin wrapper over fractional-indexing. */
+/** Fractional ranks for ordered list entries — thin wrapper over fractional-indexing. */
 import { generateKeyBetween, generateNKeysBetween } from "fractional-indexing";
 
 export function rankBetween(a: string | null, b: string | null): string {

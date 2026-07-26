@@ -3,18 +3,20 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-/** Public/demo OSM endpoints are development-only (spec/src/data-sources.md). */
+/**
+ * Public/demo OSM endpoints are development-only (spec/src/data-sources.md):
+ * tiles, geocoder search, and geocoder lookup all fail closed in production.
+ */
 const REQUIRED_PROVIDER_VARS = [
   "VITE_MAP_STYLE_URL",
   "VITE_PHOTON_URL",
   "VITE_OSM_API_URL",
-  "VITE_OVERPASS_URL",
 ] as const;
 
 /** The community/demo hosts the spec designates development-only. */
 const DEVELOPMENT_ONLY_HOSTS = [
   "photon.komoot.io",
-  "overpass-api.de",
+  "nominatim.openstreetmap.org",
   "api.openstreetmap.org",
   "master.apis.dev.openstreetmap.org",
   "tiles.openfreemap.org",
@@ -100,8 +102,8 @@ export default defineConfig(({ command, mode }) => {
           name: "Placemarks",
           short_name: "Placemarks",
           description: "Your personal map of places, built on OpenStreetMap.",
-          theme_color: "#1c1917",
-          background_color: "#fafaf9",
+          theme_color: "#221D16",
+          background_color: "#FAF7F2",
           display: "standalone",
           icons: [{ src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }],
         },
@@ -115,7 +117,6 @@ export default defineConfig(({ command, mode }) => {
           manualChunks: {
             maplibre: ["maplibre-gl"],
             markdown: ["react-markdown", "remark-gfm", "rehype-sanitize"],
-            hours: ["opening_hours"],
             data: ["dexie", "dexie-react-hooks", "fflate", "zod"],
           },
         },

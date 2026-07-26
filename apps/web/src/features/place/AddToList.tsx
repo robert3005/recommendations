@@ -1,96 +1,158 @@
 /**
- * Add a place to a list — or create the list right here. The place card is the
- * write surface for list membership (spec/src/map-view.md); lists themselves can
- * also be created on the Lists tab. Used by both the unsaved place sheet (where
- * adding implies saving) and the saved-place sheet.
+ * Add a place to a list — the one door into the library (membership is
+ * existence, spec/src/data-model.md). Handles the repository's AddResult in
+ * full: added, already-member, and the name-proximity conflict, which prompts
+ * the user rather than merging silently.
  */
-import type { List, ListMarker } from "@placemarks/domain";
+import type { List, Place } from "@placemarks/domain";
 import { useState } from "react";
+import { useRepo } from "../../data/RepoContext";
+import type { AddResult, AddSource } from "../../data/repo";
+import { type ListTarget, ListTargetPicker } from "../lists/ListTargetPicker";
 import { MarkerGlyph } from "../lists/MarkerGlyph";
-import { NewListForm } from "../lists/NewListForm";
-
-export type AddToListTarget =
-  | { kind: "existing"; list: List }
-  | { kind: "new"; name: string; marker: ListMarker };
 
 export interface AddToListProps {
+  /** What is being added: an existing library place, or new facts. */
+  source: AddSource;
   lists: List[] | undefined;
-  memberListIds: string[];
-  onPick: (target: AddToListTarget) => void;
+  /** Lists the place already belongs to — shown as chips, not offered again. */
+  memberListIds?: string[];
+  onAdded?: (place: Place, listId: string) => void;
+  /** Distinguishes controls and test hooks when several pickers exist. */
+  idPrefix?: string;
 }
 
-export function AddToList({ lists, memberListIds, onPick }: AddToListProps) {
-  const [creating, setCreating] = useState(false);
-  const currentLists = (lists ?? []).filter((list) => memberListIds.includes(list.id));
+export function AddToList({
+  source,
+  lists,
+  memberListIds = [],
+  onAdded,
+  idPrefix = "add",
+}: AddToListProps) {
+  const repo = useRepo();
+  const [target, setTarget] = useState<ListTarget>();
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string>();
+  const [conflict, setConflict] = useState<{ existing: Place; listId: string }>();
+  const memberLists = (lists ?? []).filter((list) => memberListIds.includes(list.id));
 
-  if (creating) {
-    return (
-      <div>
-        <CurrentLists lists={currentLists} />
-        <NewListForm
-          lists={lists}
-          submitLabel="Create & add"
-          submitTestId="create-list-and-add"
-          radioName="list-marker"
-          onCreate={(name, marker) => {
-            setCreating(false);
-            onPick({ kind: "new", name, marker });
-          }}
-          onCancel={() => setCreating(false)}
-        />
-      </div>
+  const listIdFor = async (picked: ListTarget): Promise<string> => {
+    if (picked.kind === "existing") return picked.listId;
+    const created = await repo.createList(picked.name);
+    return created.id;
+  };
+
+  const finish = (
+    result: Extract<AddResult, { status: "added" | "already-member" }>,
+    listId: string,
+  ) => {
+    setConflict(undefined);
+    setMessage(
+      result.status === "already-member"
+        ? `“${result.place.name}” is already on that list.`
+        : `Added “${result.place.name}”.`,
     );
-  }
+    if (result.status === "added") onAdded?.(result.place, listId);
+  };
+
+  const add = async (picked: ListTarget, useSource: AddSource, forceNew = false) => {
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      const listId = await listIdFor(picked);
+      const result = await repo.addToList(listId, useSource, forceNew ? { forceNew } : undefined);
+      if (result.status === "name-proximity-conflict") {
+        // The dedup ladder's last rung prompts instead of merging silently
+        // (spec/src/data-model.md §Normative rules).
+        setConflict({ existing: result.existing, listId });
+        return;
+      }
+      finish(result, listId);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div>
-      <CurrentLists lists={currentLists} />
-      <select
-        aria-label="Add to list"
-        className="mt-1 w-full rounded border border-rule px-2 py-1 text-sm"
-        value=""
-        data-testid="add-to-list"
-        onChange={(e) => {
-          const value = e.target.value;
-          if (value === "__new__") {
-            setCreating(true);
-            return;
-          }
-          const list = (lists ?? []).find((l) => l.id === value);
-          if (list) onPick({ kind: "existing", list });
-        }}
-      >
-        <option value="">Add to list…</option>
-        {(lists ?? [])
-          .filter((l) => !memberListIds.includes(l.id))
-          .map((list) => (
-            <option key={list.id} value={list.id}>
-              {list.name}
-            </option>
-          ))}
-        <option value="__new__">+ New list…</option>
-      </select>
-    </div>
-  );
-}
-
-function CurrentLists({ lists }: { lists: List[] }) {
-  if (lists.length === 0) return null;
-  return (
-    <ul
-      className="mb-1 flex flex-wrap gap-1.5 text-xs text-ink-2"
-      aria-label="Current lists"
-      data-testid="current-list-memberships"
-    >
-      {lists.map((list) => (
-        <li
-          key={list.id}
-          className="inline-flex items-center gap-1 rounded-full bg-land px-2 py-0.5"
+    <div data-testid="add-to-list">
+      {memberLists.length > 0 ? (
+        <ul
+          className="mb-1 flex flex-wrap gap-1.5 text-xs text-ink"
+          aria-label="Current lists"
+          data-testid="current-list-memberships"
         >
-          <MarkerGlyph marker={list.marker} size={12} />
-          {list.name}
-        </li>
-      ))}
-    </ul>
+          {memberLists.map((list) => (
+            <li
+              key={list.id}
+              className="inline-flex items-center gap-1 rounded-crisp border border-hairline px-2 py-0.5"
+            >
+              <MarkerGlyph marker={list.marker} size={12} />
+              {list.name}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <ListTargetPicker
+        lists={lists}
+        onChange={setTarget}
+        idPrefix={idPrefix}
+        excludeListIds={memberListIds}
+      />
+      <button
+        type="button"
+        disabled={busy || target === undefined}
+        onClick={() => target && void add(target, source)}
+        className="mt-2 rounded-crisp bg-ink px-3 py-1.5 text-sm font-medium text-paper disabled:opacity-40"
+        data-testid={`${idPrefix}-submit`}
+      >
+        {busy ? "Adding…" : "Add to list"}
+      </button>
+
+      {conflict ? (
+        <div
+          className="mt-2 rounded-crisp border border-hairline p-2 text-xs text-ink"
+          data-testid="name-proximity-conflict"
+        >
+          <p>
+            This looks like <span className="font-medium">“{conflict.existing.name}”</span>, which
+            is already in your library.
+          </p>
+          <div className="mt-1.5 flex gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              className="rounded-crisp bg-ink px-2 py-1 font-medium text-paper disabled:opacity-40"
+              data-testid={`${idPrefix}-use-existing`}
+              onClick={() =>
+                void add(
+                  { kind: "existing", listId: conflict.listId },
+                  { kind: "existing", placeId: conflict.existing.id },
+                )
+              }
+            >
+              Use the existing place
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              className="rounded-crisp border border-hairline px-2 py-1 font-medium text-ink disabled:opacity-40"
+              data-testid={`${idPrefix}-force-new`}
+              onClick={() => void add({ kind: "existing", listId: conflict.listId }, source, true)}
+            >
+              Keep both
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {message ? (
+        <p className="mt-1 text-xs text-ink/70" data-testid={`${idPrefix}-message`}>
+          {message}
+        </p>
+      ) : null}
+    </div>
   );
 }

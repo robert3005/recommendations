@@ -1,98 +1,199 @@
 /**
- * The import review queue as a pane route (spec/src/interop.md §Import queue
- * model, 2026-07-19 late): the item under review projects its labelled
- * candidates onto the MAIN map canvas — the bespoke mini map is retired —
- * and manual placement happens on the canvas itself. Candidates stay
- * keyboard-accessible here (the pane is the map's non-map equivalent).
+ * The import review queue (spec/src/interop.md §The review queue): a notebook
+ * route; the item under review projects onto the canvas with its candidates
+ * as labelled pins. Picking a candidate places the row with that result's
+ * facts and records its osmRef; manual placement is clicking the map (user
+ * coordinates, no osmRef); a row can be skipped. A geocoder-paused batch
+ * offers a retry — those rows are not misses.
  */
-import { useEffect, useState } from "react";
-import { useReviewItems } from "../../data/hooks";
-import { useDexieRepo } from "../../data/RepoContext";
+import { useLiveQuery } from "dexie-react-hooks";
+import { useCallback, useEffect, useState } from "react";
+import { useRepo } from "../../data/RepoContext";
 import { nowIso } from "../../lib/time";
-import { poiResolver, searchProvider } from "../../providers";
-import { usePaneStore } from "../../state/pane";
-import { useCanvasProjection } from "../../state/projection";
-import { useUiStore } from "../../state/ui";
-import { resolveReviewItem } from "./importer";
-
-const DEPS = { search: searchProvider, resolver: poiResolver };
+import { geocoder } from "../../providers";
+import { paneCovered, usePaneStore } from "../../state/pane";
+import { useCanvasProjection, useProjectionStore } from "../../state/projection";
+import {
+  type ConflictResolution,
+  isGeocodePending,
+  listReviewItems,
+  type ReviewChoice,
+  resolveReviewItem,
+  resumeImport,
+} from "./importer";
 
 export function ReviewPage() {
-  const repo = useDexieRepo();
-  const startPlacing = useUiStore((s) => s.startPlacingImportItem);
-  const stopPlacing = useUiStore((s) => s.stopPlacingImportItem);
-  const placingItemId = useUiStore((s) => s.placingImportItemId);
-  const reviewError = useUiStore((s) => s.importReviewError);
-  const setReviewError = useUiStore((s) => s.setImportReviewError);
-  const clearReviewError = useUiStore((s) => s.clearImportReviewError);
-  const setPane = usePaneStore((s) => s.setPane);
-  const reviewItems = useReviewItems();
+  const repo = useRepo();
+  const setImportItemHandler = useProjectionStore((s) => s.setImportItemHandler);
+  const paneMode = usePaneStore((s) => s.mode);
+  const paneSheet = usePaneStore((s) => s.sheet);
+  const collapse = usePaneStore((s) => s.collapse);
+  const queue = useLiveQuery(() => listReviewItems(repo), [repo]);
   const [selectedId, setSelectedId] = useState<string>();
   const [candidateChoice, setCandidateChoice] = useState("");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string>();
+  const [error, setError] = useState<{ itemId: string; message: string }>();
+  /** Map clicks place the item only while explicitly armed. */
+  const [placing, setPlacing] = useState(false);
+  // A name+proximity match prompts instead of merging silently: the pending
+  // choice waits here until the user picks "use existing" or "keep both".
+  const [conflict, setConflict] = useState<{
+    itemId: string;
+    choice: Exclude<ReviewChoice, { kind: "skip" }>;
+    existingId: string;
+    existingName: string;
+  }>();
+
   // The first pending item is under review by default; resolving one moves on.
-  const items = reviewItems ?? [];
-  const selected = items.find((item) => item.id === selectedId) ?? items[0];
+  const items = queue ?? [];
+  const pendingGeocode = items.filter(({ item }) => isGeocodePending(item)).length;
+  const selected = items.find(({ item }) => item.id === selectedId) ?? items[0];
+  const selectedItem = selected?.item;
   useEffect(() => {
-    if (selectedId && !items.some((item) => item.id === selectedId)) {
+    if (selectedId && !items.some(({ item }) => item.id === selectedId)) {
       setSelectedId(undefined);
     }
   }, [items, selectedId]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a different review row can share coordinates but must still reset its candidate choice and stale error.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a different review row can share coordinates but must still reset its candidate choice and stale state.
   useEffect(() => {
     setCandidateChoice("");
-    setLatitude(selected?.coords?.lat.toString() ?? "");
-    setLongitude(selected?.coords?.lng.toString() ?? "");
-    clearReviewError();
-  }, [clearReviewError, selected?.coords?.lat, selected?.coords?.lng, selected?.id]);
-  // Manual placement is route-scoped. Leaving review can never leave a later
-  // long-press armed to mutate an import item invisibly.
-  useEffect(() => () => stopPlacing(), [stopPlacing]);
+    setLatitude(selectedItem?.coords?.lat.toString() ?? "");
+    setLongitude(selectedItem?.coords?.lng.toString() ?? "");
+    setConflict(undefined);
+    setPlacing(false);
+    setError(undefined);
+  }, [selectedItem?.coords?.lat, selectedItem?.coords?.lng, selectedItem?.id]);
 
-  const reportFailure = (itemId: string, error: unknown) => {
-    setReviewError(itemId, error instanceof Error ? error.message : String(error));
-  };
-
-  const resolve = async (
-    itemId: string,
-    choice: Parameters<typeof resolveReviewItem>[3],
-  ): Promise<void> => {
-    setBusy(true);
-    clearReviewError();
-    try {
-      const outcome = await resolveReviewItem(repo, DEPS, itemId, choice, nowIso());
-      if (outcome.status === "pending") setReviewError(itemId, outcome.reason);
-      if (outcome.status === "resolved") {
-        stopPlacing();
-        setCandidateChoice("");
+  const resolve = useCallback(
+    async (
+      itemId: string,
+      choice: ReviewChoice,
+      resolution?: ConflictResolution,
+    ): Promise<void> => {
+      setBusy(true);
+      setError(undefined);
+      setMessage(undefined);
+      try {
+        const applied =
+          resolution && choice.kind !== "skip" ? { ...choice, conflict: resolution } : choice;
+        const outcome = await resolveReviewItem(repo, itemId, applied, nowIso());
+        if (outcome.status === "pending") setError({ itemId, message: outcome.reason });
+        if (outcome.status === "conflict") {
+          setConflict({
+            itemId,
+            choice: applied as Exclude<ReviewChoice, { kind: "skip" }>,
+            existingId: outcome.existing.id,
+            existingName: outcome.existing.name,
+          });
+        }
+        if (outcome.status === "resolved") {
+          setCandidateChoice("");
+          setConflict(undefined);
+          setPlacing(false);
+          if (outcome.droppedNote) {
+            setMessage("Placed. Its note was dropped — the place already has a post.");
+          }
+        }
+      } catch (err) {
+        setError({ itemId, message: err instanceof Error ? err.message : String(err) });
+      } finally {
+        setBusy(false);
       }
-    } catch (error) {
-      reportFailure(itemId, error);
+    },
+    [repo],
+  );
+
+  // The canvas hands candidate pin taps and manual-placement clicks back here
+  // while this route is mounted (state/projection.ts ImportItemPick).
+  useEffect(() => {
+    if (!selectedItem) {
+      setImportItemHandler(null);
+      return;
+    }
+    const itemId = selectedItem.id;
+    setImportItemHandler((pick) => {
+      if (pick.kind === "candidate") {
+        void resolve(itemId, { kind: "candidate", index: Number(pick.key) });
+      } else if (placing) {
+        void resolve(itemId, { kind: "coords", lat: pick.lat, lng: pick.lng });
+      }
+    });
+    return () => setImportItemHandler(null);
+  }, [selectedItem, placing, resolve, setImportItemHandler]);
+
+  const retryGeocoding = async (): Promise<void> => {
+    setBusy(true);
+    setMessage(undefined);
+    try {
+      const result = await resumeImport(repo, { geocoder }, nowIso());
+      setMessage(
+        result.geocodePending > 0
+          ? `Geocoder still unreachable — ${result.geocodePending.toString()} rows will retry.`
+          : `Retried: ${(result.placed + result.alreadyPresent).toString()} placed, ${result.review.toString()} to review.`,
+      );
     } finally {
       setBusy(false);
     }
   };
 
-  useCanvasProjection({ kind: "review", ...(selected ? { itemId: selected.id } : {}) });
+  useCanvasProjection(
+    selectedItem
+      ? {
+          kind: "import-item",
+          itemId: selectedItem.id,
+          title: selectedItem.raw.title,
+          ...(selectedItem.coords ? { coords: selectedItem.coords } : {}),
+          candidates: (selectedItem.candidates ?? []).map((candidate, index) => ({
+            key: index.toString(),
+            name: candidate.name,
+            lat: candidate.lat,
+            lng: candidate.lng,
+          })),
+        }
+      : { kind: "lists-overlay" },
+  );
 
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="review-page">
       <h1 className="text-xl font-semibold text-ink">Review imported places</h1>
-      <p className="mt-1 text-xs text-ink-3">
+      <p className="mt-1 text-xs text-ink/60">
         Rows that couldn't be placed automatically. The item under review shows its lettered
         candidates on the map — pick one there or here, enter coordinates, place it on the map, or
         skip it.
       </p>
+      {pendingGeocode > 0 ? (
+        <p
+          className="mt-2 flex items-center gap-2 text-xs text-ink/70"
+          data-testid="review-pending-geocode"
+        >
+          {pendingGeocode} {pendingGeocode === 1 ? "row is" : "rows are"} waiting on the geocoder.
+          <button
+            type="button"
+            disabled={busy}
+            className="rounded-crisp border border-hairline px-2 py-1 font-medium text-ink/70 disabled:opacity-40"
+            data-testid="review-retry-geocoding"
+            onClick={() => void retryGeocoding()}
+          >
+            Retry geocoding
+          </button>
+        </p>
+      ) : null}
+      {message ? (
+        <p className="mt-2 text-xs text-ink/70" data-testid="review-message">
+          {message}
+        </p>
+      ) : null}
       <ul className="mt-4 space-y-2">
-        {items.map((item) => {
-          const underReview = selected?.id === item.id;
+        {items.map(({ item }) => {
+          const underReview = selectedItem?.id === item.id;
           return (
             <li
               key={item.id}
-              className={`rounded-lg border p-2 ${
-                underReview ? "border-ink-3 bg-paper shadow-sm" : "border-rule bg-land"
+              className={`rounded-crisp border p-2 ${
+                underReview ? "border-ink-3 bg-paper shadow-sm" : "border-hairline bg-ink/5"
               }`}
               data-testid="review-item"
             >
@@ -104,7 +205,10 @@ export function ReviewPage() {
               >
                 <span className="text-sm font-medium text-ink">{item.raw.title}</span>
                 {item.raw.address ? (
-                  <span className="block text-xs text-ink-3">{item.raw.address}</span>
+                  <span className="block text-xs text-ink/60">{item.raw.address}</span>
+                ) : null}
+                {isGeocodePending(item) ? (
+                  <span className="block text-xs text-ink/60">Waiting on the geocoder</span>
                 ) : null}
               </button>
               {underReview ? (
@@ -112,20 +216,20 @@ export function ReviewPage() {
                   {(item.candidates ?? []).length > 0 ? (
                     <div className="flex items-center gap-1">
                       <select
-                        className="rounded border border-rule px-2 py-1 text-xs"
+                        className="rounded-crisp border border-hairline px-2 py-1 text-xs"
                         value={candidateChoice}
                         aria-label={`Link ${item.raw.title} to a candidate`}
                         data-testid="review-candidates"
                         onChange={(event) => {
                           setCandidateChoice(event.target.value);
-                          clearReviewError();
+                          setError(undefined);
                         }}
                       >
                         <option value="">Link to…</option>
                         {(item.candidates ?? []).map((candidate, index) => (
                           <option
-                            key={`${candidate.ref.type}/${candidate.ref.id}`}
-                            value={`${candidate.ref.type}/${candidate.ref.id}`}
+                            key={`${index.toString()}-${candidate.name}`}
+                            value={index.toString()}
                           >
                             {String.fromCharCode(65 + index)} — {candidate.name}
                             {candidate.address ? ` — ${candidate.address}` : ""}
@@ -134,17 +238,15 @@ export function ReviewPage() {
                       </select>
                       <button
                         type="button"
-                        className="rounded border border-rule px-2 py-1 text-xs font-medium text-ink-2 disabled:opacity-40"
+                        className="rounded-crisp border border-hairline px-2 py-1 text-xs font-medium text-ink/70 disabled:opacity-40"
                         disabled={busy || candidateChoice === ""}
                         data-testid="review-try-candidate"
-                        onClick={() => {
-                          const candidate = (item.candidates ?? []).find(
-                            (entry) => `${entry.ref.type}/${entry.ref.id}` === candidateChoice,
-                          );
-                          if (candidate) {
-                            void resolve(item.id, { kind: "candidate", ref: candidate.ref });
-                          }
-                        }}
+                        onClick={() =>
+                          void resolve(item.id, {
+                            kind: "candidate",
+                            index: Number(candidateChoice),
+                          })
+                        }
                       >
                         Try
                       </button>
@@ -160,7 +262,7 @@ export function ReviewPage() {
                       onChange={(event) => setLatitude(event.target.value)}
                       aria-label={`Latitude for ${item.raw.title}`}
                       placeholder="Latitude"
-                      className="w-24 rounded border border-rule px-2 py-1 text-xs"
+                      className="w-24 rounded-crisp border border-hairline px-2 py-1 text-xs"
                     />
                     <input
                       type="number"
@@ -171,59 +273,96 @@ export function ReviewPage() {
                       onChange={(event) => setLongitude(event.target.value)}
                       aria-label={`Longitude for ${item.raw.title}`}
                       placeholder="Longitude"
-                      className="w-24 rounded border border-rule px-2 py-1 text-xs"
+                      className="w-24 rounded-crisp border border-hairline px-2 py-1 text-xs"
                     />
                     <button
                       type="button"
-                      className="rounded border border-rule px-2 py-1 text-xs font-medium text-ink-2 disabled:opacity-40"
+                      className="rounded-crisp border border-hairline px-2 py-1 text-xs font-medium text-ink/70 disabled:opacity-40"
                       disabled={busy || latitude.trim() === "" || longitude.trim() === ""}
                       data-testid="review-place-at-coordinates"
-                      onClick={() => {
+                      onClick={() =>
                         void resolve(item.id, {
                           kind: "coords",
                           lat: Number(latitude),
                           lng: Number(longitude),
-                        });
-                      }}
+                        })
+                      }
                     >
                       Place
                     </button>
                   </div>
                   <button
                     type="button"
-                    className="rounded border border-rule px-2 py-1 text-xs font-medium text-ink-2"
+                    className="rounded-crisp border border-hairline px-2 py-1 text-xs font-medium text-ink/70"
                     data-testid="review-place-on-map"
-                    aria-pressed={placingItemId === item.id}
+                    aria-pressed={placing}
                     onClick={() => {
-                      clearReviewError();
-                      if (placingItemId === item.id) {
-                        stopPlacing();
+                      setError(undefined);
+                      if (placing) {
+                        setPlacing(false);
                       } else {
-                        startPlacing(item.id);
-                        // Split/half reveals the canvas while keeping the
-                        // accessible coordinate and cancel controls present.
-                        setPane("split");
+                        setPlacing(true);
+                        // Reveal the canvas while keeping the accessible
+                        // coordinate and cancel controls present.
+                        if (paneCovered({ mode: paneMode, sheet: paneSheet })) collapse();
                       }
                     }}
                   >
-                    {placingItemId === item.id ? "Cancel placement" : "Place on map"}
+                    {placing ? "Cancel placement" : "Place on map"}
                   </button>
                   <button
                     type="button"
                     disabled={busy}
-                    className="rounded px-2 py-1 text-xs text-ink-3 hover:bg-land disabled:opacity-40"
+                    className="rounded-crisp px-2 py-1 text-xs text-ink/60 hover:bg-ink/5 disabled:opacity-40"
                     data-testid="review-skip"
                     onClick={() => void resolve(item.id, { kind: "skip" })}
                   >
                     Skip
                   </button>
-                  {reviewError?.itemId === item.id ? (
+                  {conflict?.itemId === item.id ? (
+                    <div
+                      className="basis-full rounded-crisp border border-hairline bg-ink/5 p-2 text-xs"
+                      data-testid="review-conflict"
+                    >
+                      <p className="text-ink/70">
+                        “{conflict.existingName}” is already in the library nearby.
+                      </p>
+                      <div className="mt-1 flex gap-2">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="rounded-crisp border border-hairline px-2 py-1 font-medium text-ink/70 disabled:opacity-40"
+                          data-testid="review-conflict-use-existing"
+                          onClick={() =>
+                            void resolve(item.id, conflict.choice, {
+                              kind: "use-existing",
+                              placeId: conflict.existingId,
+                            })
+                          }
+                        >
+                          Use the existing place
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="rounded-crisp border border-hairline px-2 py-1 font-medium text-ink/70 disabled:opacity-40"
+                          data-testid="review-conflict-force-new"
+                          onClick={() =>
+                            void resolve(item.id, conflict.choice, { kind: "force-new" })
+                          }
+                        >
+                          Keep both
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {error?.itemId === item.id ? (
                     <p
                       role="alert"
-                      className="basis-full text-xs text-coral-ink"
+                      className="basis-full text-xs text-accent-vermilion-deep"
                       data-testid="review-error"
                     >
-                      {reviewError.message}
+                      {error.message}
                     </p>
                   ) : null}
                 </div>
@@ -232,7 +371,7 @@ export function ReviewPage() {
           );
         })}
         {items.length === 0 ? (
-          <li className="py-6 text-sm text-ink-3" data-testid="review-empty">
+          <li className="py-6 text-sm text-ink/60" data-testid="review-empty">
             Nothing waiting for review. Imports that need a decision will appear here.
           </li>
         ) : null}

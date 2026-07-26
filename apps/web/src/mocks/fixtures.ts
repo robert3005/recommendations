@@ -36,7 +36,8 @@ export const photonCafeResponse = {
       type: "Feature",
       geometry: { type: "Point", coordinates: [2.35, 48.85] },
       properties: {
-        // No osm_id — must be filtered out: unsaveable results carry no OSM ref.
+        // No osm_id — geocoder results are OSM data; a result without a ref
+        // cannot record an osmRef and is filtered out.
         name: "Cafe Somewhere",
       },
     },
@@ -67,7 +68,7 @@ export const osmNode101 = {
   ],
 };
 
-/** A café with no website tag — the "improve it on OSM" case. */
+/** A café with barely any tags — the sparse-lookup case. */
 export const osmNode102 = {
   version: "0.6",
   elements: [
@@ -103,43 +104,7 @@ export const osmWay201Full = {
   ],
 };
 
-export const overpassNearby = {
-  version: 0.6,
-  elements: [
-    {
-      type: "node",
-      id: 101,
-      lat: 38.7139,
-      lon: -9.1394,
-      tags: {
-        name: "Café Central",
-        amenity: "cafe",
-        website: "https://cafecentral.pt",
-      },
-    },
-    {
-      type: "node",
-      id: 300,
-      lat: 38.7141,
-      lon: -9.1392,
-      tags: { name: "Livraria Antiga", shop: "books" },
-    },
-    {
-      type: "way",
-      id: 201,
-      center: { lat: 38.7107, lon: -9.1421 },
-      tags: { name: "Café do Rio", amenity: "cafe" },
-    },
-  ],
-};
-
-export const overpassDiscover = overpassNearby;
-
-/**
- * The node→way replacement scenario (spec/src/place-identity.md recovery):
- * node/599 "Café Migrado" resolves once, then is deleted upstream (410).
- * Its real-world place was redrawn as way/777 with the same identity.
- */
+/** A second searchable café, distinct from the "caf" query's results. */
 export const photonMigradoResponse = {
   type: "FeatureCollection",
   features: [
@@ -173,30 +138,6 @@ export const osmNode599 = {
         amenity: "cafe",
         website: "https://cafemigrado.pt",
       },
-    },
-  ],
-};
-
-/** Recovery candidates near the vanished node: the replacement way + a stranger. */
-export const overpassMigradoRecovery = {
-  version: 0.6,
-  elements: [
-    {
-      type: "way",
-      id: 777,
-      center: { lat: 38.72005, lon: -9.16005 },
-      tags: {
-        name: "Café Migrado",
-        amenity: "cafe",
-        website: "https://cafemigrado.pt",
-      },
-    },
-    {
-      type: "node",
-      id: 888,
-      lat: 38.7202,
-      lon: -9.1603,
-      tags: { name: "Farmácia Vizinha", amenity: "pharmacy" },
     },
   ],
 };

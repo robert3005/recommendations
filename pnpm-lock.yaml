@@ -44,9 +44,6 @@ importers:
       maplibre-gl:
         specifier: ^5.0.0
         version: 5.24.0
-      opening_hours:
-        specifier: ^3.8.0
-        version: 3.14.0(typescript@5.9.3)
       papaparse:
         specifier: ^5.5.4
         version: 5.5.4
@@ -75,9 +72,6 @@ importers:
       '@placemarks/share-service':
         specifier: workspace:*
         version: link:../../services/share
-      '@placemarks/sync-service':
-        specifier: workspace:*
-        version: link:../../services/sync
       '@playwright/test':
         specifier: ^1.49.0
         version: 1.61.1
@@ -193,9 +187,6 @@ importers:
       hono:
         specifier: ^4.6.0
         version: 4.12.30
-      zod:
-        specifier: ^4.0.0
-        version: 4.4.3
     devDependencies:
       typescript:
         specifier: ^5.6.0
@@ -206,28 +197,6 @@ importers:
       wrangler:
         specifier: ^4.0.0
         version: 4.112.0
-
-  services/sync:
-    dependencies:
-      '@placemarks/schemas':
-        specifier: workspace:*
-        version: link:../../packages/schemas
-      '@placemarks/service-kit':
-        specifier: workspace:*
-        version: link:../../packages/service-kit
-      hono:
-        specifier: ^4.6.0
-        version: 4.12.30
-      zod:
-        specifier: ^4.0.0
-        version: 4.4.3
-    devDependencies:
-      typescript:
-        specifier: ^5.6.0
-        version: 5.9.3
-      vitest:
-        specifier: ^3.0.0
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.1.1)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(msw@2.15.0(@types/node@26.1.1)(typescript@5.9.3))(terser@5.49.0)
 
 packages:
 
@@ -2668,14 +2637,6 @@ packages:
     resolution: {integrity: sha512-vK9P5/iUfdl95AI+JVyUuIcVtd4ofvtrOr3HNtM2yxC9bnMbEdp3x01OhQNnjb8IJYi38VlTE3mBXwcfvywuSw==}
     engines: {node: '>= 14'}
 
-  i18next@26.3.6:
-    resolution: {integrity: sha512-Bu5Z2nAXgfVyM8xvW3jk9EKRIuX37PudsrBViThNFx7CR7aaYTpP01cxNB/E4c4UUzTDiAZRstEhsRfPOL/8xA==}
-    peerDependencies:
-      typescript: ^5 || ^6 || ^7
-    peerDependenciesMeta:
-      typescript:
-        optional: true
-
   iconv-lite@0.6.3:
     resolution: {integrity: sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==}
     engines: {node: '>=0.10.0'}
@@ -3239,10 +3200,6 @@ packages:
     resolution: {integrity: sha512-7x81NCL719oNbsq/3mh+hVrAWmFuEYUqrq/Iw3kUzH8ReypT9QQ0BLoJS7/G9k6N81XjW4qHWtjWwe/9eLy1EQ==}
     engines: {node: '>=12'}
 
-  opening_hours@3.14.0:
-    resolution: {integrity: sha512-pgddpSgUJlbbel2Kk9Y8uYv3cw//fiuM/BNUO7VhtdlHMpaUo3U8uG0jF5DJxsCzIpyeVygNjQJso6T6okiT8g==}
-    engines: {node: '>=12'}
-
   outvariant@1.4.3:
     resolution: {integrity: sha512-+Sl2UErvtsoajRDKCE5/dBz4DIvHXQQnAxtQTF04OJxY0+DyZXSo5P5Bb7XYWOh81syohlYL24hbDwxedPUJCA==}
 
@@ -3678,9 +3635,6 @@ packages:
 
   style-to-object@1.0.14:
     resolution: {integrity: sha512-LIN7rULI0jBscWQYaSswptyderlarFkjQ+t79nzty8tcIAceVomEVlLzH5VP4Cmsv6MtKhs7qaAiwlcp+Mgaxw==}
-
-  suncalc@2.0.1:
-    resolution: {integrity: sha512-wjujU+HpsP1TUvN3/9dFkVQQCsMZbk7PkdZsASRJR4jVPHCm9Qy0FVkFTqXfs70Ag2yheN7ZUavzCyOjhJDGxQ==}
 
   supports-color@10.2.2:
     resolution: {integrity: sha512-SS+jx45GF1QjgEXQx4NJZV9ImqmO2NPz5FNsIHrsDjh2YsHnawpan7SNQ1o8NuhrbHZy9AZhIoCUiCeaW/C80g==}
@@ -6598,10 +6552,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  i18next@26.3.6(typescript@5.9.3):
-    optionalDependencies:
-      typescript: 5.9.3
-
   iconv-lite@0.6.3:
     dependencies:
       safer-buffer: 2.1.2
@@ -7368,13 +7318,6 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  opening_hours@3.14.0(typescript@5.9.3):
-    dependencies:
-      i18next: 26.3.6(typescript@5.9.3)
-      suncalc: 2.0.1
-    transitivePeerDependencies:
-      - typescript
-
   outvariant@1.4.3: {}
 
   own-keys@1.0.1:
@@ -7951,8 +7894,6 @@ snapshots:
   style-to-object@1.0.14:
     dependencies:
       inline-style-parser: 0.2.7
-
-  suncalc@2.0.1: {}
 
   supports-color@10.2.2: {}
 

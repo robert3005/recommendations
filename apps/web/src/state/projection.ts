@@ -1,67 +1,102 @@
 /**
  * Route → canvas projection (spec/src/map-view.md §The grammar): the canvas
- * never navigates — it re-projects whatever the pane shows. Routes publish a
+ * never navigates — it projects whatever the notebook shows. Routes publish a
  * projection descriptor; the singleton canvas derives pins, dimming, and one
  * camera move from it. Routes that leave the viewport unchanged (settings)
  * simply never publish.
  */
+import type { ListMarker } from "@placemarks/domain";
 import { useEffect } from "react";
 import { create } from "zustand";
 
+/** A published document's pin — self-contained, from the fetched document. */
+export interface PublishedPin {
+  /** The PublishedPlace id — the owner's PlaceId, used for #place-<id> fragments. */
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+}
+
 export type CanvasProjection =
-  /** The Lists home: every list's points, each wearing its list marker. */
-  | { kind: "all" }
-  /** A list (read or Edit mode): its members; the rest of the library dimmed. */
+  /** The Lists home: every list's places, each pin wearing its list's marker. */
+  | { kind: "lists-overlay" }
+  /** A list (read or edit mode): its members; the rest of the library dimmed. */
   | { kind: "list"; listId: string }
   /**
-   * A post: reading shows its embeds and the camera follows the article
-   * (`focusPlaceIds` tracks the section in view); the block editor
-   * (`editing`) renders embeds solid with the rest of the post's list dimmed
-   * as candidates.
+   * A post (reading or editing): its target's places — a list post its list's
+   * members, a place post its one place. `focusPlaceIds` narrows the CAMERA to
+   * the mentions in view as the article scrolls; it never hides pins.
    */
   | { kind: "post"; postId: string; editing?: boolean; focusPlaceIds?: string[] }
-  /** The import review queue: the item under review plus labelled candidates. */
-  | { kind: "review"; itemId?: string }
-  /** A public viewer: explicit shared pins, read-only chrome. */
+  /** Import review: the item under review plus its labelled geocoder candidates. */
   | {
-      kind: "shared";
-      pins: {
-        key: string;
-        name: string;
-        lat: number;
-        lng: number;
-        /** Manual public anchors are visibly labelled as unlinked. */
-        unlinked?: boolean;
-        selected?: boolean;
-      }[];
-      /** Article block(s) currently in view; only these pins are framed. */
-      focusKeys?: string[];
+      kind: "import-item";
+      itemId: string;
+      title: string;
+      /** The imported row's own coordinates, when the source carried any. */
+      coords?: { lat: number; lng: number };
+      candidates: { key: string; name: string; lat: number; lng: number }[];
+    }
+  /** A public viewer (/l/:slug, /p/:slug): the published places, read-only chrome. */
+  | {
+      kind: "published-doc";
+      /** Stable identity for the camera fit (e.g. "list:<slug>"). */
+      docKey: string;
+      /** The published list's marker; absent for post documents. */
+      marker?: ListMarker;
+      places: PublishedPin[];
+      /** Mentions currently in view; only these are framed. */
+      focusPlaceIds?: string[];
     };
+
+/** The import review's map→notebook channel: a candidate pick or a placement click. */
+export type ImportItemPick =
+  | { kind: "candidate"; key: string }
+  | { kind: "map-click"; lat: number; lng: number };
 
 interface ProjectionStore {
   projection: CanvasProjection;
   setProjection: (projection: CanvasProjection) => void;
   /**
-   * The public viewer's map→article channel: the canvas hands a tapped
-   * shared-pin key back to whichever read-only viewer is mounted.
+   * Registered by the mounted import review route; the canvas reports candidate
+   * pin taps and manual-placement clicks here (spec/src/map-view.md §Import
+   * review). Resolution itself stays with the importer.
    */
-  sharedSelectHandler: ((key: string) => void) | null;
-  setSharedSelectHandler: (handler: ((key: string) => void) | null) => void;
-  /**
-   * The private post reader's map→article channel. Map pins carry place ids,
-   * so the mounted post reader owns the matching scroll/highlight behaviour.
-   */
-  postSelectHandler: ((placeId: string) => void) | null;
-  setPostSelectHandler: (handler: ((placeId: string) => void) | null) => void;
+  importItemHandler: ((pick: ImportItemPick) => void) | null;
+  setImportItemHandler: (handler: ((pick: ImportItemPick) => void) | null) => void;
 }
 
 export const useProjectionStore = create<ProjectionStore>((set) => ({
-  projection: { kind: "all" },
+  projection: { kind: "lists-overlay" },
   setProjection: (projection) => set({ projection }),
-  sharedSelectHandler: null,
-  setSharedSelectHandler: (handler) => set({ sharedSelectHandler: handler }),
-  postSelectHandler: null,
-  setPostSelectHandler: (handler) => set({ postSelectHandler: handler }),
+  importItemHandler: null,
+  setImportItemHandler: (handler) => set({ importItemHandler: handler }),
+}));
+
+/**
+ * Selection is bidirectional (spec/src/map-view.md §The grammar). A pin tap
+ * sets `selectedPlaceId` so the notebook can raise the place card or scroll to
+ * the mention; the notebook (place rows, PostPage mentions, the public viewer)
+ * calls `focusPlace` to select AND fly the camera — one flight per call.
+ */
+interface SelectionStore {
+  selectedPlaceId: string | null;
+  /** Bumped by focusPlace: the canvas performs one camera flight per bump. */
+  focusNonce: number;
+  /** Notebook → canvas: select the place and fly to it. */
+  focusPlace: (placeId: string) => void;
+  /** Canvas → notebook: select without moving the camera. */
+  selectPlace: (placeId: string) => void;
+  clearSelection: () => void;
+}
+
+export const useSelectionStore = create<SelectionStore>((set) => ({
+  selectedPlaceId: null,
+  focusNonce: 0,
+  focusPlace: (placeId) => set((s) => ({ selectedPlaceId: placeId, focusNonce: s.focusNonce + 1 })),
+  selectPlace: (placeId) => set({ selectedPlaceId: placeId }),
+  clearSelection: () => set({ selectedPlaceId: null }),
 }));
 
 /** Publish this route's projection while it is mounted. */
@@ -73,10 +108,4 @@ export function useCanvasProjection(projection: CanvasProjection): void {
   useEffect(() => {
     setProjection(JSON.parse(key) as CanvasProjection);
   }, [key, setProjection]);
-}
-
-/** Clear a public route's canvas while its document is loading or unavailable. */
-export function EmptySharedCanvasProjection() {
-  useCanvasProjection({ kind: "shared", pins: [] });
-  return null;
 }

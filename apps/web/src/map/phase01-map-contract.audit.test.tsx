@@ -6,26 +6,16 @@ type MapHandler = (event?: unknown) => void;
 
 interface MockMapInstance {
   emit(event: string, payload?: unknown): void;
-  injectLateManager(): void;
-  initialStyle: unknown;
   setStyle: ReturnType<typeof vi.fn>;
   flyTo: ReturnType<typeof vi.fn>;
   jumpTo: ReturnType<typeof vi.fn>;
   fitBounds: ReturnType<typeof vi.fn>;
-  stop: ReturnType<typeof vi.fn>;
   resize: ReturnType<typeof vi.fn>;
-  rawTriggerRepaint: ReturnType<typeof vi.fn>;
-  frameAbort: ReturnType<typeof vi.fn>;
-  tilePause: ReturnType<typeof vi.fn>;
-  tileResume: ReturnType<typeof vi.fn>;
-  tileReload: ReturnType<typeof vi.fn>;
-  abortTile: ReturnType<typeof vi.fn>;
-  tile: { state: string; aborted: boolean };
+  getSource(id: string): { setData: ReturnType<typeof vi.fn> } | undefined;
 }
 
 const maplibre = vi.hoisted(() => ({
   instances: [] as MockMapInstance[],
-  startWithManager: true,
 }));
 
 vi.mock("maplibre-gl", () => {
@@ -42,51 +32,10 @@ vi.mock("maplibre-gl", () => {
     readonly jumpTo = vi.fn();
     readonly fitBounds = vi.fn();
     readonly setStyle = vi.fn();
-    readonly stop = vi.fn();
     readonly resize = vi.fn();
-    readonly rawTriggerRepaint = vi.fn();
-    triggerRepaint = this.rawTriggerRepaint;
-    readonly frameAbort = vi.fn();
-    readonly tilePause = vi.fn();
-    readonly tileResume = vi.fn();
-    readonly tileReload = vi.fn();
-    readonly abortTile = vi.fn(async () => {});
-    readonly tile = { state: "loading", aborted: false };
-    _frameRequest: { abort: ReturnType<typeof vi.fn> } | null = { abort: this.frameAbort };
-    readonly _renderTaskQueue = { clear: vi.fn() };
-    readonly style = {
-      tileManagers: {} as Record<
-        string,
-        {
-          pause: () => void;
-          resume: () => void;
-          reload: (changed?: boolean) => void;
-          getSource: () => {
-            abortTile: (tile: { state: string; aborted: boolean }) => Promise<void>;
-          };
-          _inViewTiles: { getAllTiles: () => { state: string; aborted: boolean }[] };
-        }
-      >,
-    };
 
-    readonly initialStyle: unknown;
-
-    constructor(options?: { style?: unknown }) {
-      this.initialStyle = options?.style;
-      if (maplibre.startWithManager) this.injectLateManager();
+    constructor() {
       maplibre.instances.push(this);
-    }
-
-    injectLateManager() {
-      this.tile.aborted = false;
-      this._frameRequest = { abort: this.frameAbort };
-      this.style.tileManagers.late = {
-        pause: this.tilePause,
-        resume: this.tileResume,
-        reload: this.tileReload,
-        getSource: () => ({ abortTile: this.abortTile }),
-        _inViewTiles: { getAllTiles: () => [this.tile] },
-      };
     }
 
     addControl() {
@@ -104,6 +53,10 @@ vi.mock("maplibre-gl", () => {
 
     getSource(id: string) {
       return this.sources.get(id);
+    }
+
+    getLayer() {
+      return undefined;
     }
 
     getCenter() {
@@ -139,6 +92,8 @@ vi.mock("maplibre-gl", () => {
     remove() {}
 
     easeTo() {}
+
+    triggerRepaint() {}
   }
 
   return {
@@ -151,41 +106,24 @@ vi.mock("maplibre-gl", () => {
   };
 });
 
-function renderMap(flyTo?: { lat: number; lng: number; zoom?: number }) {
-  return render(
-    <MapView
-      styleUrl="/map-style.json"
-      initialCenter={{ lat: 51.5, lng: -0.12 }}
-      initialZoom={12}
-      placePins={[]}
-      poiPins={[]}
-      flyTo={flyTo}
-    />,
-  );
-}
-
-function idleMap(idle: boolean, styleUrl = "/map-style.json") {
-  return (
-    <MapView
-      idle={idle}
-      styleUrl={styleUrl}
-      initialCenter={{ lat: 51.5, lng: -0.12 }}
-      initialZoom={12}
-      placePins={[]}
-      poiPins={[]}
-    />
-  );
+function mapProps(extra?: Partial<Parameters<typeof MapView>[0]>) {
+  return {
+    styleUrl: "/map-style.json",
+    initialCenter: { lat: 51.5, lng: -0.12 },
+    initialZoom: 12,
+    placePins: [],
+    ...extra,
+  };
 }
 
 afterEach(() => {
   maplibre.instances.length = 0;
-  maplibre.startWithManager = true;
   vi.restoreAllMocks();
 });
 
-describe("Phase 0/1 map contract", () => {
+describe("map contract", () => {
   it("surfaces a basemap tile-provider failure that occurs after the style loaded", () => {
-    renderMap();
+    render(<MapView {...mapProps()} />);
     const map = maplibre.instances.at(-1);
     expect(map).toBeDefined();
 
@@ -212,7 +150,7 @@ describe("Phase 0/1 map contract", () => {
         }) as MediaQueryList,
     );
 
-    renderMap({ lat: 48.86, lng: 2.35, zoom: 17 });
+    render(<MapView {...mapProps({ flyTo: { lat: 48.86, lng: 2.35, zoom: 17 } })} />);
     const map = maplibre.instances.at(-1);
     expect(map).toBeDefined();
 
@@ -223,53 +161,58 @@ describe("Phase 0/1 map contract", () => {
   });
 
   /**
-   * The observable contract of a hidden canvas, stated without reaching into
-   * MapLibre's private fields. What matters to a user (and to the tile bill) is
-   * that a hidden map never fetches, never remounts, and paints exactly once on
-   * reveal — not which internal queue was cleared to achieve it.
+   * The covered guard (spec/src/map-view.md §The grammar): while the mobile
+   * sheet fully covers the canvas nothing applies; on reveal each projection
+   * effect re-runs against the CURRENT values — lazily, exactly once.
    */
-  it("never starts the provider style while hidden, and applies it once on reveal", async () => {
-    const view = render(idleMap(true));
-    await waitFor(() => expect(maplibre.instances).toHaveLength(1));
-    const map = maplibre.instances[0];
-    expect(map).toBeDefined();
-    // Constructed with NO style: this is what actually keeps a launch that
-    // opens on the Lists home off the tile quota.
-    expect(map?.initialStyle).toBeUndefined();
-    await waitFor(() => expect(map?.stop).toHaveBeenCalled());
-
-    // A style change while hidden is not fetched — and does not remount.
-    view.rerender(idleMap(true, "/newest-map-style.json"));
-    expect(map?.setStyle).not.toHaveBeenCalled();
-
-    view.rerender(idleMap(false, "/newest-map-style.json"));
-    await waitFor(() => {
-      expect(map?.setStyle).toHaveBeenCalledOnce();
-      expect(map?.setStyle).toHaveBeenCalledWith("/newest-map-style.json");
+  it("applies projections lazily on reveal, not while covered", async () => {
+    const pin = {
+      placeId: "p1",
+      name: "P1",
+      lat: 1,
+      lng: 2,
+      marker: { shape: "circle" as const, color: "#F97316" },
+      listCount: 1,
+      dimmed: false,
+    };
+    const view = render(<MapView {...mapProps({ covered: false })} />);
+    const map = maplibre.instances.at(-1);
+    act(() => {
+      map?.emit("load");
     });
-    // The superseded style was never requested, and the singleton survived.
+    const saved = map?.getSource("saved");
+    expect(saved).toBeDefined();
+    await waitFor(() => expect(saved?.setData).toHaveBeenCalled());
+    saved?.setData.mockClear();
+
+    // Covered: a pin change applies nothing.
+    view.rerender(<MapView {...mapProps({ covered: true, placePins: [pin] })} />);
+    expect(saved?.setData).not.toHaveBeenCalled();
+
+    // Revealed: the current collection applies.
+    view.rerender(<MapView {...mapProps({ covered: false, placePins: [pin] })} />);
+    await waitFor(() => expect(saved?.setData).toHaveBeenCalled());
+    const [collection] = saved?.setData.mock.calls.at(-1) ?? [];
+    expect((collection as { features: unknown[] }).features).toHaveLength(1);
+    // The singleton survived the covered/revealed cycle.
     expect(maplibre.instances).toHaveLength(1);
   });
 
   it("applies one camera move on reveal, not one per hidden change", async () => {
-    const view = render(idleMap(true));
+    const view = render(<MapView {...mapProps({ covered: true })} />);
     await waitFor(() => expect(maplibre.instances).toHaveLength(1));
     const map = maplibre.instances[0];
-    view.rerender(idleMap(false, "/newest-map-style.json"));
 
     view.rerender(
       <MapView
-        idle={false}
-        styleUrl="/newest-map-style.json"
-        initialCenter={{ lat: 51.5, lng: -0.12 }}
-        initialZoom={12}
-        placePins={[]}
-        poiPins={[]}
-        flyTo={{ lat: 48.86, lng: 2.35, zoom: 16 }}
-        fitTo={{
-          key: "coalesced-projection",
-          bounds: { west: 2.3, south: 48.8, east: 2.4, north: 48.9 },
-        }}
+        {...mapProps({
+          covered: false,
+          flyTo: { lat: 48.86, lng: 2.35, zoom: 16 },
+          fitTo: {
+            key: "coalesced-projection",
+            bounds: { west: 2.3, south: 48.8, east: 2.4, north: 48.9 },
+          },
+        })}
       />,
     );
 

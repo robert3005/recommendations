@@ -12,7 +12,6 @@ test("the production PWA build completes with a precacheable application shell",
       VITE_MAP_STYLE_URL: "https://tiles.example/style.json",
       VITE_PHOTON_URL: "https://photon.example",
       VITE_OSM_API_URL: "https://osm.example",
-      VITE_OVERPASS_URL: "https://overpass.example",
     },
   });
 

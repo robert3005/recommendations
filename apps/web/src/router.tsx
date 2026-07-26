@@ -1,10 +1,9 @@
 /**
  * One layout grammar (spec/src/map-view.md §The grammar): every route renders
- * into the CONTENT PANE beside the single persistent MAP CANVAS — a singleton
- * in the app shell, outside the route outlet. Desktop splits pane/canvas;
- * mobile floats the pane as a detented sheet over the map. Launch opens the
- * pane expanded on the Lists home; the map is one collapse away, never a tab
- * switch. At full scale the canvas idles.
+ * into the NOTEBOOK beside the single persistent MAP CANVAS — a singleton in
+ * the app shell, outside the route outlet. Desktop: notebook split (default)
+ * or collapsed (full-bleed map). Mobile: the notebook is a sheet over the
+ * canvas with peek/half/full detents. The notebook opens on the lists.
  */
 import {
   createRootRoute,
@@ -12,86 +11,98 @@ import {
   createRouter,
   Link,
   Outlet,
-  useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { SettingsPage } from "./features/backup/SettingsPage";
+import { useEffect } from "react";
 import { ReviewPage } from "./features/interop/ReviewPage";
 import { ListPage } from "./features/lists/ListPage";
 import { ListsPage } from "./features/lists/ListsPage";
 import { PlaceSheet } from "./features/place/PlaceSheet";
 import { PostEditorPage } from "./features/posts/PostEditorPage";
 import { PostPage } from "./features/posts/PostPage";
-import { PlaceSearch } from "./features/search/PlaceSearch";
-import { HostedPostViewerPage } from "./features/share/HostedPostViewerPage";
-import { HostedViewerPage } from "./features/share/HostedViewerPage";
-import { SnapshotViewerPage } from "./features/share/SnapshotViewerPage";
+import { SettingsPage } from "./features/settings/SettingsPage";
+import { PublishedListView } from "./features/share/PublishedListView";
+import { PublishedPostView } from "./features/share/PublishedPostView";
 import { MapCanvas } from "./map/MapCanvas";
-import { type PaneState, usePaneStore } from "./state/pane";
+import { type DesktopPane, type SheetDetent, usePaneStore } from "./state/pane";
 
-/** Pane geometry per state — desktop panel widths / mobile sheet detents. */
-function paneClasses(pane: PaneState): string {
+/** Notebook geometry: mobile sheet detents × desktop split/collapsed. */
+function paneClasses(desktop: DesktopPane, sheet: SheetDetent): string {
   const base =
-    "absolute inset-x-0 bottom-0 z-20 flex min-h-0 flex-col rounded-t-2xl border-t border-rule bg-paper shadow-2xl " +
+    "absolute inset-x-0 bottom-0 z-20 flex min-h-0 flex-col rounded-t-crisp border-t border-hairline bg-paper " +
     "md:inset-x-auto md:left-0 md:top-0 md:h-full md:rounded-none md:border-t-0 md:border-r";
-  if (pane === "collapsed") {
-    // Peek: a slim handle strip on mobile; hidden entirely on desktop.
-    return `${base} h-14 overflow-hidden md:hidden`;
-  }
-  if (pane === "split") {
-    return `${base} h-1/2 md:h-full md:w-[26rem]`;
-  }
-  // Expanded / full: the reading-writing surface; the canvas idles beneath.
-  return `${base} h-full rounded-none md:w-full`;
+  const mobile = sheet === "peek" ? "h-14 overflow-hidden" : sheet === "half" ? "h-1/2" : "h-full";
+  const desktopWidth = desktop === "collapsed" ? "md:hidden" : "md:w-[26rem]";
+  return `${base} ${mobile} ${desktopWidth}`;
 }
 
-/** Desktop split is true sibling geometry: the canvas starts after the pane. */
-export function mapCanvasClasses(pane: PaneState): string {
-  return `absolute inset-0 ${pane === "split" ? "md:left-[26rem]" : ""}`.trim();
+/** Desktop split is true sibling geometry: the canvas starts after the notebook. */
+export function mapCanvasClasses(desktop: DesktopPane): string {
+  return `absolute inset-0 ${desktop === "split" ? "md:left-[26rem]" : ""}`.trim();
 }
 
 export function isPublicViewerPath(pathname: string): boolean {
-  return pathname === "/l" || pathname.startsWith("/l/") || pathname.startsWith("/p/");
+  return pathname.startsWith("/l/") || pathname.startsWith("/p/");
 }
 
 function RootLayout() {
   const pathname = useRouterState({ select: (state) => state.location.pathname });
-  const _navigate = useNavigate();
   const readOnly = isPublicViewerPath(pathname);
-  const pane = usePaneStore((s) => s.pane);
-  const setPane = usePaneStore((s) => s.setPane);
+  const mode = usePaneStore((s) => s.mode);
+  const desktop = usePaneStore((s) => s.desktop);
+  const sheet = usePaneStore((s) => s.sheet);
+  const setMode = usePaneStore((s) => s.setMode);
+  const setDesktop = usePaneStore((s) => s.setDesktop);
   const collapse = usePaneStore((s) => s.collapse);
   const expand = usePaneStore((s) => s.expand);
+
+  // The shell owns the form-factor switch: pane geometry follows the same
+  // breakpoint the CSS uses (md = 768px).
+  useEffect(() => {
+    const query = window.matchMedia?.("(min-width: 768px)");
+    if (!query) return;
+    const apply = () => setMode(query.matches ? "desktop" : "mobile");
+    apply();
+    query.addEventListener("change", apply);
+    return () => query.removeEventListener("change", apply);
+  }, [setMode]);
+
+  const atMapEnd = mode === "desktop" ? desktop === "collapsed" : sheet === "peek";
+  const atContentEnd = mode === "desktop" ? desktop === "split" : sheet === "full";
+
   return (
-    <div className="relative h-full overflow-hidden" data-testid="app-shell" data-pane-state={pane}>
+    <div
+      className="relative h-full overflow-hidden"
+      data-testid="app-shell"
+      data-pane-state={desktop}
+      data-sheet-detent={sheet}
+    >
       {/* The persistent canvas: always mounted, never navigates. */}
       <div
-        className={mapCanvasClasses(pane)}
+        className={mapCanvasClasses(desktop)}
         data-testid="map-viewport"
-        data-map-layout={pane === "split" ? "beside-pane" : "full-bleed"}
+        data-map-layout={desktop === "split" ? "beside-pane" : "full-bleed"}
       >
-        <MapCanvas readOnly={readOnly} />
+        <MapCanvas />
       </div>
 
-      {/* The content pane: where routes render. */}
-      <div className={paneClasses(pane)} data-testid="content-pane">
-        {/* One detent per tap. A hand-rolled pointer-drag re-implemented what a
-            sheet library does, in ~70 lines of arithmetic, for a gesture whose
-            whole job is to pick one of three states — and a button is keyboard
-            operable, which the drag never was. */}
+      {/* The notebook: where routes render. */}
+      <div className={paneClasses(desktop, sheet)} data-testid="content-pane">
+        {/* One detent per tap — a button is keyboard operable; dismissal is
+            never gesture-only (spec/src/map-view.md §Accessibility). */}
         <button
           type="button"
-          aria-label={pane === "expanded" ? "Show the map" : "Show more content"}
+          aria-label={sheet === "full" ? "Show the map" : "Show more content"}
           data-testid="pane-drag-handle"
           className="flex h-5 shrink-0 items-center justify-center md:hidden"
-          onClick={() => (pane === "expanded" ? collapse() : expand())}
+          onClick={() => (sheet === "full" ? collapse() : expand())}
         >
-          <span aria-hidden="true" className="h-1 w-10 rounded-full bg-rule" />
+          <span aria-hidden="true" className="h-1 w-10 rounded-full bg-hairline" />
         </button>
-        <header className="flex shrink-0 items-center gap-1 border-b border-land px-3 py-2">
+        <header className="flex shrink-0 items-center gap-1 border-b border-hairline px-3 py-2">
           {readOnly ? (
             <div
-              className="min-w-0 flex-1 text-sm font-medium text-ink-2"
+              className="min-w-0 flex-1 font-display text-sm font-medium text-ink"
               data-testid="public-readonly-chrome"
             >
               Placemarks · Shared page
@@ -100,34 +111,34 @@ function RootLayout() {
             <nav aria-label="Primary" className="flex min-w-0 flex-1 items-center gap-1">
               <Link
                 to="/"
-                className="rounded px-2.5 py-1 text-sm font-medium text-ink-2 [&.active]:bg-rule"
+                className="rounded-crisp px-2.5 py-1 text-sm font-medium text-ink [&.active]:bg-ink/10"
               >
                 Lists
               </Link>
               <Link
                 to="/review"
-                className="rounded px-2.5 py-1 text-sm font-medium text-ink-2 [&.active]:bg-rule"
+                className="rounded-crisp px-2.5 py-1 text-sm font-medium text-ink [&.active]:bg-ink/10"
               >
                 Review
               </Link>
               <Link
                 to="/settings"
-                className="rounded px-2.5 py-1 text-sm font-medium text-ink-2 [&.active]:bg-rule"
+                className="rounded-crisp px-2.5 py-1 text-sm font-medium text-ink [&.active]:bg-ink/10"
               >
                 Settings
               </Link>
             </nav>
           )}
-          {/* Pane detents: collapse toward the map, expand toward the content —
-              keyboard-operable, never gesture-only (spec/src/map-view.md). */}
+          {/* One step toward the map / toward the content — the map is one
+              collapse away, never a tab switch. */}
           <button
             type="button"
             aria-label="Show more map"
             title="Show more map"
             data-testid="pane-collapse"
-            disabled={pane === "collapsed"}
+            disabled={atMapEnd}
             onClick={collapse}
-            className="rounded px-2 py-1 text-sm text-ink-2 hover:bg-land disabled:opacity-30"
+            className="rounded-crisp px-2 py-1 text-sm text-ink hover:bg-ink/10 disabled:opacity-30"
           >
             ⟨
           </button>
@@ -136,40 +147,32 @@ function RootLayout() {
             aria-label="Show more content"
             title="Show more content"
             data-testid="pane-expand"
-            disabled={pane === "expanded"}
+            disabled={atContentEnd}
             onClick={expand}
-            className="rounded px-2 py-1 text-sm text-ink-2 hover:bg-land disabled:opacity-30"
+            className="rounded-crisp px-2 py-1 text-sm text-ink hover:bg-ink/10 disabled:opacity-30"
           >
             ⟩
           </button>
         </header>
-        {/* Search is a front door, so it sits in the pane where the app opens —
-            not in the map chrome, which is hidden at launch. Rendered once:
-            the canvas carries its own copy only while the pane is collapsed. */}
-        {!readOnly ? (
-          <div className="shrink-0 border-b border-rule px-3 py-2">
-            <PlaceSearch />
-          </div>
-        ) : null}
         <main className="min-h-0 flex-1 overflow-y-auto" data-testid="pane-outlet">
           <Outlet />
         </main>
       </div>
 
-      {/* Collapsed pane: a floating reopen affordance on the canvas. */}
-      {pane === "collapsed" ? (
+      {/* Collapsed notebook: a floating reopen affordance on the canvas. */}
+      {desktop === "collapsed" ? (
         <button
           type="button"
           data-testid="pane-reopen"
-          onClick={() => setPane("split")}
-          className="absolute bottom-16 left-3 z-10 hidden rounded-full bg-paper/95 px-3 py-1.5 text-sm font-medium text-ink shadow md:block"
+          onClick={() => setDesktop("split")}
+          className="absolute bottom-16 left-3 z-10 hidden rounded-crisp border border-hairline bg-paper px-3 py-1.5 text-sm font-medium text-ink md:block"
         >
           {readOnly ? "⟩ Shared page" : "⟩ Lists"}
         </button>
       ) : null}
 
-      {/* Selection belongs to the pane grammar, not the map's stacking
-          context. It therefore stays visible when the pane covers the map. */}
+      {/* Selection belongs to the notebook grammar, not the map's stacking
+          context: the place card stays visible when the sheet covers the map. */}
       {!readOnly ? <PlaceSheet /> : null}
     </div>
   );
@@ -179,7 +182,7 @@ const rootRoute = createRootRoute({
   component: RootLayout,
 });
 
-// The Lists home is the pane's `/` route and launch state (spec/src/map-view.md).
+// The lists are the home (spec/src/map-view.md §Home).
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
@@ -192,8 +195,7 @@ const listRoute = createRoute({
   component: ListPage,
 });
 
-// Posts — the editorial layer (spec/src/posts.md): reading beside the
-// following canvas, and the block editor beside the candidate-dimmed canvas.
+// Posts (spec/src/posts.md): reading, and the Markdown editor.
 const postRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/post/$postId",
@@ -206,8 +208,8 @@ const postEditorRoute = createRoute({
   component: PostEditorPage,
 });
 
-// The import review queue is a pane route; the item under review projects
-// onto the main canvas (spec/src/interop.md §Import queue model).
+// The import review queue is a notebook route; the item under review projects
+// onto the canvas (spec/src/interop.md §The review queue).
 const reviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/review",
@@ -220,24 +222,17 @@ const settingsRoute = createRoute({
   component: SettingsPage,
 });
 
-// Public share viewers (spec/src/sharing.md): snapshot links live in the
-// fragment; hosted links live under a public slug.
-const snapshotRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/l",
-  component: SnapshotViewerPage,
-});
-
-const hostedRoute = createRoute({
+// Public viewers (spec/src/sharing.md): published documents under named slugs.
+const publishedListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/l/$slug",
-  component: HostedViewerPage,
+  component: PublishedListView,
 });
 
-const hostedPostRoute = createRoute({
+const publishedPostRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/p/$slug",
-  component: HostedPostViewerPage,
+  component: PublishedPostView,
 });
 
 export const routeTree = rootRoute.addChildren([
@@ -247,9 +242,8 @@ export const routeTree = rootRoute.addChildren([
   postEditorRoute,
   reviewRoute,
   settingsRoute,
-  snapshotRoute,
-  hostedRoute,
-  hostedPostRoute,
+  publishedListRoute,
+  publishedPostRoute,
 ]);
 
 export const router = createRouter({ routeTree });

@@ -1,75 +1,26 @@
 /**
- * List export writers (spec/src/interop.md §Export): KML (Google My Maps
- * ingests it), Takeout-shaped CSV (round-trips through our own importer),
- * GeoJSON, GPX waypoints, and a Markdown list of places with their deep links —
- * the paste-into-a-message shape. Pure string builders — golden-snapshot tested.
- * Exports containing OSM-derived facts carry ODbL attribution where the format
- * has a metadata slot (KML/GeoJSON/GPX); the CSV keeps the exact Takeout shape.
+ * List export writers (spec/src/interop.md §Export): KML/KMZ (Google My Maps
+ * ingests it), GeoJSON simplestyle (uMap ingests it), GPX waypoints (OsmAnd,
+ * Organic Maps), and the deep-link text list — the paste-into-a-message shape.
+ * Pure string builders — golden-snapshot tested. Marker styling travels: KML
+ * styles and simplestyle properties carry the list's marker colour, and the
+ * shape name rides as a property where the format allows. Exports attribute
+ * OSM (ODbL) exactly when `osmRef` is present.
  */
 import {
-  type DisplayFacts,
-  displayFacts,
+  appleLink,
+  googleLink,
   type List,
-  type Note,
-  osmElementUrl,
+  osmLink,
+  osmRefKey,
   type Place,
-  type Tag,
 } from "@placemarks/domain";
 import { strToU8, zipSync } from "fflate";
-import Papa from "papaparse";
-import { DEFAULT_PIN_COLOR } from "../../lib/markers";
-import { placeLinksFor } from "./placeLinks";
-
-export interface ExportPlaceView {
-  place: Place;
-  notes: Note[];
-  tags?: Tag[];
-}
 
 const OSM_ATTRIBUTION_TEXT =
   "Contains OSM-derived data © OpenStreetMap contributors, ODbL 1.0 (opendatacommons.org/licenses/odbl/1-0/)";
 
-interface ExportRow {
-  facts: DisplayFacts;
-  place: Place;
-  note?: string;
-  tags: string[];
-}
-
-function rows(views: ExportPlaceView[]): ExportRow[] {
-  const out: ExportRow[] = [];
-  for (const view of views) {
-    const facts = displayFacts(view.place);
-    if (!facts) continue;
-    // Markdown whitespace is significant (code blocks) — never trimmed.
-    const note = view.notes
-      .map((n) => n.body)
-      .filter((body) => body.trim() !== "")
-      .join("\n\n");
-    out.push({
-      facts,
-      place: view.place,
-      ...(note ? { note } : {}),
-      tags: (view.tags ?? []).map((t) => t.name),
-    });
-  }
-  return out;
-}
-
-/** OSM provenance survives an unresolved binding: history counts, not just live evidence. */
-const osmDerived = (place: ExportPlaceView["place"]): boolean =>
-  place.lastVerified !== undefined ||
-  place.firstSeen !== undefined ||
-  place.currentOsmRef !== undefined ||
-  place.pastOsmRefs.length > 0;
-
-const hasOsmDerived = (views: ExportPlaceView[]): boolean => views.some((v) => osmDerived(v.place));
-
-/** The OSM element the place's facts descend from — its current binding, or a former one. */
-function sourceRefOf(place: ExportPlaceView["place"]): string | undefined {
-  const ref = place.currentOsmRef ?? place.pastOsmRefs[place.pastOsmRefs.length - 1];
-  return ref ? `${ref.type}/${ref.id}` : undefined;
-}
+const hasOsmDerived = (places: Place[]): boolean => places.some((p) => p.osmRef !== undefined);
 
 function xmlEscape(value: string): string {
   return (
@@ -85,38 +36,36 @@ function xmlEscape(value: string): string {
 }
 
 /** #rrggbb → KML's aabbggrr. */
-function kmlColor(hex: string | undefined): string {
-  const match = (hex ?? DEFAULT_PIN_COLOR).match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+function kmlColor(hex: string): string {
+  const match = hex.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
   if (!match) return "ffffffff";
   return `ff${match[3]}${match[2]}${match[1]}`.toLowerCase();
 }
 
-export function exportListKml(list: List, views: ExportPlaceView[]): string {
+export function exportListKml(list: List, places: Place[]): string {
   const lines: string[] = [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<kml xmlns="http://www.opengis.net/kml/2.2">`,
     `  <Document>`,
     `    <name>${xmlEscape(list.name)}</name>`,
   ];
-  if (hasOsmDerived(views)) {
+  if (hasOsmDerived(places)) {
     lines.push(`    <description>${xmlEscape(OSM_ATTRIBUTION_TEXT)}</description>`);
   }
-  // The style id carries the marker icon (`placemarks-<icon>`) so our own
-  // exports round-trip the full (colour, icon) marker; foreign consumers just
-  // see a normal coloured style (spec/src/roadmap.md Phase 6).
+  // The style carries the marker colour; the style id carries the shape name —
+  // the property slot KML allows (spec/src/interop.md §Export).
   lines.push(
-    `    <Style id="placemarks-${list.marker.icon}"><IconStyle><color>${kmlColor(
+    `    <Style id="placemarks-${list.marker.shape}"><IconStyle><color>${kmlColor(
       list.marker.color,
     )}</color></IconStyle></Style>`,
   );
-  for (const row of rows(views)) {
-    const description = [row.facts.address, row.note].filter(Boolean).join("\n\n");
+  for (const place of places) {
     lines.push(
       `    <Placemark>`,
-      `      <name>${xmlEscape(row.facts.name ?? "Unnamed place")}</name>`,
-      ...(description ? [`      <description>${xmlEscape(description)}</description>`] : []),
-      `      <styleUrl>#placemarks-${list.marker.icon}</styleUrl>`,
-      `      <Point><coordinates>${row.facts.lng},${row.facts.lat}</coordinates></Point>`,
+      `      <name>${xmlEscape(place.name)}</name>`,
+      ...(place.address ? [`      <description>${xmlEscape(place.address)}</description>`] : []),
+      `      <styleUrl>#placemarks-${list.marker.shape}</styleUrl>`,
+      `      <Point><coordinates>${place.lng},${place.lat}</coordinates></Point>`,
       `    </Placemark>`,
     );
   }
@@ -124,127 +73,43 @@ export function exportListKml(list: List, views: ExportPlaceView[]): string {
   return lines.join("\n");
 }
 
-/** The retained Google listing, when the place was imported or added from a link. */
-function googleListingUrl(place: Place): string | undefined {
-  return place.externalRefs?.find((ref) => ref.provider === "google-maps")?.url;
+/** KMZ: the KML zipped as doc.kml — what Google Earth/My Maps also accept. */
+export function exportListKmz(list: List, places: Place[]): Uint8Array {
+  return zipSync({ "doc.kml": strToU8(exportListKml(list, places)) });
 }
 
-/** The URL column mirrors import provenance: external ref, else OSM portal, else coordinates. */
-function urlFor(row: ExportRow): string {
-  // A retained Google listing is the deep link back — it outranks whichever
-  // generic web ref happened to be stored first.
-  const external = googleListingUrl(row.place) ?? row.place.externalRefs?.[0]?.url;
-  if (external) return external;
-  if (row.place.currentOsmRef) return osmElementUrl(row.place.currentOsmRef);
-  return `https://www.google.com/maps/search/?api=1&query=${row.facts.lat},${row.facts.lng}`;
-}
-
-/** Spreadsheets execute cells starting with = + - @ (even after trimming) — quote defensively. */
-function formulaEscape(value: string): string {
-  return /^[\s\r\t]*[=+\-@]/.test(value) ? `'${value}` : value;
-}
-
-export function exportListCsv(_list: List, views: ExportPlaceView[]): string {
-  // The Takeout columns stay first so the file round-trips through Takeout
-  // parsers (ours included); the extra Attribution column carries ODbL credit
-  // for rows whose facts are OSM-derived (spec/src/interop.md).
-  return `${Papa.unparse(
-    {
-      fields: ["Title", "Note", "URL", "Address", "Attribution"],
-      data: rows(views).map((row) => [
-        formulaEscape(row.facts.name ?? "Unnamed place"),
-        formulaEscape(row.note ?? ""),
-        urlFor(row),
-        formulaEscape(row.facts.address ?? ""),
-        osmDerived(row.place)
-          ? `${OSM_ATTRIBUTION_TEXT}${sourceRefOf(row.place) ? ` — source ${sourceRefOf(row.place) ?? ""}` : ""}`
-          : "",
-      ]),
-    },
-    { newline: "\n" },
-  )}\n`;
-}
-
-export function exportListGeoJson(list: List, views: ExportPlaceView[]): string {
+export function exportListGeoJson(list: List, places: Place[]): string {
   const collection = {
     type: "FeatureCollection",
     name: list.name,
-    ...(hasOsmDerived(views) ? { attribution: OSM_ATTRIBUTION_TEXT } : {}),
-    features: rows(views).map((row) => ({
+    ...(hasOsmDerived(places) ? { attribution: OSM_ATTRIBUTION_TEXT } : {}),
+    features: places.map((place) => ({
       type: "Feature",
-      geometry: { type: "Point", coordinates: [row.facts.lng, row.facts.lat] },
+      geometry: { type: "Point", coordinates: [place.lng, place.lat] },
       properties: {
-        name: row.facts.name ?? "Unnamed place",
-        ...(row.facts.category ? { category: row.facts.category } : {}),
-        ...(row.facts.address ? { address: row.facts.address } : {}),
-        ...(row.facts.website ? { website: row.facts.website } : {}),
-        ...(row.facts.phone ? { phone: row.facts.phone } : {}),
-        ...(row.facts.openingHours ? { openingHours: row.facts.openingHours } : {}),
-        ...(row.tags.length > 0 ? { tags: row.tags } : {}),
-        ...(row.note ? { note: row.note } : {}),
-        ...(sourceRefOf(row.place) ? { osmRef: sourceRefOf(row.place) } : {}),
-        ...(row.place.externalRefs?.length
-          ? { externalUrls: row.place.externalRefs.map((r) => r.url) }
-          : {}),
+        name: place.name,
+        ...(place.category ? { category: place.category } : {}),
+        ...(place.address ? { address: place.address } : {}),
+        // simplestyle: the marker colour travels; the shape name rides as the symbol.
+        "marker-color": list.marker.color,
+        "marker-symbol": list.marker.shape,
+        ...(place.osmRef ? { osmRef: osmRefKey(place.osmRef) } : {}),
+        ...(place.googleUrl ? { googleUrl: place.googleUrl } : {}),
       },
     })),
   };
   return `${JSON.stringify(collection, null, 2)}\n`;
 }
 
-/** KMZ: the KML zipped as doc.kml — what Google Earth/My Maps also accept. */
-export function exportListKmz(list: List, views: ExportPlaceView[]): Uint8Array {
-  return zipSync({ "doc.kml": strToU8(exportListKml(list, views)) });
-}
-
-/**
- * A readable list of places, each with the three deep links.
- *
- * Google offers no way to create a saved list from outside — My Maps ingests
- * our KML, but that is a map layer, not the list a person can paste into a
- * message, a doc or a blog post. This is that: the same handoff the place card
- * and the share page give, in a file.
- */
-export function exportListMarkdown(list: List, views: ExportPlaceView[]): string {
-  const lines: string[] = [`# ${list.name}`, ""];
-  for (const row of rows(views)) {
-    const name = row.facts.name ?? "Unnamed place";
-    const links = placeLinksFor({
-      lat: row.facts.lat,
-      lng: row.facts.lng,
-      name,
-      // The retained Google listing reopens the exact place; without one every
-      // provider still gets a working coordinate/name search.
-      ...(googleListingUrl(row.place) ? { externalUrl: googleListingUrl(row.place) } : {}),
-      ...(row.place.currentOsmRef ? { osmRef: row.place.currentOsmRef } : {}),
-    });
-    const subtitle = [row.facts.category, row.facts.address].filter(Boolean).join(" · ");
-    lines.push(`## ${name}`, "");
-    if (subtitle) lines.push(subtitle, "");
-    if (row.tags.length > 0) lines.push(`Tags: ${row.tags.join(", ")}`, "");
-    // Notes are already Markdown, so they pass through verbatim.
-    if (row.note) lines.push(row.note, "");
-    lines.push(
-      [
-        `[Google Maps](${links.google})`,
-        `[Apple Maps](${links.apple})`,
-        ...(links.osm ? [`[OpenStreetMap](${links.osm})`] : []),
-      ].join(" · "),
-      "",
-    );
-  }
-  if (hasOsmDerived(views)) lines.push("---", "", OSM_ATTRIBUTION_TEXT, "");
-  return lines.join("\n");
-}
-
-export function exportListGpx(list: List, views: ExportPlaceView[]): string {
+/** GPX waypoints — what OsmAnd and Organic Maps ingest (spec/src/interop.md §Export). */
+export function exportListGpx(list: List, places: Place[]): string {
   const lines: string[] = [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<gpx version="1.1" creator="Placemarks" xmlns="http://www.topografix.com/GPX/1/1">`,
     `  <metadata>`,
     `    <name>${xmlEscape(list.name)}</name>`,
   ];
-  if (hasOsmDerived(views)) {
+  if (hasOsmDerived(places)) {
     lines.push(
       `    <copyright author="OpenStreetMap contributors">`,
       `      <license>https://opendatacommons.org/licenses/odbl/1-0/</license>`,
@@ -252,15 +117,84 @@ export function exportListGpx(list: List, views: ExportPlaceView[]): string {
     );
   }
   lines.push(`  </metadata>`);
-  for (const row of rows(views)) {
-    const desc = [row.facts.address, row.note].filter(Boolean).join("\n\n");
+  for (const place of places) {
     lines.push(
-      `  <wpt lat="${row.facts.lat}" lon="${row.facts.lng}">`,
-      `    <name>${xmlEscape(row.facts.name ?? "Unnamed place")}</name>`,
-      ...(desc ? [`    <desc>${xmlEscape(desc)}</desc>`] : []),
+      `  <wpt lat="${place.lat}" lon="${place.lng}">`,
+      `    <name>${xmlEscape(place.name)}</name>`,
+      ...(place.address ? [`    <desc>${xmlEscape(place.address)}</desc>`] : []),
       `  </wpt>`,
     );
   }
   lines.push(`</gpx>`, ``);
   return lines.join("\n");
+}
+
+/**
+ * The deep-link text list (Markdown): the list as prose — name, address, and
+ * all three deep links per place — the artefact to paste into a message. One
+ * module (domain links) builds every URL, so the place card, these exports,
+ * and the public viewer hand out the same links.
+ */
+export function exportListMarkdown(list: List, places: Place[]): string {
+  const lines: string[] = [`# ${list.name}`, ""];
+  for (const place of places) {
+    lines.push(`## ${place.name}`, "");
+    const subtitle = [place.category, place.address].filter(Boolean).join(" · ");
+    if (subtitle) lines.push(subtitle, "");
+    lines.push(
+      [
+        `[Google Maps](${googleLink(place)})`,
+        `[Apple Maps](${appleLink(place)})`,
+        `[OpenStreetMap](${osmLink(place)})`,
+      ].join(" · "),
+      "",
+    );
+  }
+  if (hasOsmDerived(places)) lines.push("---", "", OSM_ATTRIBUTION_TEXT, "");
+  return lines.join("\n");
+}
+
+// ---------- Guided handoffs (spec/src/interop.md §Export) ----------
+
+/** My Maps accepts ≤2,000 features per layer AND ≤5 MB per file. */
+export const MY_MAPS_LAYER_LIMIT = 2000;
+export const MY_MAPS_FILE_BYTE_LIMIT = 5 * 1024 * 1024;
+
+export const MY_MAPS_HANDOFF =
+  "Google My Maps accepts up to 2,000 features per layer and 5 MB per file — larger lists split " +
+  "into numbered parts automatically. Then: Google My Maps → Create a new map → Import → choose this file.";
+
+export const UMAP_HANDOFF =
+  "On umap.openstreetmap.fr: Create a map → Import data, choose this GeoJSON (or KML) file, and " +
+  "confirm the import. The list's marker colour rides along.";
+
+/**
+ * Split a list for the My Maps handoff along whichever limit binds first.
+ * Parts are measured with the longest part-suffixed name they could carry.
+ */
+export function splitForMyMaps(list: List, places: Place[]): Place[][] {
+  const byCount: Place[][] = [];
+  for (let i = 0; i < places.length; i += MY_MAPS_LAYER_LIMIT) {
+    byCount.push(places.slice(i, i + MY_MAPS_LAYER_LIMIT));
+  }
+  if (byCount.length === 0) byCount.push([]);
+  const chunks: Place[][] = [];
+  const fits = (chunk: Place[]): boolean =>
+    new TextEncoder().encode(exportListKml({ ...list, name: `${list.name} (part 999)` }, chunk))
+      .byteLength <= MY_MAPS_FILE_BYTE_LIMIT;
+  const bySize = (chunk: Place[]): void => {
+    if (fits(chunk)) {
+      chunks.push(chunk);
+      return;
+    }
+    if (chunk.length <= 1) {
+      // A single feature cannot be split — refusing beats emitting a file My Maps will reject.
+      throw new Error("one place exceeds the 5 MB My Maps file limit");
+    }
+    const mid = Math.ceil(chunk.length / 2);
+    bySize(chunk.slice(0, mid));
+    bySize(chunk.slice(mid));
+  };
+  for (const chunk of byCount) bySize(chunk);
+  return chunks;
 }

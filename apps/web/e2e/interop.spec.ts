@@ -1,17 +1,26 @@
 /**
- * Phase 3 interop (spec/src/interop.md): a Takeout archive imports through the
- * coordinate ladder into a list, the review queue resolves by map placement,
- * pins land on the map, deep links hand navigation out, and the list exports
- * as My Maps-compatible KML with ODbL attribution.
+ * Import & export (spec/src/interop.md): a Takeout archive imports through the
+ * coordinate ladder into a list (CSV rows joined to Saved Places geometry by
+ * Google feature id), the review queue resolves by clicking the canvas, a CSV
+ * Note becomes a place post once per place, re-import converges, and the list
+ * exports as My Maps-compatible KML/KMZ with the guided handoff. ODbL
+ * attribution rides exports exactly when OSM-derived facts are present.
  */
 import { readFile } from "node:fs/promises";
-import { expect, test } from "@playwright/test";
-import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { expect, type Page, test } from "@playwright/test";
+import { strToU8, unzipSync, zipSync } from "fflate";
 
 const PLACE_URL =
   "https://www.google.com/maps/place/Caf%C3%A9+Central/data=!4m2!3m1!1s0x1f9a2b:0xdeadbeef";
 const PIN_URL = "https://www.google.com/maps/search/38.71000,-9.15000";
 
+/**
+ * A real-shaped Takeout: a Saved list CSV (no coordinates) beside
+ * Saved Places.json (geometry, no list structure). Café Central gains its
+ * coordinates through the feature-id join — rung 2 of the ladder; the dropped
+ * pin carries literal coordinates — rung 1; Mystery Bar must geocode — rung 3
+ * (the MSW geocoder returns nothing for it, so it waits in review).
+ */
 function takeoutZip(): Buffer {
   const csv = [
     "Title,Note,URL,Address",
@@ -19,53 +28,67 @@ function takeoutZip(): Buffer {
     `"Dropped pin",,"${PIN_URL}",`,
     `"Mystery Bar",,,"Nowhere 1"`,
   ].join("\n");
-  return Buffer.from(zipSync({ "Takeout/Saved/Lisbon trip.csv": strToU8(csv) }));
+  const savedPlaces = JSON.stringify({
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [-9.142, 38.712] },
+        properties: {
+          Title: "Café Central",
+          "Google Maps URL": PLACE_URL,
+          Location: { Address: "Rua Example 12, Lisboa" },
+        },
+      },
+    ],
+  });
+  return Buffer.from(
+    zipSync({
+      "Takeout/Saved/Lisbon trip.csv": strToU8(csv),
+      "Takeout/Maps (your places)/Saved Places.json": strToU8(savedPlaces),
+    }),
+  );
 }
 
-test("a Takeout archive imports into a list; review resolves on the map", async ({ page }) => {
+async function importFile(page: Page, file: { name: string; mimeType: string; buffer: Buffer }) {
   await page.goto("/settings");
-  await page.getByLabel("Import places file").setInputFiles({
-    name: "takeout.zip",
-    mimeType: "application/zip",
-    buffer: takeoutZip(),
-  });
+  await page.getByLabel("Import places file").setInputFiles(file);
+}
 
-  // Every row accounted for: 2 placed (1 OSM-linked), 1 in review.
+const takeoutFile = () => ({
+  name: "takeout.zip",
+  mimeType: "application/zip",
+  buffer: takeoutZip(),
+});
+
+test("a Takeout archive imports through the ladder; review resolves on the canvas", async ({
+  page,
+}) => {
+  await importFile(page, takeoutFile());
+
+  // Every row accounted for (spec/src/interop.md §The import report).
   const report = page.getByTestId("import-report");
   await expect(report).toContainText("2 placed");
-  await expect(report).toContainText("1 linked to OSM");
   await expect(report).toContainText("1 to review");
 
-  // The review queue is its own pane route now, linked from the import section.
+  // The review queue is its own notebook route.
   await page.getByTestId("open-review-queue").click();
   await expect(page.getByTestId("review-page")).toBeVisible();
   const reviewItem = page.getByTestId("review-item");
   await expect(reviewItem).toHaveCount(1);
   await expect(reviewItem).toContainText("Mystery Bar");
-  // "Place on map" stays on /review and reveals the canvas while retaining
-  // the accessible coordinate and cancellation controls in the split pane.
-  await reviewItem.getByTestId("review-place-on-map").click();
 
-  await expect(page.getByTestId("app-shell")).toHaveAttribute("data-pane-state", "split");
+  // Manual placement is clicking the map (spec/src/map-view.md §Import
+  // review): arm it, then click the canvas beside the notebook.
+  await reviewItem.getByTestId("review-place-on-map").click();
+  await expect(reviewItem.getByTestId("review-place-on-map")).toHaveText("Cancel placement");
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
-  await expect(page.getByTestId("placing-import-hint")).toBeVisible();
   const box = await page.getByTestId("map-canvas").boundingBox();
   if (!box) throw new Error("map canvas has no bounding box");
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: "right" });
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  await expect(page.getByTestId("review-empty")).toBeVisible();
 
-  // Placement materializes the item and opens its details card.
-  const details = page.getByTestId("place-details");
-  await expect(details).toBeVisible();
-  await expect(details).toContainText("Mystery Bar");
-  // The review projection clears its transient marks when the last item is
-  // resolved. The all-lists projection below verifies all three saved pins.
-  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-marks", "0");
-  // Navigation handoff links are on the card.
-  await expect(details.getByTestId("open-google-maps")).toBeVisible();
-  await expect(details.getByTestId("open-apple-maps")).toBeVisible();
-  await details.getByRole("button", { name: "Close" }).click();
-
-  // The list holds all three; the linked place carries live OSM facts.
+  // The list holds all three rows.
   await page
     .getByRole("navigation", { name: "Primary" })
     .getByRole("link", { name: "Lists" })
@@ -74,7 +97,21 @@ test("a Takeout archive imports into a list; review resolves on the map", async 
   await expect(page.getByTestId("place-item")).toHaveCount(3);
   await expect(page.getByTestId("list-page")).toContainText("Café Central");
 
-  // Export as KML: list name, three placemarks, ODbL attribution.
+  // The CSV Note became a place post titled with the place's name
+  // (spec/src/interop.md §CSV Note → place post).
+  await page
+    .getByTestId("place-item")
+    .filter({ hasText: "Café Central" })
+    .getByTestId("select-place")
+    .click();
+  const details = page.getByTestId("place-details");
+  await expect(details).toBeVisible();
+  await expect(details.getByTestId("place-post-link")).toHaveText("Café Central");
+  await details.getByRole("button", { name: "Close" }).click();
+
+  // Export as KML: list name, three placemarks — and NO ODbL attribution,
+  // because no row here carries an osmRef (Google-derived and user-provided
+  // coordinates only; spec/src/interop.md §Licensing).
   const downloadPromise = page.waitForEvent("download");
   await page.getByTestId("export-kml").click();
   const download = await downloadPromise;
@@ -83,10 +120,9 @@ test("a Takeout archive imports into a list; review resolves on the map", async 
   const kml = await readFile(kmlPath, "utf8");
   expect(kml).toContain("<name>Lisbon trip</name>");
   expect(kml.match(/<Placemark>/g)).toHaveLength(3);
-  expect(kml).toContain("OpenStreetMap contributors");
+  expect(kml).not.toContain("OpenStreetMap");
 
-  // Home projects every list's pins on the always-mounted canvas beside the
-  // pane (no Map tab any more) — all three imports are marked.
+  // Home projects every import as a pin on the always-mounted canvas.
   await page
     .getByRole("navigation", { name: "Primary" })
     .getByRole("link", { name: "Lists" })
@@ -94,59 +130,27 @@ test("a Takeout archive imports into a list; review resolves on the map", async 
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "3");
 });
 
-test("re-importing the same archive converges instead of duplicating", async ({ page }) => {
-  await page.goto("/settings");
-  const input = page.getByLabel("Import places file");
-  const file = {
-    name: "takeout.zip",
-    mimeType: "application/zip",
-    buffer: takeoutZip(),
-  };
-  await input.setInputFiles(file);
+test("re-importing the same archive converges; a Note becomes a post only once", async ({
+  page,
+}) => {
+  await importFile(page, takeoutFile());
   await expect(page.getByTestId("import-report")).toContainText("2 placed");
 
-  await input.setInputFiles(file);
-  await expect(page.getByTestId("import-report")).toContainText("2 already present");
+  await page.getByLabel("Import places file").setInputFiles(takeoutFile());
+  const report = page.getByTestId("import-report");
+  await expect(report).toContainText("2 already present");
+  // The deduped place already has its place post — the Note is dropped and
+  // the report says so (local edits are canon).
+  await expect(report).toContainText("notes dropped");
 
   await page
     .getByRole("navigation", { name: "Primary" })
     .getByRole("link", { name: "Lists" })
     .click();
-  // One list, not two.
+  // One list, not two (sourceKey binding), and no duplicated members.
   await expect(page.getByRole("link", { name: /Lisbon trip/ })).toHaveCount(1);
   await page.getByRole("link", { name: /Lisbon trip/ }).click();
   await expect(page.getByTestId("place-item")).toHaveCount(2);
-});
-
-test("a CSV export round-trips through the importer", async ({ page }) => {
-  await page.goto("/settings");
-  await page.getByLabel("Import places file").setInputFiles({
-    name: "takeout.zip",
-    mimeType: "application/zip",
-    buffer: takeoutZip(),
-  });
-  await expect(page.getByTestId("import-report")).toContainText("2 placed");
-  // The queue lives on its own pane route; the import section links to it.
-  await page.getByTestId("open-review-queue").click();
-  await page.getByTestId("review-item").getByTestId("review-skip").click();
-  await expect(page.getByTestId("review-item")).toHaveCount(0);
-  await expect(page.getByTestId("review-empty")).toBeVisible();
-
-  await page
-    .getByRole("navigation", { name: "Primary" })
-    .getByRole("link", { name: "Lists" })
-    .click();
-  await page.getByRole("link", { name: /Lisbon trip/ }).click();
-  const downloadPromise = page.waitForEvent("download");
-  await page.getByTestId("export-csv").click();
-  const download = await downloadPromise;
-  const csvPath = await download.path();
-  if (!csvPath) throw new Error("CSV download has no local path");
-  const csv = await readFile(csvPath, "utf8");
-  expect(csv.split("\n")[0]).toBe("Title,Note,URL,Address,Attribution");
-  expect(csv).toContain("Café Central");
-  // The dropped pin keeps its original Google URL — provenance round-trips.
-  expect(csv).toContain(PIN_URL);
 });
 
 test("KMZ import goes straight to placed pins (coordinates included)", async ({ page }) => {
@@ -154,8 +158,7 @@ test("KMZ import goes straight to placed pins (coordinates included)", async ({ 
 <kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Hike spots</name>
 <Placemark><name>Viewpoint</name><Point><coordinates>-9.2,38.75</coordinates></Point></Placemark>
 </Document></kml>`;
-  await page.goto("/settings");
-  await page.getByLabel("Import places file").setInputFiles({
+  await importFile(page, {
     name: "spots.kmz",
     mimeType: "application/vnd.google-earth.kmz",
     buffer: Buffer.from(zipSync({ "doc.kml": strToU8(kml) })),
@@ -168,15 +171,47 @@ test("KMZ import goes straight to placed pins (coordinates included)", async ({ 
   await expect(page.getByRole("link", { name: /Hike spots/ })).toBeVisible();
 });
 
-test("exported backup and exported KML are distinct artifacts", async ({ page }) => {
-  // Guard: the interop export writers must not replace the versioned backup.
-  await page.goto("/settings");
+test("a list exports as a real KMZ with the guided handoffs; CSV export is gone", async ({
+  page,
+}) => {
+  const kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>My Maps audit</name>
+<Placemark><name>Miradouro</name><Point><coordinates>-9.2,38.75</coordinates></Point></Placemark>
+</Document></kml>`;
+  await importFile(page, {
+    name: "my-maps-audit.kml",
+    mimeType: "application/vnd.google-earth.kml+xml",
+    buffer: Buffer.from(kml),
+  });
+  await expect(page.getByTestId("import-report")).toContainText("1 placed");
+  await page
+    .getByRole("navigation", { name: "Primary" })
+    .getByRole("link", { name: "Lists" })
+    .click();
+  await page.getByRole("link", { name: /My Maps audit/ }).click();
+  await expect(page.getByTestId("place-item")).toHaveCount(1);
+
+  // The guided handoffs (spec/src/interop.md §Export): My Maps and uMap are
+  // named next to the artefacts; CSV is no longer an export.
+  await expect(page.getByTestId("list-page")).toContainText(/My Maps/);
+  await expect(page.getByTestId("list-page")).toContainText(/uMap/i);
+  await expect(page.getByTestId("export-csv")).toHaveCount(0);
+
   const downloadPromise = page.waitForEvent("download");
-  await page.getByTestId("export-backup").click();
+  await page.getByTestId("export-kmz").click();
   const download = await downloadPromise;
-  const backupPath = await download.path();
-  if (!backupPath) throw new Error("backup download has no local path");
-  const entries = unzipSync(await readFile(backupPath));
-  expect(Object.keys(entries)).toContain("manifest.json");
-  expect(strFromU8(entries["manifest.json"] ?? new Uint8Array())).toContain("placemarks");
+  expect(download.suggestedFilename()).toMatch(/\.kmz$/i);
+  const kmzPath = await download.path();
+  if (!kmzPath) throw new Error("KMZ download has no local path");
+  const entries = unzipSync(await readFile(kmzPath));
+  expect(Object.keys(entries).some((name) => name.toLowerCase().endsWith(".kml"))).toBe(true);
+});
+
+test("GPX and GeoJSON are export-only — importing one fails visibly", async ({ page }) => {
+  await importFile(page, {
+    name: "route.gpx",
+    mimeType: "application/gpx+xml",
+    buffer: Buffer.from(`<gpx version="1.1"></gpx>`),
+  });
+  await expect(page.getByTestId("import-report")).toContainText("unsupported import file");
 });

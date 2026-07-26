@@ -1,4 +1,4 @@
-/** Haversine distance in meters. */
+/** Haversine distance in meters — the name+proximity dedup rung measures with this. */
 export function distanceMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -15,12 +15,4 @@ export interface BBox {
   south: number;
   east: number;
   north: number;
-}
-
-/** Approximate bbox area in km² — used for viewport-query budgets. */
-export function bboxAreaKm2(bbox: BBox): number {
-  const midLat = (bbox.north + bbox.south) / 2;
-  const heightKm = distanceMeters(bbox.south, bbox.west, bbox.north, bbox.west) / 1000;
-  const widthKm = distanceMeters(midLat, bbox.west, midLat, bbox.east) / 1000;
-  return heightKm * widthKm;
 }

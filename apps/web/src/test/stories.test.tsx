@@ -8,31 +8,15 @@ import { act, render } from "@testing-library/react";
 import axe from "axe-core";
 import { describe, expect, test } from "vitest";
 import { withProviders } from "../../.storybook/decorators";
+import * as MarkerGlyphStories from "../features/lists/MarkerGlyph.stories";
 import * as NewListFormStories from "../features/lists/NewListForm.stories";
-import * as NoteEditorStories from "../features/notes/NoteEditor.stories";
-import * as CandidatePickerStories from "../features/picker/CandidatePicker.stories";
-import * as ManualPinDialogStories from "../features/picker/ManualPinDialog.stories";
-import * as PlaceDetailsSheetStories from "../features/place/PlaceDetailsSheet.stories";
-import * as PlaceFieldsStories from "../features/place/PlaceFields.stories";
-import * as PlaceSheetStories from "../features/place/PlaceSheet.stories";
-import * as StateBadgeStories from "../features/place/StateBadge.stories";
-import * as TagEditorStories from "../features/place/TagEditor.stories";
-import * as SearchBarStories from "../features/search/SearchBar.stories";
 import * as MarkdownStories from "../markdown/Markdown.stories";
 
 setProjectAnnotations([{ decorators: [withProviders] }]);
 
 const modules = [
-  ["StateBadge", StateBadgeStories],
-  ["PlaceFields", PlaceFieldsStories],
-  ["PlaceSheet", PlaceSheetStories],
-  ["PlaceDetailsSheet", PlaceDetailsSheetStories],
-  ["SearchBar", SearchBarStories],
-  ["CandidatePicker", CandidatePickerStories],
-  ["ManualPinDialog", ManualPinDialogStories],
-  ["TagEditor", TagEditorStories],
+  ["MarkerGlyph", MarkerGlyphStories],
   ["NewListForm", NewListFormStories],
-  ["NoteEditor", NoteEditorStories],
   ["Markdown", MarkdownStories],
 ] as const;
 

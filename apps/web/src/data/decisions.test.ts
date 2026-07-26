@@ -1,229 +1,137 @@
-/**
- * The repository's judgements, tested as functions.
- *
- * These lived inside `db.transaction` callbacks, so exercising them meant
- * standing up a Dexie database and driving a whole write path. The identity
- * guard in particular is the one that must never be wrong — it is what stops two
- * PlaceIds forking the same OSM element, and what stops a forged history riding
- * in on an otherwise legitimate relink.
- */
-import type { Note, OsmEvidence, Place } from "@placemarks/domain";
+/** The repository's pure decisions — no database required to state or test. */
+import type { ListEntry, Place } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import {
-  assertValidPlaceShape,
-  attachmentIsValid,
-  decidePlaceIdentity,
-  listDeletionBlockers,
-  membershipBlockers,
-  toNoteRow,
+  duplicateEntryIds,
+  incomingWins,
+  NAME_PROXIMITY_METERS,
+  nameProximityCandidate,
+  stripPlaceRow,
+  stripPostRow,
+  stripPublicationRow,
   toPlaceRow,
+  toPostRow,
+  toPublicationRow,
+  validCoords,
 } from "./decisions";
 
-const NOW = "2026-07-20T10:00:00.000Z";
+const NOW = "2026-07-26T12:00:00.000Z";
 
-type Ref = { type: "node" | "way" | "relation"; id: string };
-const NODE_1: Ref = { type: "node", id: "1" };
-const WAY_9: Ref = { type: "way", id: "9" };
-
-function evidence(ref: Ref): OsmEvidence {
-  return {
-    ref,
-    source: "OpenStreetMap",
-    license: "ODbL-1.0",
-    attribution: "© OpenStreetMap contributors",
-    category: "cafe",
-    lat: 51.5,
-    lng: -0.12,
-    identityTags: {},
-    observedAt: NOW,
-  };
-}
-
-function linked(ref: Ref = NODE_1, past: Ref[] = []): Place {
+function place(overrides: Partial<Place> = {}): Place {
   return {
     id: "p1",
-    origin: "osm",
-    currentOsmRef: ref,
-    currentOsmLinkedAt: NOW,
-    pastOsmRefs: past,
-    firstSeen: evidence(ref),
-    lastVerified: evidence(ref),
-    resolutionState: "resolved",
+    name: "Café Central",
+    lat: 38.7139,
+    lng: -9.1394,
+    origin: "search",
     createdAt: NOW,
     updatedAt: NOW,
+    ...overrides,
   };
 }
-
-function unlinked(past: Ref[] = []): Place {
-  return {
-    id: "p1",
-    origin: "manual",
-    pastOsmRefs: past,
-    manual: { name: "Picnic bench", lat: 51.5, lng: -0.12 },
-    resolutionState: "unlinked",
-    createdAt: NOW,
-    updatedAt: NOW,
-  };
-}
-
-describe("decidePlaceIdentity", () => {
-  it("accepts a relink that records exactly the ref it replaced", () => {
-    const decision = decidePlaceIdentity(linked(NODE_1), linked(WAY_9, [NODE_1]));
-    expect(decision.acceptRef).toBe(true);
-    expect(decision.pastOsmRefs).toEqual([NODE_1]);
-  });
-
-  it("refuses a relink that forgets the ref it replaced", () => {
-    const decision = decidePlaceIdentity(linked(NODE_1), linked(WAY_9, []));
-    expect(decision.acceptRef).toBe(false);
-    expect(decision.pastOsmRefs).toEqual([]);
-  });
-
-  it("refuses forged extra history riding on a real transition", () => {
-    const forged: Ref = { type: "relation", id: "666" };
-    const decision = decidePlaceIdentity(linked(NODE_1), linked(WAY_9, [NODE_1, forged]));
-    expect(decision.acceptRef).toBe(false);
-    expect(decision.pastOsmRefs).toEqual([]);
-  });
-
-  it("refuses dropping a former ref", () => {
-    const decision = decidePlaceIdentity(linked(WAY_9, [NODE_1]), linked(WAY_9, []));
-    expect(decision.pastOsmRefs).toEqual([NODE_1]);
-  });
-
-  it("lets an unlinked place record provenance without claiming a binding", () => {
-    // How an imported OSM-derived row keeps its ODbL attribution once placed by hand.
-    const decision = decidePlaceIdentity(unlinked(), unlinked([NODE_1]));
-    expect(decision.acceptRef).toBe(true);
-    expect(decision.pastOsmRefs).toEqual([NODE_1]);
-  });
-
-  it("is a no-op when nothing about the binding changed", () => {
-    const decision = decidePlaceIdentity(linked(NODE_1, [WAY_9]), linked(NODE_1, [WAY_9]));
-    expect(decision.acceptRef).toBe(true);
-    expect(decision.pastOsmRefs).toEqual([WAY_9]);
-  });
-});
-
-describe("assertValidPlaceShape", () => {
-  it("accepts the two legal shapes", () => {
-    expect(() => assertValidPlaceShape(linked())).not.toThrow();
-    expect(() => assertValidPlaceShape(unlinked())).not.toThrow();
-  });
-
-  it("refuses an OSM-linked place whose evidence describes a different element", () => {
-    expect(() =>
-      assertValidPlaceShape({ ...linked(NODE_1), lastVerified: evidence(WAY_9) }),
-    ).toThrow(/describe the current OSM element/);
-  });
-
-  it("refuses an OSM-linked place with no copied evidence", () => {
-    const { firstSeen: _dropped, ...rest } = linked();
-    expect(() => assertValidPlaceShape(rest as Place)).toThrow(/recovery evidence/);
-  });
-
-  it("refuses coordinates outside the world", () => {
-    expect(() =>
-      assertValidPlaceShape({ ...unlinked(), manual: { name: "x", lat: 91, lng: 0 } }),
-    ).toThrow(/latitude\/longitude bounds/);
-    expect(() =>
-      assertValidPlaceShape({ ...unlinked(), manual: { name: "x", lat: 0, lng: Number.NaN } }),
-    ).toThrow(/latitude\/longitude bounds/);
-  });
-});
 
 describe("row projections", () => {
-  it("indexes a place by every ref it has ever been bound to", () => {
-    expect(toPlaceRow(linked(WAY_9, [NODE_1])).refKeys?.sort()).toEqual(["node/1", "way/9"]);
+  it("derives the dedup index fields from provenance and strips them back off", () => {
+    const source = place({
+      googleUrl: "https://www.google.com/maps/place/x/data=!1s0x1A2B:0x3c4D",
+      osmRef: { type: "node", id: "101" },
+    });
+    const row = toPlaceRow(source);
+    expect(row.googleFeatureId).toBe("0x1a2b:0x3c4d");
+    expect(row.osmKey).toBe("node/101");
+    expect(stripPlaceRow(row)).toEqual(source);
   });
 
-  it("indexes a note by its target", () => {
-    const note = {
-      id: "n1",
-      target: { kind: "post", postId: "post-1" },
+  it("indexes nothing for a place without provenance refs", () => {
+    const row = toPlaceRow(place());
+    expect("googleFeatureId" in row).toBe(false);
+    expect("osmKey" in row).toBe(false);
+  });
+
+  it("derives and strips post and publication target keys", () => {
+    const post = {
+      id: "post1",
+      target: { kind: "place" as const, placeId: "p1" },
+      title: "T",
       body: "",
-      shareable: false,
       createdAt: NOW,
       updatedAt: NOW,
-    } as Note;
-    expect(toNoteRow(note).targetKey).toBe("post:post-1");
+    };
+    const postRow = toPostRow(post);
+    expect(postRow.targetKey).toBe("place:p1");
+    expect(stripPostRow(postRow)).toEqual(post);
+
+    const publication = {
+      id: "pub1",
+      target: { kind: "list" as const, id: "l1" },
+      slug: "lisbon",
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    const publicationRow = toPublicationRow(publication);
+    expect(publicationRow.targetKey).toBe("list:l1");
+    expect(stripPublicationRow(publicationRow)).toEqual(publication);
   });
 });
 
-describe("teardown blockers", () => {
-  const embeds = [
-    { blockId: "b1", postId: "post-a", postTitle: "A", postListId: "list-1" },
-    { blockId: "b2", postId: "post-b", postTitle: "B", postListId: "list-2" },
-  ];
-  const notes = [{ id: "n1", title: "Field note" }];
-
-  it("removing a place asks about every post that embeds it, and its notes", () => {
-    const blockers = membershipBlockers({
-      placeId: "p1",
-      scope: { kind: "place" },
-      embeds,
-      notes,
-    });
-    expect(blockers.map((b) => b.id)).toEqual(["b1", "b2", "n1"]);
-  });
-
-  it("removing one membership asks only about that list's posts", () => {
-    const blockers = membershipBlockers({
-      placeId: "p1",
-      scope: { kind: "membership", listId: "list-1", remainingMemberships: 1 },
-      embeds,
-      notes,
-    });
-    // post-b is about another list, and the place survives there, so its notes stay.
-    expect(blockers.map((b) => b.id)).toEqual(["b1"]);
-  });
-
-  it("notes block only the removal that would end the place's existence", () => {
-    const last = membershipBlockers({
-      placeId: "p1",
-      scope: { kind: "membership", listId: "list-1", remainingMemberships: 0 },
-      embeds: [],
-      notes,
-    });
-    expect(last.map((b) => b.kind)).toEqual(["note"]);
-  });
-
-  it("names a list's posts before its members — deleting posts unblocks the rest", () => {
-    const blockers = listDeletionBlockers(
-      [{ id: "post-a", title: "A", listId: "list-1", createdAt: NOW, updatedAt: NOW }],
-      ["p1", "p2"],
-    );
-    expect(blockers.map((b) => b.kind)).toEqual(["post", "member", "member"]);
+describe("coordinates", () => {
+  it("accepts the valid range and rejects everything else", () => {
+    expect(validCoords(38.7, -9.1)).toBe(true);
+    expect(validCoords(90, 180)).toBe(true);
+    expect(validCoords(-90, -180)).toBe(true);
+    expect(validCoords(90.0001, 0)).toBe(false);
+    expect(validCoords(0, -180.0001)).toBe(false);
+    expect(validCoords(Number.NaN, 0)).toBe(false);
+    expect(validCoords(0, Number.POSITIVE_INFINITY)).toBe(false);
   });
 });
 
-describe("attachmentIsValid", () => {
-  const note = (overrides: Partial<Note> = {}): Note =>
-    ({
-      id: "n1",
-      target: { kind: "place", placeId: "p1" },
-      body: "",
-      shareable: true,
-      createdAt: NOW,
-      updatedAt: NOW,
-      ...overrides,
-    }) as Note;
+describe("name + proximity", () => {
+  it("matches on normalised name within the proximity radius, nearest first", () => {
+    const near = place({ id: "near", lat: 38.714, lng: -9.1394 });
+    const nearer = place({ id: "nearer", name: "CAFÉ central!", lat: 38.71391, lng: -9.1394 });
+    const far = place({ id: "far", lat: 41.15, lng: -8.61 });
+    const found = nameProximityCandidate({ name: "café central", lat: 38.7139, lng: -9.1394 }, [
+      near,
+      far,
+      nearer,
+    ]);
+    expect(found?.id).toBe("nearer");
+  });
 
-  it("requires a place block and a shareable note about the SAME place", () => {
-    expect(attachmentIsValid({ block: { kind: "place", refId: "p1" }, note: note() })).toBe(true);
-    // A note about a different place.
-    expect(attachmentIsValid({ block: { kind: "place", refId: "p2" }, note: note() })).toBe(false);
-    // A private note.
+  it("never matches an empty normalised name or beyond the radius", () => {
+    expect(nameProximityCandidate({ name: "  !! ", lat: 0, lng: 0 }, [place()])).toBeUndefined();
+    // ~111 m north of the fixture place at this latitude.
     expect(
-      attachmentIsValid({
-        block: { kind: "place", refId: "p1" },
-        note: note({ shareable: false }),
-      }),
-    ).toBe(false);
-    // A section block, which has no place.
-    expect(attachmentIsValid({ block: { kind: "section", refId: "n9" }, note: note() })).toBe(
-      false,
-    );
-    expect(attachmentIsValid({ block: undefined, note: note() })).toBe(false);
+      nameProximityCandidate({ name: "Café Central", lat: 38.7149, lng: -9.1394 }, [place()]),
+    ).toBeUndefined();
+    expect(NAME_PROXIMITY_METERS).toBe(100);
+  });
+});
+
+describe("archive merge decisions", () => {
+  it("newer updatedAt wins; a tie keeps the existing row", () => {
+    expect(incomingWins(undefined, { updatedAt: NOW })).toBe(true);
+    expect(incomingWins({ updatedAt: NOW }, { updatedAt: "2026-07-27T00:00:00.000Z" })).toBe(true);
+    expect(incomingWins({ updatedAt: NOW }, { updatedAt: NOW })).toBe(false);
+    expect(incomingWins({ updatedAt: NOW }, { updatedAt: "2026-07-25T00:00:00.000Z" })).toBe(false);
+  });
+
+  it("collapses duplicate (listId, placeId) pairs to the (rank, id)-first row", () => {
+    const entry = (id: string, rank: string, placeId = "p1"): ListEntry => ({
+      id,
+      listId: "l1",
+      placeId,
+      rank,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    const drop = duplicateEntryIds([
+      entry("e1", "a1"),
+      entry("e2", "a0"), // earlier rank — survives
+      entry("e3", "a1"), // same rank as e1; e1 has the smaller id
+      entry("other", "a5", "p2"), // different pair — untouched
+    ]);
+    expect(drop.sort()).toEqual(["e1", "e3"]);
   });
 });

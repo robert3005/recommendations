@@ -1,96 +1,145 @@
 /**
  * What the canvas draws, as pure functions of the projection.
  *
- * Extracted from MapCanvas so the rules that are easy to get subtly wrong — which
- * marker a place in several lists wears, when a list toggle hides a place, which
- * places a post's editor shows as candidates, and which bounds a camera move
- * frames — can be tested directly, without a map, a query client or a DOM.
+ * Extracted from MapCanvas so the rules that are easy to get subtly wrong —
+ * which marker a place in several lists wears, when a home toggle hides a
+ * place, which places a post projects, and which bounds a camera move frames —
+ * can be tested directly, without a map or a DOM.
  */
-import type { List, ListMarker, PlaceId, PlaceView } from "@placemarks/domain";
-import { displayFacts } from "@placemarks/domain";
-import { DEFAULT_PIN_COLOR, FALLBACK_MARKER } from "../lib/markers";
+import type { List, ListMarker, PlaceId } from "@placemarks/domain";
+import { ACCENT_COLORS, MARKER_SHAPES } from "@placemarks/domain";
+import type { CanvasProjection } from "../state/projection";
 import type { MarkPinFeature, PlacePinFeature } from "./MapView";
 
-/** The projection shapes that draw library places. */
-export type LibraryProjection =
-  | { kind: "all" }
-  | { kind: "list"; listId: string }
-  | { kind: "post"; postId: string; editing?: boolean; focusPlaceIds?: string[] };
+/** A library place with its memberships — structurally repo.listPlaceViews(). */
+export interface ProjectablePlace {
+  place: { id: PlaceId; name: string; lat: number; lng: number };
+  listIds: string[];
+}
+
+/** The pin a published post document's places wear (no list marker travels with a post). */
+export const DEFAULT_PUBLISHED_MARKER: ListMarker = {
+  shape: MARKER_SHAPES[0] as ListMarker["shape"],
+  color: (ACCENT_COLORS[0] as { fill: string }).fill,
+};
 
 export interface LibraryPinsInput {
-  projection: LibraryProjection;
-  places: readonly PlaceView[];
-  /** placeId → the ids of every live list containing it. */
-  membership: Readonly<Record<string, string[]>>;
+  projection: CanvasProjection;
+  places: readonly ProjectablePlace[];
   lists: readonly List[];
-  /** Lists toggled off on the all-lists canvas. */
+  /** Home-overlay toggles: lists switched off (spec/src/map-view.md §Home). */
   hiddenListIds: readonly string[];
-  /** The list a post editorialises, when the projection is a post. */
+  /** The post projection's places — its target's members (spec/src/posts.md §Projection). */
+  postTargetPlaceIds?: ReadonlySet<PlaceId>;
+  /** The list a list post targets, when the projection is a post — its marker leads. */
   postListId?: string;
-  /** Places the projection puts in focus; undefined means "everything is in focus". */
-  focusPlaceIds?: ReadonlySet<PlaceId>;
-  /** In a post's editor, the rest of its list, shown dimmed as candidates. */
-  candidatePlaceIds?: ReadonlySet<PlaceId>;
 }
 
 export function libraryPins({
   projection,
   places,
-  membership,
   lists,
   hiddenListIds,
+  postTargetPlaceIds,
   postListId,
-  focusPlaceIds,
-  candidatePlaceIds,
 }: LibraryPinsInput): PlacePinFeature[] {
+  if (projection.kind === "import-item" || projection.kind === "published-doc") return [];
   const listsById = new Map(lists.map((list) => [list.id, list]));
 
   return places.flatMap((view) => {
-    const facts = displayFacts(view.place);
-    if (!facts) return [];
-    const memberListIds = membership[view.place.id] ?? [];
-    // Deterministic marker when a place is in several lists: lowest list id leads.
-    const memberLists = [...memberListIds]
+    // Deterministic marker for a place in several lists: lowest list id leads.
+    const memberLists = [...view.listIds]
       .sort()
       .map((id) => listsById.get(id))
       .filter((list): list is List => list !== undefined);
-    const focused = focusPlaceIds?.has(view.place.id) ?? true;
+    if (memberLists.length === 0) return [];
 
     if (projection.kind === "post") {
-      // Reading shows only the embeds; the editor adds the list as candidates.
-      if (!focused && !candidatePlaceIds?.has(view.place.id)) return [];
-    }
-    if (projection.kind === "all") {
-      // The list toggles are the canvas's primary filter: a place hides once
-      // EVERY list containing it is toggled off.
-      if (!memberListIds.some((id) => !hiddenListIds.includes(id))) return [];
+      // A post projects its target's places and nothing else (one rule, all surfaces).
+      if (!postTargetPlaceIds?.has(view.place.id)) return [];
+      const marker =
+        (postListId ? listsById.get(postListId)?.marker : undefined) ??
+        (memberLists[0] as List).marker;
+      return [pin(view, marker, { stacked: [], dimmed: false })];
     }
 
-    // A list/post projection belongs to exactly one list, even if the place is
-    // also a member elsewhere. Only the all-lists projection uses the
-    // deterministic multi-list badge.
-    const projectionList: List | undefined =
-      projection.kind === "list"
-        ? listsById.get(projection.listId)
-        : projection.kind === "post" && postListId
-          ? listsById.get(postListId)
-          : undefined;
-    const marker: ListMarker = projectionList?.marker ?? memberLists[0]?.marker ?? FALLBACK_MARKER;
+    if (projection.kind === "lists-overlay") {
+      // The toggle row is the overlay's filter: a place hides only when EVERY
+      // list containing it is toggled off; visible lists decide the marker.
+      const visibleLists = memberLists.filter((list) => !hiddenListIds.includes(list.id));
+      if (visibleLists.length === 0) return [];
+      const [lead, ...rest] = visibleLists as [List, ...List[]];
+      return [pin(view, lead.marker, { stacked: rest.map((l) => l.marker), dimmed: false })];
+    }
 
-    return [
-      {
-        placeId: view.place.id,
-        name: facts.name ?? "Place",
-        lat: facts.lat,
-        lng: facts.lng,
-        color: memberLists.length > 0 ? marker.color : DEFAULT_PIN_COLOR,
-        icon: marker.icon,
-        unlinked: view.place.resolutionState === "unlinked",
-        multi: projection.kind === "all" && memberLists.length > 1,
-        dimmed: !focused,
-      },
-    ];
+    // List projection: members solid in the list's marker, the rest of the
+    // library dimmed in its own marker (spec/src/map-view.md §The list page).
+    const projected = listsById.get(projection.listId);
+    const member = projected !== undefined && view.listIds.includes(projection.listId);
+    const marker = member && projected ? projected.marker : (memberLists[0] as List).marker;
+    return [pin(view, marker, { stacked: [], dimmed: !member })];
   });
+}
+
+function pin(
+  view: ProjectablePlace,
+  marker: ListMarker,
+  opts: { stacked: ListMarker[]; dimmed: boolean },
+): PlacePinFeature {
+  return {
+    placeId: view.place.id,
+    name: view.place.name,
+    lat: view.place.lat,
+    lng: view.place.lng,
+    marker,
+    // The deterministic stacked/badged multi-list variant: the next list's
+    // marker peeks out behind, and 3+ lists add a numeral (spec/src/design.md).
+    ...(opts.stacked[0] ? { stackedMarker: opts.stacked[0] } : {}),
+    listCount: opts.stacked.length + 1,
+    dimmed: opts.dimmed,
+  };
+}
+
+/** A published document's places as pins, wearing the document's marker. */
+export function publishedPins(
+  projection: Extract<CanvasProjection, { kind: "published-doc" }>,
+): PlacePinFeature[] {
+  const marker = projection.marker ?? DEFAULT_PUBLISHED_MARKER;
+  return projection.places.map((place) => ({
+    placeId: place.id,
+    name: place.name,
+    lat: place.lat,
+    lng: place.lng,
+    marker,
+    listCount: 1,
+    dimmed: false,
+  }));
+}
+
+/** An import item's own coordinates plus its labelled candidates (A, B, C…). */
+export function importItemMarks(
+  projection: Extract<CanvasProjection, { kind: "import-item" }>,
+): MarkPinFeature[] {
+  return [
+    ...(projection.coords
+      ? [
+          {
+            key: `${projection.itemId}:imported`,
+            name: projection.title,
+            label: "•",
+            lat: projection.coords.lat,
+            lng: projection.coords.lng,
+          },
+        ]
+      : []),
+    ...projection.candidates.map((candidate, index) => ({
+      key: candidate.key,
+      name: candidate.name,
+      label: String.fromCharCode(65 + index),
+      lat: candidate.lat,
+      lng: candidate.lng,
+    })),
+  ];
 }
 
 export interface BBoxLike {
@@ -130,55 +179,47 @@ export function boundsOf(points: readonly { lat: number; lng: number }[]): BBoxL
 /**
  * One camera move per projection change, keyed so an unchanged projection never
  * re-frames. Returns null when there is nothing to frame — never a default
- * camera, which would yank the user somewhere they did not ask to go.
+ * camera, which would yank the user somewhere they did not ask to go. The
+ * lists overlay never fits: the home keeps the persisted viewport.
  */
 export function fitForProjection(input: {
-  /** The live canvas projection — structurally the union in state/projection.ts. */
-  projection:
-    | LibraryProjection
-    | { kind: "review"; itemId?: string }
-    | {
-        kind: "shared";
-        pins: readonly { key: string; lat: number; lng: number }[];
-        focusKeys?: string[];
-      }
-    | { kind: "settings" };
+  projection: CanvasProjection;
   placePins: readonly PlacePinFeature[];
   markPins: readonly MarkPinFeature[];
-  /** The review item actually loaded, if any — its absence means nothing to frame. */
-  reviewItemId?: string;
 }): { bounds: BBoxLike; key: string } | null {
-  const { projection, placePins, markPins, reviewItemId } = input;
+  const { projection, placePins, markPins } = input;
 
-  if (projection.kind === "post" && projection.focusPlaceIds?.length) {
+  if (projection.kind === "list") {
+    const bounds = boundsOf(placePins.filter((pin) => !pin.dimmed));
+    return bounds ? { bounds, key: `list:${projection.listId}` } : null;
+  }
+  if (projection.kind === "post") {
     // The camera follows the article as it scrolls (instant under reduced
     // motion — MapView owns that preference).
-    const focusSet = new Set(projection.focusPlaceIds);
-    const bounds = boundsOf(placePins.filter((pin) => focusSet.has(pin.placeId)));
-    return bounds
-      ? { bounds, key: `post:${projection.postId}:${projection.focusPlaceIds.join(",")}` }
-      : null;
+    if (projection.focusPlaceIds?.length) {
+      const focus = new Set(projection.focusPlaceIds);
+      const bounds = boundsOf(placePins.filter((pin) => focus.has(pin.placeId)));
+      return bounds
+        ? { bounds, key: `post:${projection.postId}:${projection.focusPlaceIds.join(",")}` }
+        : null;
+    }
+    const bounds = boundsOf(placePins);
+    return bounds ? { bounds, key: `post:${projection.postId}` } : null;
   }
-  if (projection.kind === "list" || projection.kind === "post") {
-    const bounds = boundsOf(placePins.filter((pin) => !pin.dimmed));
-    const id = projection.kind === "list" ? projection.listId : projection.postId;
-    return bounds ? { bounds, key: `${projection.kind}:${id}` } : null;
-  }
-  if (projection.kind === "review" && reviewItemId) {
+  if (projection.kind === "import-item") {
     const bounds = boundsOf(markPins);
-    return bounds ? { bounds, key: `review:${reviewItemId}` } : null;
+    return bounds ? { bounds, key: `import-item:${projection.itemId}` } : null;
   }
-  if (projection.kind === "shared") {
-    const focusKeys = projection.focusKeys?.length ? new Set(projection.focusKeys) : undefined;
-    const framed = focusKeys
-      ? projection.pins.filter((pin) => focusKeys.has(pin.key))
-      : projection.pins;
-    const bounds = boundsOf(framed);
-    const pinKey = projection.pins
-      .map((pin) => `${pin.key}:${pin.lat.toFixed(5)}:${pin.lng.toFixed(5)}`)
-      .join("|");
-    const focusKey = projection.focusKeys?.join(",") ?? "all";
-    return bounds ? { bounds, key: `shared:${pinKey}:focus:${focusKey}` } : null;
+  if (projection.kind === "published-doc") {
+    if (projection.focusPlaceIds?.length) {
+      const focus = new Set(projection.focusPlaceIds);
+      const bounds = boundsOf(placePins.filter((pin) => focus.has(pin.placeId)));
+      return bounds
+        ? { bounds, key: `${projection.docKey}:${projection.focusPlaceIds.join(",")}` }
+        : null;
+    }
+    const bounds = boundsOf(placePins);
+    return bounds ? { bounds, key: projection.docKey } : null;
   }
   return null;
 }

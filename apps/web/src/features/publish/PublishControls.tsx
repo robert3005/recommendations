@@ -1,200 +1,226 @@
 /**
- * Hosted-link controls for a list (spec/src/sharing.md §Mode B): publish,
- * update, unpublish. The owner always sees local-draft vs published state; the
- * public URL shows the latest successfully published revision only.
+ * Publish controls for a list (spec/src/sharing.md): Publish, Publish update,
+ * Unpublish — foreground actions behind a preflight that discloses exactly
+ * what leaves. "Unpublished changes" compares the current projection's hash
+ * with the publication's `lastPublishedHash`.
  */
-import type { SharedGuide } from "@placemarks/schemas";
+import type { Publication } from "@placemarks/domain";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useState } from "react";
-import { useDexieRepo } from "../../data/RepoContext";
+import { useRepo } from "../../data/RepoContext";
 import { nowIso } from "../../lib/time";
-import { projectList } from "../share/project";
-import { publicationForList, publishList, revokePublication } from "./publication";
-import { usePendingPublication } from "./usePendingPublication";
+import { PostPublishControls } from "./PostPublishControls";
+import { PreflightDialog } from "./PreflightDialog";
+import {
+  abandonLostPublication,
+  currentDocumentHash,
+  fresher,
+  type ListPreflight,
+  listPreflight,
+  publicUrl,
+  publishList,
+  unpublish,
+} from "./publication";
 
-export function PublishControls({ listId }: { listId: string }) {
-  const repo = useDexieRepo();
+/** One entry point for both publishable targets — pages pass whichever they hold. */
+export function PublishControls(props: { listId: string } | { target: Publication["target"] }) {
+  if ("target" in props) {
+    return props.target.kind === "post" ? (
+      <PostPublishControls postId={props.target.id} />
+    ) : (
+      <ListPublishControls listId={props.target.id} />
+    );
+  }
+  return <ListPublishControls listId={props.listId} />;
+}
+
+export function ListPublishControls({ listId }: { listId: string }) {
+  const repo = useRepo();
   const [busy, setBusy] = useState(false);
-  const [preflight, setPreflight] = useState<SharedGuide | null>(null);
-  const publication = useLiveQuery(
-    () => publicationForList(repo, listId).catch(() => undefined),
+  const [error, setError] = useState<string>();
+  const [preflight, setPreflight] = useState<ListPreflight>();
+  const [checked, setChecked] = useState<ReadonlySet<string>>(new Set());
+  const [replacingLost, setReplacingLost] = useState(false);
+  // Non-Dexie state changes (the awaited publish itself) re-render through
+  // this override; the live query wins again as soon as it re-emits.
+  const [override, setOverride] = useState<Publication>();
+
+  const liveRow = useLiveQuery(
+    () => repo.publicationFor({ kind: "list", id: listId }).catch(() => undefined),
     [repo, listId],
   );
-  const { pendingChanges, pendingRevoke } = usePendingPublication(
-    repo,
-    { kind: "list", id: listId },
-    publication,
+  const publication = fresher(liveRow, override);
+  const live = publication !== undefined && !publication.revokedAt;
+  const currentHash = useLiveQuery(
+    () => currentDocumentHash(repo, { kind: "list", id: listId }).catch(() => undefined),
+    [repo, listId],
   );
+  const unpublishedChanges =
+    live &&
+    publication.lastPublishedHash !== undefined &&
+    currentHash !== undefined &&
+    currentHash !== publication.lastPublishedHash;
 
-  const act = (action: () => Promise<unknown>) => {
+  const run = (action: () => Promise<void>) => {
     setBusy(true);
-    void action().finally(() => setBusy(false));
+    setError(undefined);
+    void action()
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setBusy(false));
   };
 
-  const publicUrl = publication?.slug ? `${window.location.origin}/l/${publication.slug}` : null;
-  const status = publication?.status;
+  const openPreflight = (replaceLost = false) =>
+    run(async () => {
+      const computed = await listPreflight(repo, listId);
+      if (!computed) return;
+      setReplacingLost(replaceLost);
+      setChecked(new Set());
+      setPreflight(computed);
+    });
+
+  const confirmPublish = () =>
+    run(async () => {
+      if (replacingLost && publication) await abandonLostPublication(repo, publication);
+      const published = await publishList(repo, listId, { alsoPublishPostIds: [...checked] });
+      setOverride(published);
+      setPreflight(undefined);
+      setReplacingLost(false);
+    });
+
+  const runUnpublish = () =>
+    run(async () => {
+      if (!publication) return;
+      await unpublish(repo, publication);
+      const revokedAt = nowIso();
+      setOverride({ ...publication, revokedAt, updatedAt: revokedAt });
+    });
+
+  const pageUrl = live ? publicUrl("list", publication.slug) : undefined;
 
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2 text-xs" data-testid="publish-controls">
-      {!publication || status === "revoked" ? (
+      {!live ? (
         <>
-          {status === "revoked" ? (
+          {publication?.revokedAt ? (
             <span
-              className="rounded-full bg-rule px-2 py-0.5 font-medium text-ink-2"
+              className="rounded-crisp bg-hairline px-2 py-0.5 font-medium text-ink/70"
               data-testid="publication-status"
               data-status="revoked"
             >
-              revoked — the public link is gone
+              Unpublished — the old link is gone for good; publishing again creates a new one
             </span>
           ) : null}
           <button
             type="button"
             disabled={busy}
-            onClick={() =>
-              // Preflight first: nothing leaves the device until the exact
-              // projection is disclosed and confirmed (spec/src/sharing.md).
-              void projectList(repo, listId).then((projection) => {
-                if (projection) setPreflight(projection.guide);
-              })
-            }
-            className="rounded border border-rule px-2.5 py-1 font-medium text-ink-2 disabled:opacity-40"
+            onClick={() => openPreflight()}
+            className="rounded-crisp border border-hairline px-2.5 py-1 font-medium text-ink/70 disabled:opacity-40"
             data-testid="publish-list"
           >
-            Publish hosted link…
+            Publish…
           </button>
-          {preflight ? (
-            <div
-              className="w-full rounded border border-rule bg-land p-2"
-              data-testid="publish-preflight"
-            >
-              <p className="font-medium text-ink">
-                Exactly this becomes public at a hosted link — “{preflight.title}”:
-              </p>
-              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-ink-2">
-                {preflight.blocks.map((block) => (
-                  <li key={block.id}>
-                    {block.type === "section" ? (
-                      <span>
-                        {block.note.title ? `${block.note.title}: ` : ""}
-                        {block.note.body}
-                      </span>
-                    ) : (
-                      <span>
-                        <span className="font-medium">
-                          {block.place.kind === "osm"
-                            ? (block.place.lastVerified.name ?? "Unnamed place")
-                            : block.place.name}
-                        </span>{" "}
-                        ·{" "}
-                        {block.place.kind === "osm"
-                          ? `${block.place.lastVerified.lat.toString()}, ${block.place.lastVerified.lng.toString()}`
-                          : `${block.place.lat.toString()}, ${block.place.lng.toString()}`}
-                        {(block.notes ?? []).map((note, index) => (
-                          <span
-                            key={`${block.id}-note-${index.toString()}`}
-                            className="block border-l-2 border-rule pl-2 text-ink-2"
-                          >
-                            {note.title ? `${note.title}: ` : ""}
-                            {note.body}
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <div className="mt-2 flex gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setPreflight(null);
-                    act(() => publishList(repo, listId, nowIso()));
-                  }}
-                  className="rounded bg-ink px-2.5 py-1 font-medium text-white disabled:opacity-40"
-                  data-testid="confirm-publish-list"
-                >
-                  Publish
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPreflight(null)}
-                  className="rounded px-2.5 py-1 text-ink-2 hover:bg-rule"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : null}
         </>
       ) : (
         <>
           <span
-            className={`rounded-full px-2 py-0.5 font-medium ${
-              status === "published"
-                ? "bg-leaf-wash text-leaf-ink"
-                : status === "failed"
-                  ? "bg-coral-wash text-coral-ink"
-                  : "bg-rule text-ink-2"
+            className={`rounded-crisp px-2 py-0.5 font-medium ${
+              unpublishedChanges ? "bg-hairline text-ink/70" : "bg-paper text-ink/70"
             }`}
             data-testid="publication-status"
-            data-status={status}
+            data-status={unpublishedChanges ? "unpublished-changes" : "published"}
           >
-            {status}
-            {pendingChanges && (status === "published" || status === "queued")
-              ? " · local changes not yet published"
-              : ""}
+            Published{unpublishedChanges ? " · unpublished changes" : ""}
           </span>
-          {publicUrl &&
-          (status === "published" || (status === "queued" && publication.lastPublishedHash)) ? (
+          {pageUrl ? (
             <a
-              href={publicUrl}
+              href={pageUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-water-ink underline"
+              className="text-accent-cobalt-deep underline"
               data-testid="public-link"
             >
-              {publicUrl.replace(/^https?:\/\//, "")}
+              {pageUrl.replace(/^https?:\/\//, "")}
             </a>
           ) : null}
-          {publication.lastError && status === "failed" ? (
-            <span className="text-coral-ink">{publication.lastError}</span>
-          ) : null}
-          <button
-            type="button"
-            // A failed state is ambiguous until the outbox says whether an
-            // unpublish is pending — Retry stays disabled until its meaning
-            // is known, so the window can never default to a publish.
-            disabled={busy || (status === "failed" && pendingRevoke === undefined)}
-            onClick={() =>
-              act(() =>
-                // A pending DELETE job resumes; only a failed publish retries
-                // publishing.
-                pendingRevoke
-                  ? revokePublication(repo, publication.id, nowIso())
-                  : publishList(repo, listId, nowIso()),
-              )
-            }
-            className="rounded border border-rule px-2 py-0.5 font-medium text-ink-2 disabled:opacity-40"
-            data-testid="publish-update"
-          >
-            {status === "failed" ? "Retry" : "Publish update"}
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => act(() => revokePublication(repo, publication.id, nowIso()))}
-            className="rounded px-2 py-0.5 text-coral-ink hover:bg-red-50 disabled:opacity-40"
-            data-testid="unpublish"
-          >
-            Unpublish
-          </button>
-          <span className="w-full text-[11px] text-ink-3">
-            Unpublishing removes the public page, but already downloaded copies and third-party
-            caches cannot be remotely erased or removed.
+          {publication.editorToken ? (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => openPreflight()}
+                className="rounded-crisp border border-hairline px-2 py-0.5 font-medium text-ink/70 disabled:opacity-40"
+                data-testid="publish-update"
+              >
+                Publish update…
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={runUnpublish}
+                className="rounded-crisp px-2 py-0.5 font-medium text-ink/70 hover:bg-hairline disabled:opacity-40"
+                data-testid="unpublish"
+              >
+                Unpublish
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Token loss is permanent (spec/src/sharing.md §The editor token). */}
+              <span className="w-full text-[11px] text-ink/55" data-testid="token-missing">
+                This page's editor token is missing — it cannot be updated or unpublished from this
+                device. Publishing as a new page creates a new link; the old page is removed via the
+                service's takedown contact.
+              </span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => openPreflight(true)}
+                className="rounded-crisp border border-hairline px-2.5 py-1 font-medium text-ink/70 disabled:opacity-40"
+                data-testid="publish-as-new"
+              >
+                Publish as a new page…
+              </button>
+            </>
+          )}
+          <span className="w-full text-[11px] text-ink/55">
+            Unpublishing removes the public page, but copies already downloaded and third-party
+            caches cannot be remotely erased.
           </span>
         </>
       )}
+      {error !== undefined ? (
+        <span
+          className="w-full text-accent-vermilion-deep"
+          role="alert"
+          data-testid="publish-error"
+        >
+          {error}
+        </span>
+      ) : null}
+      {preflight ? (
+        <PreflightDialog
+          heading="Exactly this becomes public:"
+          title={preflight.doc.title}
+          places={preflight.doc.places}
+          offers={preflight.unpublishedPosts.map((post) => ({
+            id: post.id,
+            label: `The post “${post.title}”, so the public list can link to it`,
+          }))}
+          checked={checked}
+          onToggle={(id) =>
+            setChecked((prev) => {
+              const next = new Set(prev);
+              if (next.has(id)) next.delete(id);
+              else next.add(id);
+              return next;
+            })
+          }
+          busy={busy}
+          onConfirm={confirmPublish}
+          onCancel={() => setPreflight(undefined)}
+          confirmTestId="confirm-publish-list"
+        />
+      ) : null}
     </div>
   );
 }

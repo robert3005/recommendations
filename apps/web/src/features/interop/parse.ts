@@ -1,30 +1,21 @@
 /**
- * Import parsers (spec/src/interop.md §Import pipeline): Takeout archives,
- * standalone CSV, KML/KMZ, GPX, and GeoJSON — parsed locally, never fetched.
+ * Import parsers (spec/src/interop.md §Import): Google Takeout archives (Saved
+ * CSVs + Saved Places.json), standalone pieces of one, and My Maps KML/KMZ —
+ * parsed locally, never fetched. GPX and GeoJSON are export-only formats.
  * Every source row becomes a ParsedItem or an explicit `unusable` entry; rows
  * are never silently dropped.
  */
-import { gpx as gpxToGeoJson, kml as kmlToGeoJson } from "@tmcw/togeojson";
+import { googleFeatureId, type ImportBatch } from "@placemarks/domain";
+import { kml as kmlToGeoJson } from "@tmcw/togeojson";
 import { strFromU8, unzipSync } from "fflate";
 import Papa from "papaparse";
-import type { ImportBatchRow } from "../../data/db";
-import { googleFeatureId, googleUrlCoords } from "./googleUrl";
 
 export interface ParsedItem {
   title: string;
   note?: string;
   url?: string;
-  /** Additional carried URLs beyond the primary one (GeoJSON externalUrls). */
-  urls?: string[];
   address?: string;
-  category?: string;
-  website?: string;
-  phone?: string;
-  openingHours?: string;
-  tags?: string[];
   coords?: { lat: number; lng: number };
-  /** A typed OSM anchor carried by the source (our own exports) — resolved, never geocoded. */
-  osmRef?: { type: "node" | "way" | "relation"; id: string };
 }
 
 export interface UnusableRow {
@@ -36,23 +27,28 @@ export interface UnusableRow {
 
 export interface ParsedList {
   name: string;
+  /** Import binding (spec/src/interop.md §Source-list binding): the CSV or
+   *  GeoJSON filename, or the KML folder id — set on the list at creation. */
+  sourceKey?: string;
   items: ParsedItem[];
   /** Source rows that could not become items (no title / no point geometry) — reported, never silent. */
   unusable: UnusableRow[];
-  /** Marker colour carried by the source (KML styles). */
+  /** Marker colour carried by the source (KML styles) — snapped to the nearest accent on assignment. */
   color?: string;
-  /** Marker icon carried by the source (our own KML exports' style ids). */
-  icon?: string;
 }
 
 export interface ParsedImport {
-  source: ImportBatchRow["source"];
+  source: ImportBatch["source"];
   lists: ParsedList[];
 }
 
+/** "Takeout/Saved/Lisbon trip.csv" → "Lisbon trip.csv" (the sourceKey shape). */
+function fileName(path: string): string {
+  return path.split("/").at(-1) ?? path;
+}
+
 function baseName(path: string): string {
-  const last = path.split("/").at(-1) ?? path;
-  return last.replace(/\.[a-z0-9]+$/i, "");
+  return fileName(path).replace(/\.[a-z0-9]+$/i, "");
 }
 
 const coordsValid = (lat: number, lng: number): boolean =>
@@ -63,9 +59,28 @@ const coordsValid = (lat: number, lng: number): boolean =>
   lng >= -180 &&
   lng <= 180;
 
+/**
+ * Literal coordinates embedded in a dropped-pin URL — the ladder's first rung
+ * (spec/src/interop.md §The coordinate ladder). Deliberately narrower than the
+ * domain link parser: a place URL's `@lat,lng` camera is NOT literal source
+ * coordinates and must fall through to the later rungs.
+ */
+export function droppedPinCoords(
+  url: string | undefined,
+): { lat: number; lng: number } | undefined {
+  if (!url) return undefined;
+  const match =
+    url.match(/\/maps\/search\/(-?\d{1,3}(?:\.\d+)?),\s*\+?(-?\d{1,3}(?:\.\d+)?)(?![\d.])/) ??
+    url.match(/[?&](?:q|ll|query)=(-?\d{1,3}(?:\.\d+)?)(?:,|%2C)\s*(-?\d{1,3}(?:\.\d+)?)(?![\d.])/);
+  if (!match?.[1] || !match[2]) return undefined;
+  const lat = Number.parseFloat(match[1]);
+  const lng = Number.parseFloat(match[2]);
+  return coordsValid(lat, lng) ? { lat, lng } : undefined;
+}
+
 // ---------- CSV (Takeout "Saved": Title, Note, URL, Address — no coordinates) ----------
 
-export function parseSavedCsv(text: string, listName: string): ParsedList {
+export function parseSavedCsv(text: string, listName: string, sourceKey?: string): ParsedList {
   const parsed = Papa.parse<Record<string, string>>(text, {
     header: true,
     skipEmptyLines: true,
@@ -73,20 +88,12 @@ export function parseSavedCsv(text: string, listName: string): ParsedList {
   });
   const items: ParsedItem[] = [];
   const unusable: UnusableRow[] = [];
-  // Our exporter defensively quotes formula-leading cells with an apostrophe
-  // (=SUM… → '=SUM…). Round-tripping strips exactly that guard — owned data
-  // must come back byte-identical. Only OUR OWN exports carry the guard: they
-  // are recognizable by the Attribution column, and a genuine apostrophe in a
-  // foreign Takeout CSV is user data that must survive untouched.
-  const ownExport = (parsed.meta.fields ?? []).includes("attribution");
-  const unquoteFormula = (value: string): string =>
-    ownExport && /^'[\s\r\t]*[=+\-@]/.test(value) ? value.slice(1) : value;
   for (const row of parsed.data) {
-    const title = row.title ? unquoteFormula(row.title).trim() : undefined;
+    const title = row.title?.trim() || undefined;
     const url = row.url?.trim() || undefined;
     // The note is the user's own writing — preserved exactly, never trimmed.
-    const note = row.note ? unquoteFormula(row.note) : undefined;
-    const address = row.address ? unquoteFormula(row.address).trim() || undefined : undefined;
+    const note = row.note ? row.note : undefined;
+    const address = row.address?.trim() || undefined;
     if (!title) {
       unusable.push({
         title: row.title ?? "",
@@ -110,117 +117,67 @@ export function parseSavedCsv(text: string, listName: string): ParsedList {
       const extra = (row as { __parsed_extra?: unknown[] }).__parsed_extra?.[0];
       repairedAddress = typeof extra === "string" && extra.trim() !== "" ? extra.trim() : undefined;
     }
-    const coords = googleUrlCoords(repairedUrl);
-    // Our own Attribution column names the OSM source element — a typed
-    // anchor that survives a Google deep link occupying the URL column.
-    const anchor = row.attribution?.match(/\b(node|way|relation)\/(\d+)\b/);
-    const osmRef = anchor
-      ? { type: anchor[1] as "node" | "way" | "relation", id: anchor[2] as string }
-      : undefined;
+    const coords = droppedPinCoords(repairedUrl);
     items.push({
       title,
       ...(note ? { note } : {}),
       ...(repairedUrl ? { url: repairedUrl } : {}),
       ...(repairedAddress ? { address: repairedAddress } : {}),
       ...(coords ? { coords } : {}),
-      ...(osmRef ? { osmRef } : {}),
     });
   }
-  return { name: listName, items, unusable };
+  return { name: listName, ...(sourceKey ? { sourceKey } : {}), items, unusable };
 }
 
-// ---------- GeoJSON (generic, Google's Saved Places.json shape, and our own export) ----------
+// ---------- Saved Places.json (Google's GeoJSON shape — geometry, no list structure) ----------
 
 interface GeoJsonFeature {
   geometry?: { type?: string; coordinates?: number[] };
   properties?: Record<string, unknown>;
 }
 
-interface FeatureOptions {
-  /** Google's Saved Places.json has a known [0, 0] bug; generic GeoJSON does not. */
-  zeroIsBug?: boolean;
-}
-
 const str = (value: unknown): string | undefined =>
   typeof value === "string" && value !== "" ? value : undefined;
 
-function featureToItem(
-  feature: GeoJsonFeature,
-  options: FeatureOptions = {},
-): ParsedItem | undefined {
+function savedPlacesFeatureToItem(feature: GeoJsonFeature): ParsedItem | undefined {
   if (feature.geometry?.type !== "Point") return undefined;
   const [lng, lat] = feature.geometry.coordinates ?? [];
   const props = feature.properties ?? {};
   const location = (props.Location ?? {}) as Record<string, unknown>;
-  const title = str(props.Title) ?? str(props.name) ?? str(location["Business Name"]);
+  const title = str(props.Title) ?? str(location["Business Name"]);
   if (!title) return undefined;
-  const externalUrls = (Array.isArray(props.externalUrls) ? props.externalUrls : []).filter(
-    (value): value is string => typeof value === "string" && value !== "",
-  );
-  const url = str(props["Google Maps URL"]) ?? str(props.url) ?? externalUrls[0];
-  const urls = externalUrls.filter((value) => value !== url);
-  const website = str(props.website);
-  const phone = str(props.phone);
-  const openingHours = str(props.openingHours);
-  const tags = Array.isArray(props.tags)
-    ? props.tags.filter((value): value is string => typeof value === "string" && value !== "")
-    : undefined;
-  const address = str(props.address) ?? str(location.Address);
-  const note = str(props.description) ?? str(props.note) ?? str(props.desc);
-  const category = str(props.category);
-  const refMatch = str(props.osmRef)?.match(/^(node|way|relation)\/(\d+)$/);
-  const osmRef = refMatch?.[1]
-    ? { type: refMatch[1] as "node" | "way" | "relation", id: refMatch[2] as string }
-    : undefined;
+  const url = str(props["Google Maps URL"]);
+  const address = str(location.Address);
+  // Google's known [0, 0] bug: zero-island geometry is treated as absent.
   const hasCoords =
     typeof lat === "number" &&
     typeof lng === "number" &&
     coordsValid(lat, lng) &&
-    !(options.zeroIsBug === true && lat === 0 && lng === 0);
+    !(lat === 0 && lng === 0);
   return {
     title,
-    ...(note ? { note } : {}),
     ...(url ? { url } : {}),
-    ...(urls.length > 0 ? { urls } : {}),
     ...(address ? { address } : {}),
-    ...(category ? { category } : {}),
-    ...(website ? { website } : {}),
-    ...(phone ? { phone } : {}),
-    ...(openingHours ? { openingHours } : {}),
-    ...(tags && tags.length > 0 ? { tags } : {}),
     ...(hasCoords ? { coords: { lat, lng } } : {}),
-    ...(osmRef ? { osmRef } : {}),
   };
 }
 
-function collectFeatures(
-  features: GeoJsonFeature[],
-  listName: string,
-  options: FeatureOptions = {},
-): ParsedList {
+/** The auto-created "Saved places" list, bound to the GeoJSON filename (spec/src/interop.md). */
+export const SAVED_PLACES_LIST_NAME = "Saved places";
+
+export function parseSavedPlacesJson(text: string, sourceKey: string): ParsedList {
+  const body = JSON.parse(text) as { features?: GeoJsonFeature[] };
   const items: ParsedItem[] = [];
   const unusable: UnusableRow[] = [];
-  for (const feature of features) {
-    const item = featureToItem(feature, options);
+  for (const feature of body.features ?? []) {
+    const item = savedPlacesFeatureToItem(feature);
     if (item) items.push(item);
-    else unusable.push({ title: str(feature.properties?.name) ?? "" });
+    else unusable.push({ title: str(feature.properties?.Title) ?? "" });
   }
-  return { name: listName, items, unusable };
+  return { name: SAVED_PLACES_LIST_NAME, sourceKey, items, unusable };
 }
 
-export function parseGeoJson(
-  text: string,
-  listName: string,
-  options: FeatureOptions = {},
-): ParsedList {
-  const body = JSON.parse(text) as { name?: unknown; features?: GeoJsonFeature[] };
-  // The exported FeatureCollection names itself; the (sanitized) download
-  // filename is only a fallback.
-  const name = typeof body.name === "string" && body.name.trim() !== "" ? body.name : listName;
-  return collectFeatures(body.features ?? [], name, options);
-}
-
-// ---------- KML / KMZ / GPX (coordinates included) ----------
+// ---------- KML / KMZ (My Maps custom maps; coordinates included) ----------
 
 function xmlDoc(text: string): Document {
   const doc = new DOMParser().parseFromString(text, "text/xml");
@@ -255,23 +212,6 @@ function styleColor(id: string, doc: Document): string | undefined {
 }
 
 /**
- * The marker icon our own KML exports encode in the style id
- * (`placemarks-<icon>` — spec/src/roadmap.md Phase 6: KML style mapping on
- * import/export); foreign KML styles simply carry no icon.
- */
-function styleIcon(id: string, doc: Document): string | undefined {
-  const own = id.match(/^placemarks-([a-z]+)$/)?.[1];
-  if (own) return own;
-  // A StyleMap resolves through its normal pair like styleColor does.
-  const pairs = [...doc.querySelectorAll(`StyleMap[id="${id}"] Pair`)];
-  const normal =
-    pairs.find((pair) => pair.querySelector("key")?.textContent?.trim() === "normal") ?? pairs[0];
-  const mapped = normal?.querySelector("styleUrl")?.textContent?.trim();
-  if (mapped?.startsWith("#")) return mapped.slice(1).match(/^placemarks-([a-z]+)$/)?.[1];
-  return undefined;
-}
-
-/**
  * The marker colour a KML container's DIRECT placemarks reference via
  * styleUrl — a nested folder's style belongs to that folder's own list.
  */
@@ -281,14 +221,32 @@ function containerColor(container: Element, doc: Document): string | undefined {
   return styleColor(styleUrl.slice(1), doc);
 }
 
-/** The marker icon a KML container's DIRECT placemarks reference, if ours. */
-function containerIcon(container: Element, doc: Document): string | undefined {
-  const styleUrl = container.querySelector(":scope > Placemark > styleUrl")?.textContent?.trim();
-  if (!styleUrl?.startsWith("#")) return undefined;
-  return styleIcon(styleUrl.slice(1), doc);
+function kmlFeaturesToList(features: GeoJsonFeature[], name: string): ParsedList {
+  const items: ParsedItem[] = [];
+  const unusable: UnusableRow[] = [];
+  for (const feature of features) {
+    if (feature.geometry?.type !== "Point") {
+      unusable.push({ title: str(feature.properties?.name) ?? "" });
+      continue;
+    }
+    const [lng, lat] = feature.geometry.coordinates ?? [];
+    const title = str(feature.properties?.name);
+    if (!title || typeof lat !== "number" || typeof lng !== "number" || !coordsValid(lat, lng)) {
+      unusable.push({ title: title ?? "" });
+      continue;
+    }
+    const note = str(feature.properties?.description);
+    items.push({ title, ...(note ? { note } : {}), coords: { lat, lng } });
+  }
+  return { name, items, unusable };
 }
 
-function kmlFragmentToList(container: Element, doc: Document, name: string): ParsedList {
+function kmlFragmentToList(
+  container: Element,
+  doc: Document,
+  name: string,
+  sourceKey: string,
+): ParsedList {
   // togeojson wants a whole document: rewrap the container's DIRECT placemarks
   // with the shared styles (nested folders become their own lists).
   const serializer = new XMLSerializer();
@@ -303,17 +261,17 @@ function kmlFragmentToList(container: Element, doc: Document, name: string): Par
   );
   const collection = kmlToGeoJson(wrapped) as { features?: GeoJsonFeature[] };
   const color = containerColor(container, doc);
-  const icon = containerIcon(container, doc);
   return {
-    ...collectFeatures(collection.features ?? [], name),
+    ...kmlFeaturesToList(collection.features ?? [], name),
+    sourceKey,
     ...(color ? { color } : {}),
-    ...(icon ? { icon } : {}),
   };
 }
 
 /**
  * Folders become separate source lists, keeping their marker styles
- * (spec/src/interop.md). A folderless document stays one list.
+ * (spec/src/interop.md §Google My Maps via KML/KMZ). A folderless document
+ * stays one list.
  */
 export function parseKml(text: string, fallbackName: string): ParsedList[] {
   const doc = xmlDoc(text);
@@ -325,17 +283,11 @@ export function parseKml(text: string, fallbackName: string): ParsedList[] {
   );
   if (folders.length === 0) {
     const collection = kmlToGeoJson(doc) as { features?: GeoJsonFeature[] };
-    const list = collectFeatures(collection.features ?? [], docName || fallbackName);
+    const name = docName || fallbackName;
+    const list = kmlFeaturesToList(collection.features ?? [], name);
     const rootContainer = doc.querySelector("kml > Document") ?? doc.documentElement;
-    const rootStyle = rootContainer ? containerColor(rootContainer, doc) : undefined;
-    const rootIcon = rootContainer ? containerIcon(rootContainer, doc) : undefined;
-    return [
-      {
-        ...list,
-        ...(rootStyle ? { color: rootStyle } : {}),
-        ...(rootIcon ? { icon: rootIcon } : {}),
-      },
-    ];
+    const rootColor = rootContainer ? containerColor(rootContainer, doc) : undefined;
+    return [{ ...list, sourceKey: name, ...(rootColor ? { color: rootColor } : {}) }];
   }
   const lists: ParsedList[] = [];
   const usedNames = new Map<string, number>();
@@ -362,43 +314,33 @@ export function parseKml(text: string, fallbackName: string): ParsedList[] {
     const looseColor = looseStyleUrl?.startsWith("#")
       ? styleColor(looseStyleUrl.slice(1), doc)
       : undefined;
-    const looseIcon = looseStyleUrl?.startsWith("#")
-      ? styleIcon(looseStyleUrl.slice(1), doc)
-      : undefined;
+    const name = uniqueName(docName || fallbackName);
     lists.push({
-      ...collectFeatures(collection.features ?? [], uniqueName(docName || fallbackName)),
+      ...kmlFeaturesToList(collection.features ?? [], name),
+      sourceKey: name,
       ...(looseColor ? { color: looseColor } : {}),
-      ...(looseIcon ? { icon: looseIcon } : {}),
     });
   }
   for (const [index, folder] of folders.entries()) {
-    lists.push(
-      kmlFragmentToList(
-        folder,
-        doc,
-        uniqueName(
-          folder.querySelector(":scope > name")?.textContent?.trim() ||
-            `${docName || fallbackName} ${(index + 1).toString()}`,
-        ),
-      ),
+    const name = uniqueName(
+      folder.querySelector(":scope > name")?.textContent?.trim() ||
+        `${docName || fallbackName} ${(index + 1).toString()}`,
     );
+    // The folder id is the durable binding when the source carries one.
+    const sourceKey = folder.getAttribute("id") ?? name;
+    lists.push(kmlFragmentToList(folder, doc, name, sourceKey));
   }
   return lists;
-}
-
-export function parseGpx(text: string, fallbackName: string): ParsedList {
-  const collection = gpxToGeoJson(xmlDoc(text)) as { features?: GeoJsonFeature[] };
-  return collectFeatures(collection.features ?? [], fallbackName);
 }
 
 // ---------- Takeout archive: CSV lists cross-referenced with Saved Places.json ----------
 
 /**
  * The CSVs have list structure but no geometry; `Saved Places.json` has
- * geometry but no list structure. Rows are joined **by Google feature id**; a
- * title join is only trusted when the row carries no id at all and the title
- * is unique in the geometry file. Geometry rows no CSV references remain their
- * own "Saved places" list — never silently lost (spec/src/interop.md).
+ * geometry but no list structure. Rows are joined **by Google feature id** —
+ * by id only, never by name. Geometry rows no CSV references become the
+ * auto-created "Saved places" list — membership is existence, so a place with
+ * geometry but no list still needs a list to live in (spec/src/interop.md).
  */
 export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
   const entries = unzipSync(bytes);
@@ -418,9 +360,9 @@ export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
 
   for (const [path, fileBytes] of Object.entries(entries)) {
     if (!/saved places\.json$/i.test(path)) continue;
-    savedPlaces = parseGeoJson(strFromU8(fileBytes), "Saved places", { zeroIsBug: true });
+    savedPlaces = parseSavedPlacesJson(strFromU8(fileBytes), fileName(path));
     for (const item of savedPlaces.items) {
-      if (!item.coords) continue;
+      if (!item.coords || !item.url) continue;
       const fid = googleFeatureId(item.url);
       // Joins are by Google id only — names are never identity (same-name
       // places in different cities must not collide).
@@ -431,9 +373,9 @@ export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
   for (const [path, fileBytes] of Object.entries(entries)) {
     // Takeout archives contain CSVs for many products; only Saved lists count.
     if (!/(^|\/)Saved\/[^/]+\.csv$/i.test(path)) continue;
-    const list = parseSavedCsv(strFromU8(fileBytes), baseName(path));
+    const list = parseSavedCsv(strFromU8(fileBytes), baseName(path), fileName(path));
     for (const item of list.items) {
-      const fid = googleFeatureId(item.url);
+      const fid = item.url ? googleFeatureId(item.url) : undefined;
       if (fid) referencedFids.add(fid);
       if (item.coords || !fid) continue;
       const coords = coordsByFid.get(fid);
@@ -445,17 +387,17 @@ export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
   // Geometry rows nothing referenced keep their own list (also the no-CSVs case).
   if (savedPlaces) {
     const leftover = savedPlaces.items.filter((item) => {
-      const fid = googleFeatureId(item.url);
+      const fid = item.url ? googleFeatureId(item.url) : undefined;
       return !(fid && referencedFids.has(fid));
     });
     // Unusable geometry rows are accounted for even when every usable row was
     // consumed by a CSV — nothing is silently dropped.
     if (leftover.length > 0 || savedPlaces.unusable.length > 0) {
-      lists.push({ name: savedPlaces.name, items: leftover, unusable: savedPlaces.unusable });
+      lists.push({ ...savedPlaces, items: leftover });
     }
   }
 
-  return { source: "google-takeout", lists };
+  return { source: "takeout", lists };
 }
 
 // ---------- Entry point ----------
@@ -468,22 +410,23 @@ export async function parseImportFile(file: {
   const text = () => strFromU8(file.bytes);
   if (name.endsWith(".zip")) return parseTakeoutZip(file.bytes);
   if (name.endsWith(".csv")) {
-    return { source: "csv", lists: [parseSavedCsv(text(), baseName(file.name))] };
+    return {
+      source: "takeout",
+      lists: [parseSavedCsv(text(), baseName(file.name), fileName(file.name))],
+    };
   }
   if (name.endsWith(".kml")) {
-    return { source: "kml", lists: parseKml(text(), baseName(file.name)) };
+    return { source: "mymaps-kml", lists: parseKml(text(), baseName(file.name)) };
   }
   if (name.endsWith(".kmz")) {
     const entries = unzipSync(file.bytes);
     const kmlEntry = Object.entries(entries).find(([path]) => path.toLowerCase().endsWith(".kml"));
     if (!kmlEntry) throw new Error("KMZ archive contains no KML document");
-    return { source: "kml", lists: parseKml(strFromU8(kmlEntry[1]), baseName(file.name)) };
+    return { source: "mymaps-kml", lists: parseKml(strFromU8(kmlEntry[1]), baseName(file.name)) };
   }
-  if (name.endsWith(".gpx")) {
-    return { source: "gpx", lists: [parseGpx(text(), baseName(file.name))] };
+  if (name.endsWith(".json")) {
+    return { source: "takeout", lists: [parseSavedPlacesJson(text(), fileName(file.name))] };
   }
-  if (name.endsWith(".json") || name.endsWith(".geojson")) {
-    return { source: "geojson", lists: [parseGeoJson(text(), baseName(file.name))] };
-  }
+  // GPX and GeoJSON are export formats only (spec/src/interop.md §Export).
   throw new Error(`unsupported import file: ${file.name}`);
 }

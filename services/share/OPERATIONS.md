@@ -26,28 +26,29 @@ migration and verify the command reports it applied before deploying the Worker.
 as an upgrade once a deployment exists: `CREATE TABLE IF NOT EXISTS` cannot
 replace an existing table's CHECK constraint.
 
-## Internal data retention
+## Data retention
 
-Replay handles in `idempotency` are retained for **90 days** and then purged by
-the scheduled job. There is no audit log and no per-revision body backup: both
-were written and never read, and keeping them meant auditing every public read
-turned a CDN-cacheable page into a database write. The table is never publicly
-addressable: public reads serve only the current `documents` row, and revoked
-slugs serve nothing.
+There are two tables and no internal logs (spec/src/sharing.md §The share
+service). `documents` rows persist indefinitely: a live row is the published
+page, and a revoked row is a tombstone that reserves its slug forever — deleting
+one would let an old link come to mean someone else's content. A tombstone
+retains no document body, only the slug and token hash.
 
 `rate` rows are transient fixed-window counters and may be purged at any time
-past their window.
+past their `reset_at`.
 
-## Purge SQL (scheduled)
+## Cache lifecycle
 
-The purge is executable, not prose: `wrangler.toml` schedules a daily cron and
-the Worker's `scheduled` handler (`src/worker.ts`, `purgeExpiredInternalData`)
-runs exactly these statements:
+Public GETs carry `ETag` and `Cache-Control: public, s-maxage=60`. On a
+successful update or revoke the Worker best-effort purges that single URL from
+the default edge cache; the 60-second shared lifetime bounds whatever a purge
+misses.
 
-```sql
-DELETE FROM idempotency WHERE createdAt < datetime('now', '-90 days');
-```
+## Abuse and takedown
 
-Public CDN entries for updated or revoked documents are purged by
-`Surrogate-Key` (`<kind>/<slug>`) within the service window described in
-spec/src/sharing.md.
+The operator-mediated takedown contact (spec/src/sharing.md) is the recourse
+for abusive content — and for owners who lost their editor token, since a lost
+token permanently orphans its publication. Takedown is a manual
+`UPDATE documents SET revoked_at = <now>, body = '' WHERE kind = <kind> AND
+slug = <slug> AND revoked_at IS NULL` — the same tombstone an owner's DELETE
+produces.

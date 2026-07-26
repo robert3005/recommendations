@@ -17,7 +17,6 @@ function productionBuild(mapStyleUrl: string): { status: number | null; output: 
     VITE_MAP_STYLE_URL: mapStyleUrl,
     VITE_PHOTON_URL: "https://search.production.example",
     VITE_OSM_API_URL: "https://osm.production.example",
-    VITE_OVERPASS_URL: "https://poi.production.example/api/interpreter",
   };
   delete env.PLACEMARKS_STORYBOOK;
 

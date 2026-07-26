@@ -1,79 +1,68 @@
 /**
  * Thin MapLibre adapter (spec/src/tech-stack.md: no wrapper library — we own
  * this boundary). Renders the basemap with required OSM attribution, library
- * pins wearing their list's (colour, icon) marker (clustered), transient
- * viewport POIs, labelled review-candidate marks, and reports gestures
- * upward. No domain logic lives here.
+ * pins wearing their list's marker shape (clustered), labelled import-review
+ * marks, the selection ring, and reports gestures upward. No domain logic
+ * lives here.
  */
-import type { BBox, OsmElementRef } from "@placemarks/domain";
+import type { BBox, ListMarker, MarkerShape } from "@placemarks/domain";
+import { MARKER_SHAPE_PATHS } from "@placemarks/domain";
 import type { FeatureCollection } from "geojson";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import { OSM_ATTRIBUTION, VIEWPORT_DEBOUNCE_MS } from "../config";
-import { MARKER_ICON_PATHS, MULTI_LIST_PIN_COLOR } from "../lib/markers";
 
 export interface PlacePinFeature {
   placeId: string;
   name: string;
   lat: number;
   lng: number;
-  /** List marker colour (deterministic first list when in several). */
-  color: string;
-  /** List marker icon id (spec/src/map-view.md: pins wear icon + colour). */
-  icon: string;
-  /** An unlinked pin wears its list's marker with a small "not linked" dot. */
-  unlinked: boolean;
-  /** In several lists: the deterministic stacked/badged variant. */
-  multi: boolean;
+  /** The marker the pin wears — a solid accent-coloured shape (spec/src/design.md). */
+  marker: ListMarker;
+  /** On several visible lists: the next list's marker peeks out behind. */
+  stackedMarker?: ListMarker;
+  /** Number of visible lists containing the place; 3+ adds a numeral badge. */
+  listCount: number;
   /** Outside the current projection's focus: rendered dimmed. */
   dimmed: boolean;
 }
 
-export interface PoiPinFeature {
-  refKey: string;
-  ref: OsmElementRef;
-  name: string;
-  category: string;
-  lat: number;
-  lng: number;
-}
-
-/** A labelled transient mark — review-queue candidates (A, B, C…). */
+/** A labelled transient mark — import-review candidates (A, B, C…). */
 export interface MarkPinFeature {
   key: string;
   name: string;
   label: string;
   lat: number;
   lng: number;
-  /** Public manual anchors carry an explicit unlinked map label. */
-  unlinked?: boolean;
 }
 
 export interface MapViewProps {
   styleUrl: string;
-  /** Fully occluded: retain the scene, but suspend rendering and tile work. */
-  idle?: boolean;
+  /**
+   * The mobile sheet fully covers the canvas: retain the scene, apply nothing.
+   * Projections apply lazily on reveal — every projection effect is gated on
+   * this flag and re-runs against current values when it clears.
+   */
+  covered?: boolean;
   /** Changes when shell geometry changes so MapLibre remeasures its canvas. */
   layoutKey?: string;
-  /** Starting camera — the caller decides (last viewport / timezone approximation). */
+  /** Starting camera — the caller decides (persisted viewport / timezone approximation). */
   initialCenter: { lat: number; lng: number };
   initialZoom: number;
-  /** A typed URL camera restored after back/forward without remounting. */
   placePins: PlacePinFeature[];
-  poiPins: PoiPinFeature[];
   markPins?: MarkPinFeature[];
   /** The currently selected place — marked immediately with a ring. */
   selectionPin?: { lat: number; lng: number } | null;
   flyTo?: { lat: number; lng: number; zoom?: number } | null;
   /**
-   * One camera move to frame a projection (route change / reveal after
-   * idling). `key` de-duplicates: the move applies once per distinct key.
+   * One camera move to frame a projection (route change / reveal). `key`
+   * de-duplicates: the move applies once per distinct key.
    */
   fitTo?: { bounds: BBox; key: string } | null;
   onSelectPlace?: (placeId: string) => void;
-  onSelectPoi?: (poi: PoiPinFeature) => void;
   onSelectMark?: (mark: MarkPinFeature) => void;
-  onLongPress?: (pos: { lat: number; lng: number }) => void;
+  /** A plain map click that hit no pin — import review places items with it. */
+  onMapClick?: (pos: { lat: number; lng: number }) => void;
   onViewportChange?: (view: {
     bbox: BBox;
     zoom: number;
@@ -84,72 +73,72 @@ export interface MapViewProps {
 /**
  * Our own GeoJSON sources. Exported because two places must agree about them:
  * the layer setup that creates them, and the basemap-recovery guard that must
- * NOT treat their data events as evidence the basemap came back. Two
- * hand-maintained copies of this list silently drift.
+ * NOT treat their data events as evidence the basemap came back.
  */
-export const OUR_SOURCE_IDS = ["pois", "saved", "marks", "selection"] as const;
+export const OUR_SOURCE_IDS = ["saved", "marks", "selection"] as const;
 
-const LONG_PRESS_MS = 600;
-const LONG_PRESS_TOLERANCE_PX = 8;
+const PIN_LAYER_IDS = ["saved-pins", "saved-clusters", "mark-pins"] as const;
+
+const PAPER = "#FAF7F2";
+const INK = "#221D16";
 
 /** Sprite id for a marker variant — parsed back by the sprite painter. */
 function markerImageId(pin: PlacePinFeature): string {
-  return `pm|${pin.color}|${pin.icon}|${pin.unlinked ? "u" : "-"}|${pin.multi ? "m" : "-"}`;
+  const stacked = pin.stackedMarker
+    ? `${pin.stackedMarker.shape}|${pin.stackedMarker.color}`
+    : "-|-";
+  return `pm|${pin.marker.shape}|${pin.marker.color}|${stacked}|${String(pin.listCount)}`;
 }
 
 /**
- * Paint a marker sprite: the icon glyph in white on the colour disc, a grey
- * "not linked" dot, a dark "+" badge for the multi-list variant — the same
- * look MarkerGlyph renders in the DOM.
+ * Paint a marker sprite: one solid accent-coloured shape from
+ * MARKER_SHAPE_PATHS (shared with list rows, so the two renderings can never
+ * diverge), the stacked second-list shape peeking out behind, and a numeral
+ * badge for 3+ lists — the deterministic multi-list variant.
  */
 function paintMarkerImage(id: string): ImageData | undefined {
-  const [, color = "#888888", icon = "circle", unlinked = "-", multi = "-"] = id.split("|");
-  const size = 44; // 2× for retina; icon-size 0.5 in the layer
+  const [, shape = "circle", color = INK, shape2 = "-", color2 = "-", countRaw = "1"] =
+    id.split("|");
+  const count = Number.parseInt(countRaw, 10) || 1;
   if (typeof document === "undefined" || typeof Path2D === "undefined") return undefined;
+  const size = 64; // 2× for retina; icon-size 0.5 in the layer
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d");
   if (!ctx) return undefined;
-  const center = size / 2;
-  const radius = size * 0.36;
-  ctx.beginPath();
-  ctx.arc(center, center, radius, 0, Math.PI * 2);
-  ctx.fillStyle = multi === "m" ? MULTI_LIST_PIN_COLOR : color;
-  ctx.fill();
-  ctx.lineWidth = size * 0.06;
-  ctx.strokeStyle = "#fafaf9";
-  ctx.stroke();
-  // The glyph path data is authored on a 24×24 viewBox.
-  const path = new Path2D(MARKER_ICON_PATHS[icon] ?? MARKER_ICON_PATHS.circle ?? "");
-  const glyphScale = (radius * 1.24) / 24;
-  ctx.save();
-  ctx.translate(center - 12 * glyphScale, center - 12 * glyphScale);
-  ctx.scale(glyphScale, glyphScale);
-  ctx.fillStyle = "#fafaf9";
-  ctx.fill(path);
-  ctx.restore();
-  if (multi === "m") {
-    // The stacked/badged variant: a small "+" badge at the top right.
+
+  // Path data is authored on a 30×30 viewBox.
+  const drawShape = (shapeName: string, fill: string, scale: number, dx: number, dy: number) => {
+    const d = MARKER_SHAPE_PATHS[shapeName as MarkerShape] ?? (MARKER_SHAPE_PATHS.circle as string);
+    const path = new Path2D(d);
+    const px = (size * scale) / 30;
+    ctx.save();
+    ctx.translate(size / 2 - 15 * px + dx, size / 2 - 15 * px + dy);
+    ctx.scale(px, px);
+    ctx.fillStyle = fill;
+    ctx.fill(path);
+    ctx.lineWidth = 2.5 / px;
+    ctx.strokeStyle = PAPER;
+    ctx.stroke(path);
+    ctx.restore();
+  };
+
+  if (shape2 !== "-" && color2 !== "-") drawShape(shape2, color2, 0.66, 9, -9);
+  drawShape(shape, color, 0.78, 0, shape2 === "-" ? 0 : 3);
+  if (count > 2) {
     ctx.beginPath();
-    ctx.arc(center + radius * 0.85, center - radius * 0.85, size * 0.14, 0, Math.PI * 2);
-    ctx.fillStyle = "#fafaf9";
+    ctx.arc(size * 0.82, size * 0.82, size * 0.16, 0, Math.PI * 2);
+    ctx.fillStyle = INK;
     ctx.fill();
-    ctx.fillStyle = "#1c1917";
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = PAPER;
+    ctx.stroke();
+    ctx.fillStyle = PAPER;
     ctx.font = `bold ${(size * 0.22).toString()}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("+", center + radius * 0.85, center - radius * 0.82);
-  }
-  if (unlinked === "u") {
-    // The small "not linked" dot (supersedes the distinct orange marker).
-    ctx.beginPath();
-    ctx.arc(center + radius * 0.85, center + radius * 0.85, size * 0.11, 0, Math.PI * 2);
-    ctx.fillStyle = "#78716c";
-    ctx.fill();
-    ctx.lineWidth = size * 0.03;
-    ctx.strokeStyle = "#fafaf9";
-    ctx.stroke();
+    ctx.fillText(String(count), size * 0.82, size * 0.83);
   }
   return ctx.getImageData(0, 0, size, size);
 }
@@ -170,74 +159,40 @@ function placesToGeoJSON(pins: PlacePinFeature[]): FeatureCollection {
   };
 }
 
-function poisToGeoJSON(pins: PoiPinFeature[]): FeatureCollection {
-  return {
-    type: "FeatureCollection",
-    features: pins.map((pin) => ({
-      type: "Feature",
-      geometry: { type: "Point", coordinates: [pin.lng, pin.lat] },
-      properties: { refKey: pin.refKey, name: pin.name, category: pin.category },
-    })),
-  };
-}
-
 function marksToGeoJSON(pins: MarkPinFeature[]): FeatureCollection {
   return {
     type: "FeatureCollection",
     features: pins.map((pin) => ({
       type: "Feature",
       geometry: { type: "Point", coordinates: [pin.lng, pin.lat] },
-      properties: {
-        key: pin.key,
-        name: pin.name,
-        label: pin.label,
-        unlinked: pin.unlinked ? 1 : 0,
-      },
+      properties: { key: pin.key, name: pin.name, label: pin.label },
     })),
   };
 }
 
 export function MapView({
   styleUrl,
-  idle = false,
+  covered = false,
   layoutKey,
   initialCenter,
   initialZoom,
   placePins,
-  poiPins,
   markPins = [],
   selectionPin,
   flyTo,
   fitTo,
   onSelectPlace,
-  onSelectPoi,
   onSelectMark,
-  onLongPress,
+  onMapClick,
   onViewportChange,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const idleRef = useRef(idle);
-  idleRef.current = idle;
-  const wasIdleRef = useRef(idle);
-  const providerStyleActivatedRef = useRef(!idle);
-  const appliedStyleUrlRef = useRef<string | undefined>(undefined);
-  const callbacksRef = useRef({
-    onSelectPlace,
-    onSelectPoi,
-    onSelectMark,
-    onLongPress,
-    onViewportChange,
-  });
-  callbacksRef.current = {
-    onSelectPlace,
-    onSelectPoi,
-    onSelectMark,
-    onLongPress,
-    onViewportChange,
-  };
-  const poiPinsRef = useRef(poiPins);
-  poiPinsRef.current = poiPins;
+  const coveredRef = useRef(covered);
+  coveredRef.current = covered;
+  const wasCoveredRef = useRef(covered);
+  const callbacksRef = useRef({ onSelectPlace, onSelectMark, onMapClick, onViewportChange });
+  callbacksRef.current = { onSelectPlace, onSelectMark, onMapClick, onViewportChange };
   const placePinsRef = useRef(placePins);
   placePinsRef.current = placePins;
   const markPinsRef = useRef(markPins);
@@ -245,17 +200,15 @@ export function MapView({
   const selectionPinRef = useRef(selectionPin);
   selectionPinRef.current = selectionPin;
   // A basemap that never establishes itself is a designed state, not a blank
-  // canvas (spec/src/map-view.md §Offline and failure states).
+  // canvas (spec/src/map-view.md §Accessibility and failure).
   const [unavailable, setUnavailable] = useState(false);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the initial camera/style apply once at singleton creation; later style changes reconcile below without recreating the map.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the initial camera/style apply once at singleton creation; later changes reconcile in effects below without recreating the map.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    providerStyleActivatedRef.current = !idleRef.current;
-    appliedStyleUrlRef.current = providerStyleActivatedRef.current ? styleUrl : undefined;
     const map = new maplibregl.Map({
       container: containerRef.current,
-      ...(providerStyleActivatedRef.current ? { style: styleUrl } : {}),
+      style: styleUrl,
       center: [initialCenter.lng, initialCenter.lat],
       zoom: initialZoom,
       attributionControl: false,
@@ -263,13 +216,9 @@ export function MapView({
     mapRef.current = map;
 
     // OSM attribution is a licensing requirement on every map surface.
-    map.addControl(
-      new maplibregl.AttributionControl({
-        compact: false,
-      }),
-    );
+    map.addControl(new maplibregl.AttributionControl({ compact: false }));
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-    // Geolocation is user-triggered; denial/timeout must never block the map (Phase 0).
+    // Geolocation is user-triggered; denial/timeout must never block the map.
     const geolocate = new maplibregl.GeolocateControl({
       positionOptions: { enableHighAccuracy: true, timeout: 8000 },
       trackUserLocation: false,
@@ -280,16 +229,16 @@ export function MapView({
       // Designed state, not a blank screen: the map stays fully usable without location.
     });
 
-    // Marker sprites are painted on demand — every (colour, icon, dot, badge)
-    // variant materializes the first time a pin wears it.
+    // Marker sprites are painted on demand — every (shape, colour, stack,
+    // count) variant materializes the first time a pin wears it.
     map.on("styleimagemissing", (event: { id: string }) => {
       if (!event.id.startsWith("pm|") || map.hasImage(event.id)) return;
       const image = paintMarkerImage(event.id);
       if (image) map.addImage(event.id, image, { pixelRatio: 2 });
     });
 
-    // Observable view state for tests and debugging (canvas pixels are not inspectable
-    // without preserveDrawingBuffer, which costs performance).
+    // Observable view state for tests and debugging (canvas pixels are not
+    // inspectable without preserveDrawingBuffer, which costs performance).
     const container = containerRef.current;
     const updateViewData = () => {
       if (!container) return;
@@ -303,7 +252,7 @@ export function MapView({
     // Any basemap failure — before or after the style loaded — surfaces the
     // designed unavailable state. Clearing requires positive evidence of
     // recovery (successful data traffic), never merely a failed request cycle
-    // going idle.
+    // going idle (spec/src/map-view.md §Accessibility and failure).
     map.on("error", () => {
       setUnavailable(true);
     });
@@ -321,24 +270,9 @@ export function MapView({
     });
 
     map.on("load", () => {
-      // The no-style launch exists only to mount the retained canvas.
-      // Projection sources are installed when the real provider style loads.
-      if (!providerStyleActivatedRef.current) return;
       setUnavailable(false);
-      map.addSource("pois", { type: "geojson", data: poisToGeoJSON(poiPinsRef.current) });
-      map.addLayer({
-        id: "poi-pins",
-        type: "circle",
-        source: "pois",
-        paint: {
-          // Live POIs are visually secondary to saved pins.
-          "circle-color": "#57534e",
-          "circle-radius": 5,
-          "circle-opacity": 0.75,
-          "circle-stroke-width": 1,
-          "circle-stroke-color": "#fafaf9",
-        },
-      });
+      // Library pins wear their list's marker shape; clustered at low zoom so
+      // large lists stay responsive (spec/src/map-view.md §The grammar).
       map.addSource("saved", {
         type: "geojson",
         data: placesToGeoJSON(placePinsRef.current),
@@ -351,10 +285,10 @@ export function MapView({
         source: "saved",
         filter: ["has", "point_count"],
         paint: {
-          "circle-color": "#1c1917",
+          "circle-color": INK,
           "circle-radius": ["step", ["get", "point_count"], 14, 10, 18, 50, 24],
           "circle-stroke-width": 2,
-          "circle-stroke-color": "#fafaf9",
+          "circle-stroke-color": PAPER,
         },
       });
       map.addLayer({
@@ -366,11 +300,8 @@ export function MapView({
           "text-field": ["get", "point_count_abbreviated"],
           "text-size": 12,
         },
-        paint: { "text-color": "#fafaf9" },
+        paint: { "text-color": PAPER },
       });
-      // Library pins wear their list's unique marker (icon + colour) —
-      // spec/src/map-view.md §Core interactions; dimmed outside the current
-      // projection's focus.
       map.addLayer({
         id: "saved-pins",
         type: "symbol",
@@ -386,17 +317,17 @@ export function MapView({
         },
       });
 
-      // Labelled transient marks (review-queue candidates: A, B, C…).
+      // Labelled transient marks (import-review candidates: A, B, C…).
       map.addSource("marks", { type: "geojson", data: marksToGeoJSON(markPinsRef.current) });
       map.addLayer({
         id: "mark-pins",
         type: "circle",
         source: "marks",
         paint: {
-          "circle-color": ["case", ["==", ["get", "unlinked"], 1], "#57534e", "#9a3412"],
+          "circle-color": "#E43D1F",
           "circle-radius": 10,
           "circle-stroke-width": 2,
-          "circle-stroke-color": "#fafaf9",
+          "circle-stroke-color": PAPER,
         },
       });
       map.addLayer({
@@ -404,24 +335,7 @@ export function MapView({
         type: "symbol",
         source: "marks",
         layout: { "text-field": ["get", "label"], "text-size": 11 },
-        paint: { "text-color": "#fafaf9" },
-      });
-      map.addLayer({
-        id: "mark-unlinked-labels",
-        type: "symbol",
-        source: "marks",
-        filter: ["==", ["get", "unlinked"], 1],
-        layout: {
-          "text-field": "not linked",
-          "text-size": 9,
-          "text-offset": [0, 1.8],
-          "text-allow-overlap": true,
-        },
-        paint: {
-          "text-color": "#44403c",
-          "text-halo-color": "#fafaf9",
-          "text-halo-width": 1.5,
-        },
+        paint: { "text-color": PAPER },
       });
 
       map.addSource("selection", {
@@ -447,11 +361,11 @@ export function MapView({
         type: "circle",
         source: "selection",
         paint: {
-          "circle-radius": 11,
+          "circle-radius": 13,
           "circle-color": "#000000",
           "circle-opacity": 0,
           "circle-stroke-width": 3,
-          "circle-stroke-color": "#1c1917",
+          "circle-stroke-color": INK,
         },
       });
       if (container) {
@@ -473,17 +387,12 @@ export function MapView({
         const zoom = await source.getClusterExpansionZoom(clusterId);
         map.easeTo({ center: feature.geometry.coordinates as [number, number], zoom });
       });
-      map.on("click", "poi-pins", (e) => {
-        const refKeyProp = e.features?.[0]?.properties?.refKey as string | undefined;
-        const pin = poiPinsRef.current.find((p) => p.refKey === refKeyProp);
-        if (pin) callbacksRef.current.onSelectPoi?.(pin);
-      });
       map.on("click", "mark-pins", (e) => {
         const keyProp = e.features?.[0]?.properties?.key as string | undefined;
         const mark = markPinsRef.current.find((m) => m.key === keyProp);
         if (mark) callbacksRef.current.onSelectMark?.(mark);
       });
-      for (const layer of ["saved-pins", "saved-clusters", "poi-pins", "mark-pins"]) {
+      for (const layer of PIN_LAYER_IDS) {
         map.on("mouseenter", layer, () => {
           map.getCanvas().style.cursor = "pointer";
         });
@@ -493,43 +402,25 @@ export function MapView({
       }
     });
 
-    // Long press (touch) and right-click both open the nearby-candidate flow.
-    let pressTimer: ReturnType<typeof setTimeout> | undefined;
-    let pressStart: { x: number; y: number } | null = null;
-    const clearPress = () => {
-      if (pressTimer) clearTimeout(pressTimer);
-      pressTimer = undefined;
-      pressStart = null;
-    };
-    map.on("touchstart", (e) => {
-      if (e.points.length !== 1) return clearPress();
-      const point = e.points[0];
-      if (!point) return;
-      pressStart = { x: point.x, y: point.y };
-      const lngLat = e.lngLat;
-      pressTimer = setTimeout(() => {
-        callbacksRef.current.onLongPress?.({ lat: lngLat.lat, lng: lngLat.lng });
-        clearPress();
-      }, LONG_PRESS_MS);
-    });
-    map.on("touchmove", (e) => {
-      const point = e.points[0];
-      if (!pressStart || !point) return;
-      const moved = Math.hypot(point.x - pressStart.x, point.y - pressStart.y);
-      if (moved > LONG_PRESS_TOLERANCE_PX) clearPress();
-    });
-    map.on("touchend", clearPress);
-    map.on("contextmenu", (e) => {
-      callbacksRef.current.onLongPress?.({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+    // A plain click that hit no pin — import review's manual placement
+    // (spec/src/map-view.md §Import review). Pin layers see the click first;
+    // query them so a candidate tap is never also a placement.
+    map.on("click", (e) => {
+      if (!callbacksRef.current.onMapClick) return;
+      if (typeof map.queryRenderedFeatures === "function" && map.getLayer?.("saved-pins")) {
+        const hits = map.queryRenderedFeatures(e.point, { layers: [...PIN_LAYER_IDS] });
+        if (hits.length > 0) return;
+      }
+      callbacksRef.current.onMapClick({ lat: e.lngLat.lat, lng: e.lngLat.lng });
     });
 
-    // Debounced viewport reporting for bounded POI discovery.
+    // Debounced viewport reporting — the persisted camera, not discovery.
     let moveTimer: ReturnType<typeof setTimeout> | undefined;
     map.on("moveend", () => {
-      if (idleRef.current) return;
+      if (coveredRef.current) return;
       if (moveTimer) clearTimeout(moveTimer);
       moveTimer = setTimeout(() => {
-        if (idleRef.current) return;
+        if (coveredRef.current) return;
         const bounds = map.getBounds();
         const center = map.getCenter();
         callbacksRef.current.onViewportChange?.({
@@ -546,60 +437,45 @@ export function MapView({
     });
 
     return () => {
-      clearPress();
       if (moveTimer) clearTimeout(moveTimer);
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
+  // The reveal guard: while covered nothing applies; on reveal, remeasure and
+  // let the gated projection effects below re-run against current values.
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) {
-      wasIdleRef.current = idle;
+    if (containerRef.current) containerRef.current.dataset.covered = covered ? "1" : "0";
+    if (covered) {
+      wasCoveredRef.current = true;
       return;
     }
-    if (idle) {
-      // `stop()` ends animations and pending easing. Everything else that used
-      // to be forced here — aborting the frame request, clearing the render
-      // task queue, pausing every tile manager, aborting in-flight tiles — was
-      // reaching into MapLibre's private fields to duplicate what the browser
-      // already does for a hidden element, against a caret-ranged dependency.
-      // What actually keeps a hidden canvas off the network is the `if (idle)
-      // return` guards on the projection effects below, plus never activating
-      // the provider style until first reveal.
-      map.stop();
-      if (containerRef.current) containerRef.current.dataset.idle = "1";
-      wasIdleRef.current = true;
-      return;
-    }
-    if (!providerStyleActivatedRef.current || appliedStyleUrlRef.current !== styleUrl) {
-      providerStyleActivatedRef.current = true;
-      appliedStyleUrlRef.current = styleUrl;
-      map.setStyle(styleUrl);
-    }
-    if (!wasIdleRef.current) {
-      if (containerRef.current) containerRef.current.dataset.idle = "0";
-      return;
-    }
-    // Revealed: the box changed while hidden, so remeasure and paint once.
-    map.resize();
-    map.triggerRepaint();
-    if (containerRef.current) containerRef.current.dataset.idle = "0";
-    wasIdleRef.current = false;
-  }, [idle, styleUrl]);
+    if (!wasCoveredRef.current) return;
+    wasCoveredRef.current = false;
+    mapRef.current?.resize();
+    mapRef.current?.triggerRepaint();
+  }, [covered]);
+
+  // A style URL change reconciles in place — the singleton never remounts.
+  const appliedStyleUrlRef = useRef(styleUrl);
+  useEffect(() => {
+    if (appliedStyleUrlRef.current === styleUrl) return;
+    appliedStyleUrlRef.current = styleUrl;
+    mapRef.current?.setStyle(styleUrl);
+  }, [styleUrl]);
 
   // Desktop split/collapsed changes the canvas's actual CSS box. MapLibre
   // tracks window resizes, not arbitrary sibling geometry, so remeasure it
   // explicitly without recreating the persistent map instance.
   useEffect(() => {
-    if (idle) return;
+    if (covered) return;
     if (containerRef.current && layoutKey) containerRef.current.dataset.layout = layoutKey;
     mapRef.current?.resize();
-  }, [idle, layoutKey]);
+  }, [covered, layoutKey]);
 
   useEffect(() => {
-    if (idle) return;
+    if (covered) return;
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
@@ -612,39 +488,24 @@ export function MapView({
     };
     if (map.getSource("saved")) apply();
     else map.once("load", apply);
-  }, [idle, placePins]);
+  }, [covered, placePins]);
 
   useEffect(() => {
-    if (idle) return;
-    const map = mapRef.current;
-    if (!map) return;
-    const apply = () => {
-      (map.getSource("pois") as maplibregl.GeoJSONSource | undefined)?.setData(
-        poisToGeoJSON(poiPins),
-      );
-    };
-    if (map.getSource("pois")) apply();
-    else map.once("load", apply);
-  }, [idle, poiPins]);
-
-  useEffect(() => {
-    if (idle) return;
+    if (covered) return;
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
       (map.getSource("marks") as maplibregl.GeoJSONSource | undefined)?.setData(
         marksToGeoJSON(markPins),
       );
-      if (containerRef.current) {
-        containerRef.current.dataset.marks = String(markPins.length);
-      }
+      if (containerRef.current) containerRef.current.dataset.marks = String(markPins.length);
     };
     if (map.getSource("marks")) apply();
     else map.once("load", apply);
-  }, [idle, markPins]);
+  }, [covered, markPins]);
 
   useEffect(() => {
-    if (idle) return;
+    if (covered) return;
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
@@ -667,16 +528,15 @@ export function MapView({
     };
     if (map.getSource("selection")) apply();
     else map.once("load", apply);
-  }, [idle, selectionPin]);
+  }, [covered, selectionPin]);
 
-  // One camera move per projection change/reveal. If a direct fly request
-  // and a route projection were both deferred while hidden, the newer direct
+  // One camera move per projection change/reveal. If a direct fly request and
+  // a route projection were both deferred while covered, the newer direct
   // selection wins and consumes the fit key: reveal still performs one move.
   const appliedFlyTo = useRef<MapViewProps["flyTo"] | null>(null);
-  const _appliedRouteCameraKey = useRef<string | null>(null);
   const appliedFitKey = useRef<string | null>(null);
   useEffect(() => {
-    if (idle) return;
+    if (covered) return;
     const map = mapRef.current;
     if (!map) return;
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
@@ -702,7 +562,7 @@ export function MapView({
       { padding: 72, maxZoom: 16, duration: reduceMotion ? 0 : 700 },
     );
     if (containerRef.current) containerRef.current.dataset.fitKey = fitTo.key;
-  }, [fitTo, flyTo, idle]);
+  }, [fitTo, flyTo, covered]);
 
   return (
     <div className="relative h-full w-full">
@@ -712,17 +572,17 @@ export function MapView({
         target="_blank"
         rel="noopener noreferrer"
         data-testid="map-attribution"
-        className="absolute bottom-0 left-0 z-10 rounded-tr bg-paper/90 px-1 py-0.5 text-[10px] text-ink-2 hover:underline"
+        className="absolute bottom-0 left-0 z-10 rounded-tr-crisp bg-paper/90 px-1 py-0.5 text-[10px] text-ink hover:underline"
       >
         {OSM_ATTRIBUTION}
       </a>
-      {/* A banner, not a full-bleed takeover: a tile or glyph failure can happen
-          over a map that is otherwise drawn and usable, and covering it hides
-          information the user already has. */}
+      {/* A top banner, not a full-bleed takeover: a tile or glyph failure can
+          happen over a map that is otherwise drawn and usable, and covering it
+          hides information the user already has. */}
       {unavailable ? (
         <div
           role="status"
-          className="absolute inset-x-0 top-0 z-10 bg-ink/90 px-3 py-2 text-center text-xs text-white"
+          className="absolute inset-x-0 top-0 z-10 bg-ink/90 px-3 py-2 text-center text-xs text-paper"
         >
           <span className="font-semibold">Map unavailable.</span> Part of the map could not load.
           Search and your lists keep working — it returns when the connection does.

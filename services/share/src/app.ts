@@ -1,362 +1,175 @@
 /**
- * The share service (spec/src/sharing.md §Share service): public reads, Bearer
- * mutations. The client generates the editor token; only its SHA-256 hash is
- * stored; comparison is constant-time; slugs claim atomically; If-Match guards
- * every mutation; idempotency keys make retries safe; revoked slugs tombstone
- * and are never reassigned. Mutation responses are no-store; public GETs carry
- * bounded cache lifetimes and noindex.
+ * The share service (spec/src/sharing.md §The share service): public reads,
+ * Bearer mutations, no accounts. PUT is create-or-update — the first PUT claims
+ * the slug and binds the token hash (201); the same token replaces the document
+ * (200); a foreign token is 403; a tombstoned slug is 410 and is never
+ * reassigned. The client generates the editor token; only its SHA-256 hash is
+ * stored; comparison is constant-time. GETs carry an ETag (hash of the body)
+ * and a short shared-cache lifetime; DELETE tombstones and repeats as 204.
  */
-import {
-  createGuideRequestSchema,
-  LIMITS,
-  putGuideRequestSchema,
-  RESERVED_SLUGS,
-  sharedGuideSchema,
-} from "@placemarks/schemas";
+import { parsePublishedDocument } from "@placemarks/schemas";
 import { bearerToken, sha256Hex, timingSafeEqualHex, utf8Bytes } from "@placemarks/service-kit";
 import { Hono } from "hono";
-import type { ShareStorage } from "./storage";
+import type { DocumentKind, ShareStorage } from "./storage";
 
 export interface ServiceOptions {
   storage: ShareStorage;
   now?: () => string;
+  /** Best-effort single-URL shared-cache purge after an update or revoke. */
+  purge?: (url: string) => Promise<unknown>;
 }
 
-/** Strict ETag revision: exactly "N" — a malformed value never partially parses. */
-function parseIfMatch(value: string | undefined): number | undefined {
-  const match = value?.match(/^"(\d+)"$/);
-  return match?.[1] ? Number.parseInt(match[1], 10) : undefined;
-}
+/** Request/abuse limits. Document-level limits live in @placemarks/schemas. */
+export const LIMITS = {
+  /** Whole request body cap in bytes. */
+  requestBytes: 1_048_576,
+  /** Mutations per (token, source) per minute. */
+  mutationsPerMinute: 30,
+} as const;
+
+/** Public slugs: normalised (domain slugFromTitle), never secrets. */
+const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/;
+
+export const RESERVED_SLUGS = new Set([
+  "api",
+  "admin",
+  "app",
+  "assets",
+  "help",
+  "l",
+  "list",
+  "lists",
+  "login",
+  "p",
+  "post",
+  "posts",
+  "review",
+  "s",
+  "settings",
+  "share",
+  "static",
+  "www",
+]);
 
 const MUTATION_HEADERS = { "Cache-Control": "no-store" } as const;
 
 const PUBLIC_HEADERS = {
-  "Cache-Control": "public, max-age=60, stale-while-revalidate=300",
+  "Cache-Control": "public, s-maxage=60",
   "X-Robots-Tag": "noindex",
 } as const;
 
-export function createShareApp({ storage, now = () => new Date().toISOString() }: ServiceOptions) {
+const JSON_TYPE = { "Content-Type": "application/json; charset=utf-8" } as const;
+
+export function createShareApp({
+  storage,
+  now = () => new Date().toISOString(),
+  purge,
+}: ServiceOptions) {
   const app = new Hono();
 
-  // The web client is hosted separately — every /s/* response (not just the
-  // preflight) must carry the CORS grant or the browser discards it.
+  // The web client may be hosted separately — every /s response (not just the
+  // preflight) must carry the CORS grant or the browser discards it. No
+  // cookies are involved, so the wildcard grant is safe for the Bearer header.
   app.use("/s/*", async (c, next) => {
     await next();
-    const origin = c.req.header("origin");
-    if (origin) {
-      c.res.headers.set("Access-Control-Allow-Origin", origin);
-      c.res.headers.append("Vary", "Origin");
-    }
+    c.res.headers.set("Access-Control-Allow-Origin", "*");
   });
 
-  // The web client is hosted separately — answer CORS preflight for the
-  // mutation headers the protocol requires. Reads are public anyway.
   app.options("/s/*", (c) =>
     c.body(null, 204, {
-      "Access-Control-Allow-Origin": c.req.header("origin") ?? "*",
-      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "authorization, content-type, idempotency-key, if-match",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "authorization, content-type, if-none-match",
       "Access-Control-Max-Age": "86400",
     }),
   );
 
-  const schemas = {
-    list: { create: createGuideRequestSchema, put: putGuideRequestSchema, doc: sharedGuideSchema },
-    // Posts share the list document schema — one block document, two
-    // projections (spec/src/sharing.md); /s/posts is the post projection's
-    // home while pre-pivot guide documents keep serving from /s/lists.
-    post: { create: createGuideRequestSchema, put: putGuideRequestSchema, doc: sharedGuideSchema },
-  } as const;
-
   for (const collection of ["lists", "posts"] as const) {
-    const kind = collection === "lists" ? ("list" as const) : ("post" as const);
+    const kind: DocumentKind = collection === "lists" ? "list" : "post";
 
     app.get(`/s/${collection}/:slug`, async (c) => {
-      const slug = c.req.param("slug");
-      const reads = await storage.hit(
-        `read:${c.req.header("cf-connecting-ip") ?? "local"}`,
-        60_000,
-        Date.now(),
-      );
-      if (reads > LIMITS.readsPerMinute) return c.text("rate limited", 429, MUTATION_HEADERS);
-      const doc = await storage.get(kind, slug);
-      if (!doc || doc.revoked) {
-        // A tombstone and a never-existed slug read identically (no probing).
-        return c.text("not found", 404, PUBLIC_HEADERS);
-      }
-      const etag = `"${doc.revision}"`;
-      // A stable purgeable surrogate key per publication: an update or revoke
-      // can purge every cached representation deterministically.
-      const surrogate = { "Surrogate-Key": `${kind}/${slug}` } as const;
+      const doc = await storage.get(kind, c.req.param("slug"));
+      if (!doc) return c.text("not found", 404, PUBLIC_HEADERS);
+      if (doc.revokedAt !== null) return c.text("gone", 410, PUBLIC_HEADERS);
+      const etag = `"${await sha256Hex(doc.body)}"`;
       if (c.req.header("if-none-match") === etag) {
-        return c.body(null, 304, { ...PUBLIC_HEADERS, ...surrogate, ETag: etag });
+        return c.body(null, 304, { ...PUBLIC_HEADERS, ETag: etag });
       }
-      return c.body(doc.body, 200, {
-        ...PUBLIC_HEADERS,
-        ...surrogate,
-        ETag: etag,
-        "Content-Type": "application/json; charset=utf-8",
-      });
+      return c.body(doc.body, 200, { ...PUBLIC_HEADERS, ...JSON_TYPE, ETag: etag });
     });
-
-    app.post(`/s/${collection}`, async (c) => {
-      const token = bearerToken(c.req.header("authorization"));
-      if (!token) return c.text("missing editor token", 401, MUTATION_HEADERS);
-      const tokenHash = await sha256Hex(token);
-      const idKey = c.req.header("idempotency-key");
-      if (!idKey) return c.text("missing Idempotency-Key", 400, MUTATION_HEADERS);
-      // Abuse quotas apply before any attacker-controlled parsing — malformed
-      // attempts are still attempts. Creation quotas bind per token AND per
-      // source: rotating tokens is not an escape hatch (spec/src/sharing.md).
-      const mutations = await storage.hit(`mutate:${tokenHash}`, 60_000, Date.now());
-      const sourceCreates = await storage.hit(
-        `create-ip:${c.req.header("cf-connecting-ip") ?? "local"}`,
-        60_000,
-        Date.now(),
-      );
-      if (mutations > LIMITS.mutationsPerMinute || sourceCreates > LIMITS.mutationsPerMinute) {
-        return c.text("rate limited", 429, MUTATION_HEADERS);
-      }
-
-      const raw = await c.req.text();
-      if (utf8Bytes(raw) > LIMITS.requestBytes)
-        return c.text("payload too large", 413, MUTATION_HEADERS);
-      let parsed: { desiredSlug: string; document: unknown };
-      try {
-        const body = schemas[kind].create.safeParse(JSON.parse(raw));
-        if (!body.success) return c.text("invalid document", 400, MUTATION_HEADERS);
-        parsed = body.data;
-      } catch {
-        return c.text("invalid JSON", 400, MUTATION_HEADERS);
-      }
-      const slug = parsed.desiredSlug;
-      // Idempotency keys are scoped to (operation, slug, token) — a key can
-      // neither complete a different operation, nor replay one slug's result
-      // as another's, nor leak another owner's result. A pending reservation
-      // (status 0) never replays, and even a stored success replays only when
-      // the document it describes actually exists under our token — a record
-      // stranded by an interrupted claim re-executes instead.
-      const scopedKey = `${kind}:post:${slug}:${tokenHash}:${idKey}`;
-      const ownsDocument = async () => {
-        const doc = await storage.get(kind, slug);
-        return Boolean(doc && !doc.revoked && timingSafeEqualHex(doc.tokenHash, tokenHash));
-      };
-      const replay = await storage.getIdempotent(scopedKey);
-      if (replay && replay.status >= 200 && (await ownsDocument())) {
-        return c.body(replay.response, replay.status as 200, {
-          ...MUTATION_HEADERS,
-          "Content-Type": "application/json; charset=utf-8",
-        });
-      }
-      if (RESERVED_SLUGS.has(slug)) return c.text("reserved slug", 409, MUTATION_HEADERS);
-      const documentBody = JSON.stringify(parsed.document);
-      if (utf8Bytes(documentBody) > LIMITS.documentBytes) {
-        return c.text("document too large", 413, MUTATION_HEADERS);
-      }
-
-      const at = now();
-      const collision = async () => {
-        // A concurrent identical retry replays the winner's response — but
-        // only when the winning claim is really ours; a premature record from
-        // a claim another token won never acknowledges ownership.
-        const winner = await storage.getIdempotent(scopedKey);
-        if (winner && winner.status >= 200 && (await ownsDocument())) {
-          return c.body(winner.response, winner.status as 200, {
-            ...MUTATION_HEADERS,
-            "Content-Type": "application/json; charset=utf-8",
-          });
-        }
-        return c.text("slug already taken", 409, MUTATION_HEADERS);
-      };
-      if (await storage.get(kind, slug)) return collision();
-      // The claim is one atomic INSERT; the replay handle is written after it.
-      // An interrupted create leaves no handle and simply re-executes: the
-      // retry recovers through slug ownership and stored-body comparison.
-      const response = JSON.stringify({ slug, revision: 1 });
-      const claimed = await storage.create({
-        slug,
-        kind,
-        revision: 1,
-        tokenHash,
-        body: documentBody,
-        createdAt: at,
-        updatedAt: at,
-        revoked: false,
-      });
-      if (!claimed) return collision();
-      await storage.putIdempotent({ key: scopedKey, response, status: 201 });
-      return c.body(response, 201, {
-        ...MUTATION_HEADERS,
-        "Content-Type": "application/json; charset=utf-8",
-      });
-    });
-
-    const authorized = async (c: {
-      req: { header: (name: string) => string | undefined; param: (n: "slug") => string };
-    }): Promise<
-      | { ok: true; slug: string; token: string; expected: number }
-      | { ok: false; status: 401 | 403 | 404 | 412 | 428 }
-    > => {
-      const token = bearerToken(c.req.header("authorization"));
-      if (!token) return { ok: false, status: 401 };
-      const slug = c.req.param("slug");
-      const doc = await storage.get(kind, slug);
-      if (!doc || doc.revoked) return { ok: false, status: 404 };
-      if (!timingSafeEqualHex(doc.tokenHash, await sha256Hex(token))) {
-        return { ok: false, status: 403 };
-      }
-      const match = c.req.header("if-match");
-      if (!match) return { ok: false, status: 428 }; // Precondition Required
-      const expected = parseIfMatch(match);
-      if (expected === undefined || expected !== doc.revision) {
-        return { ok: false, status: 412 };
-      }
-      return { ok: true, slug, token, expected };
-    };
 
     app.put(`/s/${collection}/:slug`, async (c) => {
-      const idKey = c.req.header("idempotency-key");
-      if (!idKey) return c.text("missing Idempotency-Key", 400, MUTATION_HEADERS);
-      // Authorization comes first — an idempotent result never leaks to an
-      // unauthenticated or wrong-token retry.
-      const auth = await authorized(c);
-      if (!auth.ok && auth.status !== 412) {
-        return c.text("mutation refused", auth.status, MUTATION_HEADERS);
-      }
-      const tokenHash = await sha256Hex(bearerToken(c.req.header("authorization")) ?? "");
-      // Scoped to (operation, slug, token): a key can neither complete a
-      // different operation nor replay one slug's result as another's.
-      const scopedKey = `${kind}:put:${c.req.param("slug")}:${tokenHash}:${idKey}`;
-      const replay = await storage.getIdempotent(scopedKey);
-      if (replay && replay.status >= 200) {
-        return c.body(replay.response, replay.status as 200, {
-          ...MUTATION_HEADERS,
-          "Content-Type": "application/json; charset=utf-8",
-        });
-      }
-      // Malformed authorized updates are still mutation attempts — the abuse
-      // quota applies before any attacker-controlled parsing.
-      const mutations = await storage.hit(`mutate:${tokenHash}`, 60_000, Date.now());
-      if (mutations > LIMITS.mutationsPerMinute) {
-        return c.text("rate limited", 429, MUTATION_HEADERS);
-      }
+      const token = bearerToken(c.req.header("authorization"));
+      if (!token) return c.text("missing editor token", 401, MUTATION_HEADERS);
+      const slug = c.req.param("slug");
+      if (!SLUG_PATTERN.test(slug)) return c.text("invalid slug", 400, MUTATION_HEADERS);
+      if (RESERVED_SLUGS.has(slug)) return c.text("reserved slug", 400, MUTATION_HEADERS);
+      const tokenHash = await sha256Hex(token);
+      // The abuse quota applies before any attacker-controlled parsing —
+      // malformed attempts are still attempts. One bucket per (token, source).
+      const source = c.req.header("cf-connecting-ip") ?? "local";
+      const hits = await storage.hit(`m:${tokenHash}:${source}`, 60_000, Date.now());
+      if (hits > LIMITS.mutationsPerMinute) return c.text("rate limited", 429, MUTATION_HEADERS);
+
       const raw = await c.req.text();
-      if (utf8Bytes(raw) > LIMITS.requestBytes)
+      if (utf8Bytes(raw) > LIMITS.requestBytes) {
         return c.text("payload too large", 413, MUTATION_HEADERS);
-      let document: unknown;
+      }
+      let json: unknown;
       try {
-        const body = schemas[kind].put.safeParse(JSON.parse(raw));
-        if (!body.success) return c.text("invalid document", 400, MUTATION_HEADERS);
-        document = body.data.document;
+        json = JSON.parse(raw);
       } catch {
         return c.text("invalid JSON", 400, MUTATION_HEADERS);
       }
-      const serialized = JSON.stringify(document);
-      if (utf8Bytes(serialized) > LIMITS.documentBytes) {
-        return c.text("document too large", 413, MUTATION_HEADERS);
+      try {
+        parsePublishedDocument(kind, json);
+      } catch {
+        return c.text("invalid document", 400, MUTATION_HEADERS);
       }
-      if (!auth.ok) {
-        // A stale If-Match whose stored document is EXACTLY what this request
-        // asks for means our earlier attempt committed and its replay handle
-        // was lost. The content proves it: our token owns the document, the
-        // revision is precisely the one this write would have produced, and the
-        // body is byte-identical. Recover the result rather than failing the
-        // retry — this is what lets the handle be written after the mutation
-        // instead of inside an atomic batch with it.
-        if (auth.status === 412) {
-          const expected = parseIfMatch(c.req.header("if-match"));
-          const doc = await storage.get(kind, c.req.param("slug"));
-          if (
-            expected !== undefined &&
-            doc &&
-            !doc.revoked &&
-            timingSafeEqualHex(doc.tokenHash, tokenHash) &&
-            doc.revision === expected + 1 &&
-            doc.body === serialized
-          ) {
-            const recovered = JSON.stringify({ slug: doc.slug, revision: doc.revision });
-            await storage.putIdempotent({ key: scopedKey, response: recovered, status: 200 });
-            return c.body(recovered, 200, {
-              ...MUTATION_HEADERS,
-              "Content-Type": "application/json; charset=utf-8",
-            });
-          }
-        }
-        return c.text("mutation refused", auth.status, MUTATION_HEADERS);
-      }
+      const body = JSON.stringify(json);
+
       const at = now();
-      // One conditional UPDATE; the replay handle follows it. A lost race is
-      // a changes-0 write, reported as "conflict" without any handle written.
-      const response = JSON.stringify({ slug: auth.slug, revision: auth.expected + 1 });
-      const result = await storage.update(kind, auth.slug, auth.expected, serialized, at);
-      if (result === "missing") return c.text("not found", 404, MUTATION_HEADERS);
-      if (result === "conflict") {
-        // A concurrent identical retry converges on the winner's committed
-        // result rather than reporting its own lost race as failure.
-        const winner = await storage.getIdempotent(scopedKey);
-        if (winner && winner.status >= 200) {
-          return c.body(winner.response, winner.status as 200, {
-            ...MUTATION_HEADERS,
-            "Content-Type": "application/json; charset=utf-8",
-          });
+      const response = JSON.stringify({ slug });
+      const existing = await storage.get(kind, slug);
+      if (!existing) {
+        // The claim is one atomic INSERT; a lost race falls through to the
+        // ownership logic against whatever the winner wrote.
+        const claim = { kind, slug, tokenHash, body, revokedAt: null, updatedAt: at };
+        if (await storage.create(claim)) {
+          await purge?.(c.req.url).catch(() => undefined);
+          return c.body(response, 201, { ...MUTATION_HEADERS, ...JSON_TYPE });
         }
-        return c.text("stale revision", 412, MUTATION_HEADERS);
       }
-      await storage.putIdempotent({ key: scopedKey, response, status: 200 });
-      return c.body(JSON.stringify({ slug: auth.slug, revision: result.revision }), 200, {
-        ...MUTATION_HEADERS,
-        "Content-Type": "application/json; charset=utf-8",
-      });
+      const current = existing ?? (await storage.get(kind, slug));
+      if (!current) return c.text("conflict", 409, MUTATION_HEADERS);
+      if (current.revokedAt !== null) return c.text("gone", 410, MUTATION_HEADERS);
+      if (!timingSafeEqualHex(current.tokenHash, tokenHash)) {
+        return c.text("forbidden", 403, MUTATION_HEADERS);
+      }
+      if (!(await storage.update(kind, slug, body, at))) {
+        // The only live→dead transition is the owner's own concurrent revoke.
+        return c.text("gone", 410, MUTATION_HEADERS);
+      }
+      await purge?.(c.req.url).catch(() => undefined);
+      return c.body(response, 200, { ...MUTATION_HEADERS, ...JSON_TYPE });
     });
 
     app.delete(`/s/${collection}/:slug`, async (c) => {
-      const idKey = c.req.header("idempotency-key");
-      if (!idKey) return c.text("missing Idempotency-Key", 400, MUTATION_HEADERS);
       const token = bearerToken(c.req.header("authorization"));
       if (!token) return c.text("missing editor token", 401, MUTATION_HEADERS);
       const tokenHash = await sha256Hex(token);
-      const scopedKey = `${kind}:delete:${c.req.param("slug")}:${tokenHash}:${idKey}`;
-      const replay = await storage.getIdempotent(scopedKey);
-      // A completed revoke replays as success (status >= 200 records only).
-      if (replay && replay.status >= 200) return c.body(null, 204, MUTATION_HEADERS);
-      const auth = await authorized(c);
-      if (!auth.ok) {
-        if (auth.status === 404) {
-          // A tombstone under OUR token is itself the proof that this
-          // revocation already applied — only its owner could have produced
-          // that state. Recover the success instead of reading the tombstone as
-          // gone. (This used to additionally require a key reservation; the
-          // reservation proved nothing the tombstone does not.)
-          const doc = await storage.get(kind, c.req.param("slug"));
-          if (doc?.revoked && timingSafeEqualHex(doc.tokenHash, tokenHash)) {
-            await storage.putIdempotent({ key: scopedKey, response: "", status: 204 });
-            return c.body(null, 204, MUTATION_HEADERS);
-          }
-        }
-        return c.text("mutation refused", auth.status, MUTATION_HEADERS);
+      const source = c.req.header("cf-connecting-ip") ?? "local";
+      const hits = await storage.hit(`m:${tokenHash}:${source}`, 60_000, Date.now());
+      if (hits > LIMITS.mutationsPerMinute) return c.text("rate limited", 429, MUTATION_HEADERS);
+      const slug = c.req.param("slug");
+      const doc = await storage.get(kind, slug);
+      if (!doc) return c.text("not found", 404, MUTATION_HEADERS);
+      if (!timingSafeEqualHex(doc.tokenHash, tokenHash)) {
+        return c.text("forbidden", 403, MUTATION_HEADERS);
       }
-      // Revocation is a mutation like any other — the same per-token quota.
-      const mutations = await storage.hit(`mutate:${tokenHash}`, 60_000, Date.now());
-      if (mutations > LIMITS.mutationsPerMinute) {
-        return c.text("rate limited", 429, MUTATION_HEADERS);
-      }
-      const at = now();
-      const result = await storage.revoke(kind, auth.slug, auth.expected, at);
-      if (result !== "ok") {
-        // A concurrent identical retry converges on the winner's success: its
-        // record, or the tombstone the winner left under our token — a
-        // tombstone we own is the outcome this job wanted.
-        const winner = await storage.getIdempotent(scopedKey);
-        if (winner && winner.status >= 200) return c.body(null, 204, MUTATION_HEADERS);
-        const doc = await storage.get(kind, auth.slug);
-        if (doc?.revoked && timingSafeEqualHex(doc.tokenHash, tokenHash)) {
-          await storage.putIdempotent({ key: scopedKey, response: "", status: 204 });
-          return c.body(null, 204, MUTATION_HEADERS);
-        }
-        if (result === "missing") return c.text("not found", 404, MUTATION_HEADERS);
-        return c.text("stale revision", 412, MUTATION_HEADERS);
-      }
-      await storage.putIdempotent({ key: scopedKey, response: "", status: 204 });
+      // Idempotent by nature: revoking a tombstone changes nothing and is 204.
+      await storage.revoke(kind, slug, now());
+      await purge?.(c.req.url).catch(() => undefined);
       return c.body(null, 204, MUTATION_HEADERS);
     });
   }

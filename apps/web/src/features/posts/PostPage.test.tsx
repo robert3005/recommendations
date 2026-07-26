@@ -1,22 +1,20 @@
 /**
- * The post pages in the pane-and-canvas shell (spec/src/posts.md): reading
- * renders sections and embeds in order with the "From the list" association
- * and publishes the post projection to the canvas; the editor embeds only the
- * post's list members and the place card offers "Embed in post" while an
- * editor is open.
+ * The post pages (spec/src/posts.md): the reading view renders the sanitised
+ * article with soft place:/post: links, projects the post's places, and syncs
+ * mention↔pin selection both ways; the editor is a title field plus one
+ * Markdown textarea whose palette is the map (pin tap → mention at cursor),
+ * with an Insert-post-link picker and an in-place preview.
  */
-import { markerAt } from "@placemarks/domain";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import type { List, Place, Post } from "@placemarks/domain";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import type React from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
-import { DexieRepository } from "../../data/repo";
-import { useProjectionStore } from "../../state/projection";
-import { useUiStore } from "../../state/ui";
 import { PostEditorPage } from "./PostEditorPage";
 import { PostPage } from "./PostPage";
 
-const NOW = "2026-07-20T09:00:00.000Z";
+const NOW = "2026-07-26T09:00:00.000Z";
 
 const navigation = vi.hoisted(() => ({
   params: { postId: "post-1" },
@@ -33,244 +31,352 @@ vi.mock("@tanstack/react-router", () => ({
   ),
 }));
 
-vi.mock("../publish/PostPublishControls", () => ({ PostPublishControls: () => null }));
+const canvas = vi.hoisted(() => ({ projections: [] as unknown[] }));
+const selection = vi.hoisted(() => ({ focusPlace: vi.fn() }));
+vi.mock("../../state/projection", () => ({
+  useCanvasProjection: (projection: unknown) => {
+    canvas.projections.push(projection);
+  },
+  useSelectionStore: (selector: (state: Record<string, unknown>) => unknown) =>
+    selector({ focusPlace: selection.focusPlace }),
+}));
 
-async function seed(repo: DexieRepository): Promise<{ placeA: string; placeB: string }> {
-  await repo.createList({
-    id: "list-1",
-    name: "Lisbon Weekend",
-    marker: markerAt(0),
-    createdAt: NOW,
-    updatedAt: NOW,
-  });
-  const placeA = (
-    await repo.addToList(
-      "list-1",
-      { kind: "manual", facts: { name: "Café Central", lat: 38.7139, lng: -9.1394 } },
-      NOW,
-    )
-  ).place.id;
-  const placeB = (
-    await repo.addToList(
-      "list-1",
-      { kind: "manual", facts: { name: "Miradouro", lat: 38.72, lng: -9.13 } },
-      NOW,
-    )
-  ).place.id;
-  await repo.createPost({
-    id: "post-1",
-    title: "A Weekend of Lisbon Coffee",
-    listId: "list-1",
-    createdAt: NOW,
-    updatedAt: NOW,
-  });
-  const section = await repo.addPostSection("post-1", "Start at the old café.", NOW, "Morning");
-  expect(section.content.type).toBe("section");
-  await repo.embedPlaceInPost("post-1", placeA, NOW);
-  return { placeA, placeB };
+// The W5b contract (impl brief): { register(onPinTap): unregister }.
+const bridge = vi.hoisted(() => ({ handler: null as ((placeId: string) => void) | null }));
+vi.mock("../../state/editorBridge", () => ({
+  editorBridge: {
+    register: (fn: (placeId: string) => void) => {
+      bridge.handler = fn;
+      return () => {
+        if (bridge.handler === fn) bridge.handler = null;
+      };
+    },
+  },
+}));
+
+vi.mock("../publish/PublishControls", () => ({ PublishControls: () => null }));
+
+const placeA: Place = {
+  id: "place-a",
+  name: "Café Central",
+  lat: 38.7139,
+  lng: -9.1394,
+  origin: "search",
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+const placeB: Place = {
+  id: "place-b",
+  name: "Miradouro",
+  lat: 38.72,
+  lng: -9.13,
+  origin: "search",
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+const lisbonList: List = {
+  id: "list-1",
+  name: "Lisbon Weekend",
+  marker: { shape: "circle", color: "#F97316" },
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
+const READING_BODY = [
+  "Start at [Café Central](place:place-a), then [Elsewhere](place:place-z).",
+  "",
+  "Read [the deep dive](post:post-2) or [gone](post:post-9).",
+].join("\n");
+
+function fixturePosts(): Post[] {
+  return [
+    {
+      id: "post-1",
+      target: { kind: "list", listId: "list-1" },
+      title: "A Weekend of Lisbon Coffee",
+      body: READING_BODY,
+      createdAt: NOW,
+      updatedAt: NOW,
+    },
+    {
+      id: "post-2",
+      target: { kind: "place", placeId: "place-a" },
+      title: "Café Central deep dive",
+      body: "All about the café.",
+      createdAt: NOW,
+      updatedAt: NOW,
+    },
+    {
+      id: "post-3",
+      target: { kind: "place", placeId: "place-b" },
+      title: "Miradouro at dusk",
+      body: "",
+      createdAt: NOW,
+      updatedAt: NOW,
+    },
+    {
+      // A place post about a place that is NOT on list-1.
+      id: "post-4",
+      target: { kind: "place", placeId: "place-w" },
+      title: "Another guide",
+      body: "",
+      createdAt: NOW,
+      updatedAt: NOW,
+    },
+  ];
+}
+
+interface Fixture {
+  posts: Post[];
+  lists: List[];
+  places: Place[];
+  members: Record<string, string[]>;
+}
+
+function fakeRepo(fx: Fixture) {
+  const placeFor = (placeId: string): Place => {
+    const place = fx.places.find((p) => p.id === placeId);
+    if (!place) throw new Error(`fixture place missing: ${placeId}`);
+    return place;
+  };
+  return {
+    getPost: vi.fn(async (id: string) => fx.posts.find((p) => p.id === id)),
+    getList: vi.fn(async (id: string) => fx.lists.find((l) => l.id === id)),
+    getPlace: vi.fn(async (id: string) => fx.places.find((p) => p.id === id)),
+    entriesOf: vi.fn(async (listId: string) =>
+      (fx.members[listId] ?? []).map((placeId, index) => ({
+        entry: {
+          id: `entry-${index}`,
+          listId,
+          placeId,
+          rank: `${index}`,
+          createdAt: NOW,
+          updatedAt: NOW,
+        },
+        place: placeFor(placeId),
+      })),
+    ),
+    allPosts: vi.fn(async () => fx.posts),
+    updatePost: vi.fn(async () => {}),
+    deletePost: vi.fn(async () => {}),
+  };
+}
+
+type RepoProp = React.ComponentProps<typeof RepoProvider>["repo"];
+
+function renderWith(repo: ReturnType<typeof fakeRepo>, page: React.ReactElement) {
+  return render(<RepoProvider repo={repo as unknown as RepoProp}>{page}</RepoProvider>);
+}
+
+function defaultFixture(): Fixture {
+  return {
+    posts: fixturePosts(),
+    lists: [lisbonList],
+    places: [placeA, placeB],
+    members: { "list-1": ["place-a", "place-b"] },
+  };
 }
 
 beforeEach(() => {
+  navigation.params.postId = "post-1";
   navigation.navigate.mockClear();
-  useProjectionStore.setState({
-    projection: { kind: "all" },
-    postSelectHandler: null,
-    sharedSelectHandler: null,
-  });
-  useUiStore.setState({ selection: null, embedTargetPostId: null });
+  canvas.projections.length = 0;
+  selection.focusPlace.mockClear();
+  bridge.handler = null;
 });
 
-describe("post reading page", () => {
-  it("renders the article and publishes the post projection", async () => {
-    const repo = new DexieRepository(`post-page-${crypto.randomUUID()}`);
-    try {
-      await seed(repo);
-      render(
-        <RepoProvider repo={repo}>
-          <PostPage />
-        </RepoProvider>,
-      );
+afterEach(() => {
+  vi.useRealTimers();
+});
 
-      expect(await screen.findByText("A Weekend of Lisbon Coffee")).toBeInTheDocument();
-      const section = await screen.findByTestId("post-section");
-      expect(section).toHaveTextContent("Morning");
-      expect(section).toHaveTextContent("Start at the old café.");
-      const embed = await screen.findByTestId("post-embed");
-      expect(embed).toHaveTextContent("Café Central");
-      // The post page links back to its list (list ↔ posts in both directions).
-      expect(await screen.findByTestId("post-list-link")).toHaveTextContent("Lisbon Weekend");
-      // The route published its projection: the canvas shows the post's embeds.
-      expect(useProjectionStore.getState().projection).toMatchObject({
-        kind: "post",
-        postId: "post-1",
-      });
-    } finally {
-      repo.db.close();
-    }
+describe("post reading view", () => {
+  it("renders the article with soft links resolved and projects the post's places", async () => {
+    const repo = fakeRepo(defaultFixture());
+    renderWith(repo, <PostPage />);
+
+    expect(await screen.findByText("A Weekend of Lisbon Coffee")).toBeInTheDocument();
+    // Projected mention is live; the out-of-projection one reads as prose.
+    expect(await screen.findByRole("button", { name: "Café Central" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Elsewhere" })).toBeNull();
+    expect(screen.getByText("Elsewhere")).toBeInTheDocument();
+    // Cross-post links: existing target is live, dangling one is prose.
+    expect(await screen.findByRole("button", { name: "the deep dive" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "gone" })).toBeNull();
+    expect(screen.getByText("gone")).toBeInTheDocument();
+    // List posts link back to their list.
+    expect(screen.getByTestId("post-list-link")).toHaveTextContent("Lisbon Weekend");
+    // The route projected the post onto the canvas.
+    expect(canvas.projections).toContainEqual({ kind: "post", postId: "post-1" });
   });
 
-  it("selects and flies bidirectionally from an embed card", async () => {
-    const repo = new DexieRepository(`post-select-${crypto.randomUUID()}`);
-    try {
-      const { placeA } = await seed(repo);
-      render(
-        <RepoProvider repo={repo}>
-          <PostPage />
-        </RepoProvider>,
-      );
-      await userEvent.click(await screen.findByTestId("post-embed-select"));
-      expect(useUiStore.getState().selection).toEqual({ kind: "place", placeId: placeA });
-      expect(useUiStore.getState().flyTo).toMatchObject({ lat: 38.7139, lng: -9.1394 });
-    } finally {
-      repo.db.close();
-    }
-  });
-
-  it("uses the retained exact Google listing even when another external ref comes first", async () => {
-    const repo = new DexieRepository(`post-google-ref-${crypto.randomUUID()}`);
-    const googleUrl = "https://www.google.com/maps/place/?q=place_id:ChIJExact";
-    try {
-      const { placeA } = await seed(repo);
-      const row = await repo.db.places.get(placeA);
-      if (!row) throw new Error("seeded place missing");
-      await repo.db.places.put({
-        ...row,
-        externalRefs: [
-          { provider: "web", url: "https://example.com/place", importedAt: NOW },
-          { provider: "google-maps", url: googleUrl, importedAt: NOW },
-        ],
-      });
-
-      render(
-        <RepoProvider repo={repo}>
-          <PostPage />
-        </RepoProvider>,
-      );
-
-      expect(await screen.findByTestId("open-google-maps")).toHaveAttribute("href", googleUrl);
-    } finally {
-      repo.db.close();
-    }
-  });
-
-  it("observes asynchronously loaded embeds and scrolls/highlights them from a map tap", async () => {
-    const repo = new DexieRepository(`post-map-sync-${crypto.randomUUID()}`);
-    const observed: Element[] = [];
-    let intersectionCallback: IntersectionObserverCallback | undefined;
+  it("focuses the canvas from a mention and scrolls to the mention from a pin tap", async () => {
+    const repo = fakeRepo(defaultFixture());
     const scrollIntoView = vi.fn();
-    vi.stubGlobal(
-      "IntersectionObserver",
-      class {
-        constructor(callback: IntersectionObserverCallback) {
-          intersectionCallback = callback;
-        }
-        observe(element: Element) {
-          observed.push(element);
-        }
-        disconnect() {}
-        unobserve() {}
-        takeRecords() {
-          return [];
-        }
-        root = null;
-        rootMargin = "";
-        thresholds = [0.4];
-      },
-    );
-    const previousScrollIntoView = HTMLElement.prototype.scrollIntoView;
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
       configurable: true,
       value: scrollIntoView,
     });
     try {
-      const { placeA } = await seed(repo);
-      render(
-        <RepoProvider repo={repo}>
-          <PostPage />
-        </RepoProvider>,
-      );
-      const section = await screen.findByTestId("post-section");
-      const embed = await screen.findByTestId("post-embed");
-      await waitFor(() => expect(observed).toContain(section));
-      await waitFor(() => expect(observed).toContain(embed));
+      renderWith(repo, <PostPage />);
+      const mention = await screen.findByRole("button", { name: "Café Central" });
 
-      // Prose frames the consecutive embeds it introduces, not just cards.
-      act(() => {
-        intersectionCallback?.(
-          [{ target: section, isIntersecting: true } as unknown as IntersectionObserverEntry],
-          {} as IntersectionObserver,
-        );
-      });
-      await waitFor(() =>
-        expect(useProjectionStore.getState().projection).toMatchObject({
-          kind: "post",
-          focusPlaceIds: [placeA],
-        }),
-      );
+      // Mention → pin: one focusPlace call selects and flies.
+      await userEvent.click(mention);
+      expect(selection.focusPlace).toHaveBeenCalledWith("place-a");
 
-      act(() => {
-        intersectionCallback?.(
-          [{ target: embed, isIntersecting: true } as unknown as IntersectionObserverEntry],
-          {} as IntersectionObserver,
-        );
-      });
-      await waitFor(() =>
-        expect(useProjectionStore.getState().projection).toMatchObject({
-          kind: "post",
-          focusPlaceIds: [placeA],
-        }),
-      );
-
-      act(() => useProjectionStore.getState().postSelectHandler?.(placeA));
+      // Pin → mention: the registered bridge handler scrolls and highlights.
+      expect(bridge.handler).toBeTruthy();
+      act(() => bridge.handler?.("place-a"));
       expect(scrollIntoView).toHaveBeenCalled();
-      expect(embed).toHaveAttribute("data-selected", "true");
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Café Central" })).toHaveAttribute(
+          "aria-current",
+          "true",
+        ),
+      );
     } finally {
-      vi.unstubAllGlobals();
-      if (previousScrollIntoView) {
-        Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
-          configurable: true,
-          value: previousScrollIntoView,
-        });
-      } else {
-        Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
-      }
-      repo.db.close();
+      Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
     }
+  });
+
+  it("navigates to the target's reading view from a cross-post link", async () => {
+    const repo = fakeRepo(defaultFixture());
+    renderWith(repo, <PostPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "the deep dive" }));
+    expect(navigation.navigate).toHaveBeenCalledWith({
+      to: "/post/$postId",
+      params: { postId: "post-2" },
+    });
+  });
+
+  it("shows a place post's one place and projects it", async () => {
+    navigation.params.postId = "post-2";
+    const repo = fakeRepo(defaultFixture());
+    renderWith(repo, <PostPage />);
+
+    expect(await screen.findByText("Café Central deep dive")).toBeInTheDocument();
+    expect(await screen.findByTestId("post-place-link")).toHaveTextContent("Café Central");
+    expect(canvas.projections).toContainEqual({ kind: "post", postId: "post-2" });
   });
 });
 
-describe("post block editor", () => {
-  it("offers only un-embedded list members, embeds them, and flags the editor to the card", async () => {
-    const repo = new DexieRepository(`post-editor-${crypto.randomUUID()}`);
-    try {
-      const { placeB } = await seed(repo);
-      render(
-        <RepoProvider repo={repo}>
-          <PostEditorPage />
-        </RepoProvider>,
-      );
+describe("post editor", () => {
+  it("inserts a mention at the cursor when a projected pin is tapped, ignoring others", async () => {
+    const repo = fakeRepo(defaultFixture());
+    renderWith(repo, <PostEditorPage />);
+    const body = await screen.findByTestId("post-body-input");
+    expect(body).toHaveValue(READING_BODY);
 
-      // The open editor is the card's embed target (spec/src/map-view.md).
-      expect(await screen.findByTestId("post-editor")).toBeInTheDocument();
-      expect(useUiStore.getState().embedTargetPostId).toBe("post-1");
-      // The canvas shows embeds solid with the list dimmed as candidates.
-      expect(useProjectionStore.getState().projection).toEqual({
-        kind: "post",
-        postId: "post-1",
-        editing: true,
-      });
+    await waitFor(() => expect(bridge.handler).toBeTruthy());
+    act(() => bridge.handler?.("place-b"));
+    await waitFor(() =>
+      expect((screen.getByTestId("post-body-input") as HTMLTextAreaElement).value).toContain(
+        "[Miradouro](place:place-b)",
+      ),
+    );
 
-      const picker = await screen.findByTestId("embed-picker");
-      const options = within(picker).getAllByRole("option");
-      // Café Central is already embedded — only Miradouro is offered.
-      expect(options.map((option) => option.textContent)).toEqual([
-        "+ Embed a place…",
-        "Miradouro",
-      ]);
-      await userEvent.selectOptions(picker, placeB);
-      await waitFor(() => expect(screen.getAllByTestId("editor-embed")).toHaveLength(2));
-    } finally {
-      repo.db.close();
-    }
+    // The editor only offers projected pins; an unknown id is a no-op.
+    const before = (screen.getByTestId("post-body-input") as HTMLTextAreaElement).value;
+    act(() => bridge.handler?.("place-z"));
+    expect(screen.getByTestId("post-body-input")).toHaveValue(before);
+  });
+
+  it("lists place posts of the list's members first in the Insert-post-link picker", async () => {
+    const repo = fakeRepo(defaultFixture());
+    renderWith(repo, <PostEditorPage />);
+    await screen.findByTestId("post-body-input");
+
+    await userEvent.click(screen.getByTestId("insert-post-link"));
+    const picker = await screen.findByTestId("post-link-picker");
+    await waitFor(() =>
+      expect(
+        within(picker)
+          .getAllByRole("button")
+          .map((b) => b.textContent),
+      ).toEqual(["Café Central deep dive", "Miradouro at dusk", "Another guide"]),
+    );
+
+    await userEvent.click(within(picker).getByRole("button", { name: "Miradouro at dusk" }));
+    expect(screen.queryByTestId("post-link-picker")).toBeNull();
+    expect((screen.getByTestId("post-body-input") as HTMLTextAreaElement).value).toContain(
+      "[Miradouro at dusk](post:post-3)",
+    );
+  });
+
+  it("previews the sanitised article through the shared pipeline", async () => {
+    const repo = fakeRepo(defaultFixture());
+    renderWith(repo, <PostEditorPage />);
+    const body = await screen.findByTestId("post-body-input");
+
+    fireEvent.change(body, {
+      target: {
+        value: "# Morning\n\n<script>window.x=1</script>\n\nGo to [Café Central](place:place-a).",
+      },
+    });
+    await userEvent.click(screen.getByTestId("toggle-preview"));
+
+    const preview = await screen.findByTestId("post-preview");
+    expect(within(preview).getByRole("heading", { name: "Morning" })).toBeInTheDocument();
+    expect(preview.querySelector("script")).toBeNull();
+    expect(within(preview).getByRole("button", { name: "Café Central" })).toBeInTheDocument();
+    expect(screen.queryByTestId("post-body-input")).toBeNull();
+  });
+
+  it("autosaves the body after the debounce and flushes on Done", async () => {
+    const repo = fakeRepo(defaultFixture());
+    renderWith(repo, <PostEditorPage />);
+    const body = await screen.findByTestId("post-body-input");
+
+    vi.useFakeTimers();
+    fireEvent.change(body, { target: { value: "New body." } });
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+    expect(repo.updatePost).toHaveBeenCalledWith("post-1", { body: "New body." });
+    vi.useRealTimers();
+
+    fireEvent.change(screen.getByTestId("post-body-input"), { target: { value: "Final body." } });
+    fireEvent.click(screen.getByTestId("done-editing-post"));
+    await waitFor(() =>
+      expect(repo.updatePost).toHaveBeenCalledWith("post-1", { body: "Final body." }),
+    );
+    await waitFor(() =>
+      expect(navigation.navigate).toHaveBeenCalledWith({
+        to: "/post/$postId",
+        params: { postId: "post-1" },
+      }),
+    );
+  });
+
+  it("saves the title on blur", async () => {
+    const repo = fakeRepo(defaultFixture());
+    renderWith(repo, <PostEditorPage />);
+    const title = await screen.findByTestId("post-title-input");
+
+    fireEvent.change(title, { target: { value: "A Long Weekend of Lisbon Coffee" } });
+    fireEvent.blur(title);
+    expect(repo.updatePost).toHaveBeenCalledWith("post-1", {
+      title: "A Long Weekend of Lisbon Coffee",
+    });
+  });
+
+  it("deletes the post and returns to its list, surfacing refusals instead", async () => {
+    const repo = fakeRepo(defaultFixture());
+    renderWith(repo, <PostEditorPage />);
+    await screen.findByTestId("post-body-input");
+
+    // Refusal (e.g. a live publication) surfaces; nothing navigates.
+    repo.deletePost.mockRejectedValueOnce(new Error("Unpublish this post first."));
+    await userEvent.click(screen.getByTestId("delete-post"));
+    expect(await screen.findByText("Unpublish this post first.")).toBeInTheDocument();
+    expect(navigation.navigate).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByTestId("delete-post"));
+    await waitFor(() =>
+      expect(navigation.navigate).toHaveBeenCalledWith({
+        to: "/list/$listId",
+        params: { listId: "list-1" },
+      }),
+    );
   });
 });

@@ -14,7 +14,6 @@ test("a production build rejects a case-variant development provider host", () =
     VITE_MAP_STYLE_URL: "https://TILES.OPENFREEMAP.ORG/styles/bright",
     VITE_PHOTON_URL: "https://search.production.example",
     VITE_OSM_API_URL: "https://osm.production.example",
-    VITE_OVERPASS_URL: "https://poi.production.example/api/interpreter",
   };
   delete env.PLACEMARKS_STORYBOOK;
 

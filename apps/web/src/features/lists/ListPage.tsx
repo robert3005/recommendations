@@ -1,50 +1,35 @@
 /**
- * A list: read by default; a deliberate **Edit mode** (Phase 3 interop,
- * spec/src/interop.md §List curation returns) adds reorder/remove/rename/
- * recolour — imported lists are too large for place-card-only curation.
- * Every list exports as KML / Takeout-shaped CSV / GeoJSON / GPX.
+ * The list page (spec/src/map-view.md §The list page): entries beside the
+ * posts sidebar, with Edit mode for curation — reorder, rename, remove,
+ * marker swap within free pairs — and the publish and export entry points.
+ * The canvas shows the list's places with the rest of the library dimmed.
  */
-import {
-  type Blocker,
-  displayFacts,
-  type ListBlockView,
-  type Note,
-  TeardownRefusedError,
-} from "@placemarks/domain";
-import type { SharedGuide } from "@placemarks/schemas";
+import type { List, ListEntry, Place, Post } from "@placemarks/domain";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useState } from "react";
-import { useList, useListBlocks, useLists, usePostsForList } from "../../data/hooks";
+import { useList, useListEntries, useLists, usePosts, usePostsFor } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
+import { type Blocker, TeardownRefusedError } from "../../data/repo";
 import { downloadBytes, downloadText } from "../../lib/download";
-import { newId } from "../../lib/id";
-import { nowIso } from "../../lib/time";
-import { useCanvasProjection } from "../../state/projection";
-import { useUiStore } from "../../state/ui";
+import { useCanvasProjection, useSelectionStore } from "../../state/projection";
 import {
-  type ExportPlaceView,
-  exportListCsv,
   exportListGeoJson,
   exportListGpx,
   exportListKml,
   exportListKmz,
   exportListMarkdown,
+  splitForMyMaps,
 } from "../interop/export";
-import { StateBadge } from "../place/StateBadge";
 import { PublishControls } from "../publish/PublishControls";
-import { type ProjectionStats, projectList } from "../share/project";
-import { SharePreview } from "../share/SharePreview";
-import { encodeSnapshot, SnapshotTooLargeError } from "../share/snapshot";
 import { BlockerDialog } from "./BlockerDialog";
 import { MarkerGlyph } from "./MarkerGlyph";
 import { MarkerSwatches } from "./MarkerSwatches";
 
 const EXPORTS = [
-  // First, because it is the one a person reads: a list of places with links
-  // out to Google, Apple and OpenStreetMap, ready to paste anywhere.
+  // First, because it is the one a person reads: name, address, and all three
+  // deep links per place — the artefact to paste into a message.
   { key: "md", label: "Text list", mime: "text/markdown", write: exportListMarkdown },
   { key: "kml", label: "KML", mime: "application/vnd.google-earth.kml+xml", write: exportListKml },
-  { key: "csv", label: "CSV", mime: "text/csv", write: exportListCsv },
   { key: "geojson", label: "GeoJSON", mime: "application/geo+json", write: exportListGeoJson },
   { key: "gpx", label: "GPX", mime: "application/gpx+xml", write: exportListGpx },
 ] as const;
@@ -54,28 +39,24 @@ export function ListPage() {
   const repo = useRepo();
   const navigate = useNavigate();
   const list = useList(listId);
-  const blocks = useListBlocks(listId);
+  const rows = useListEntries(listId);
+  const posts = usePostsFor({ kind: "list", listId });
   const lists = useLists();
-  const selectPlace = useUiStore((s) => s.selectPlace);
-  const requestFlyTo = useUiStore((s) => s.requestFlyTo);
-  const posts = usePostsForList(listId);
+  const allPosts = usePosts();
+  // Select AND fly in one call (spec/src/map-view.md §Selection is bidirectional).
+  const focusPlace = useSelectionStore((s) => s.focusPlace);
   // The canvas projects this list: its members, the rest dimmed
   // (spec/src/map-view.md §The grammar).
   useCanvasProjection({ kind: "list", listId });
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState<string>();
   const [refusal, setRefusal] = useState<{ title: string; blockers: Blocker[] }>();
-  const [sharing, setSharing] = useState<{
-    guide: SharedGuide;
-    stats: ProjectionStats;
-    snapshotUrl?: string;
-    compressedBytes?: number;
-    tooLargeReason?: string;
-  }>();
-  const [copied, setCopied] = useState(false);
   const [exportError, setExportError] = useState<string>();
 
-  if (!list) return <div className="p-4 text-ink-3">List not found.</div>;
+  if (!list) return <div className="p-4 text-ink/60">List not found.</div>;
+
+  const entries: { entry: ListEntry; place: Place }[] = rows ?? [];
+  const places = entries.map((row) => row.place);
 
   /** Teardown refusals surface as an actionable blocker report, never a crash. */
   const guarded = (title: string, action: () => Promise<void>) => {
@@ -88,91 +69,15 @@ export function ListPage() {
     });
   };
 
-  const openShare = async () => {
-    const projection = await projectList(repo, list.id);
-    if (!projection) return;
-    try {
-      const { fragment, compressedBytes } = encodeSnapshot(projection.guide);
-      setSharing({
-        guide: projection.guide,
-        stats: projection.stats,
-        snapshotUrl: `${window.location.origin}/l#${fragment}`,
-        compressedBytes,
-      });
-    } catch (err) {
-      setSharing({
-        guide: projection.guide,
-        stats: projection.stats,
-        tooLargeReason:
-          err instanceof SnapshotTooLargeError
-            ? err.message
-            : err instanceof Error
-              ? err.message
-              : String(err),
-      });
-    }
-    setCopied(false);
-  };
-
-  const placeBlocks = blocks ?? [];
-  const blockerPlaceNames = Object.fromEntries(
-    placeBlocks.map((view) => [view.place.id, displayFacts(view.place)?.name ?? "Unnamed place"]),
-  );
-
-  // Fail closed: a portable export with silently missing notes is worse than
-  // no export — read errors abort the download and surface instead.
-  const collectViews = async (): Promise<ExportPlaceView[]> => {
-    const views: ExportPlaceView[] = [];
-    for (const view of placeBlocks) {
-      const notes: Note[] = await repo.listNotesForPlace(view.place.id);
-      const placeView = await repo.getPlaceView(view.place.id);
-      views.push({ place: view.place, notes, tags: placeView?.tags ?? [] });
-    }
-    return views;
-  };
+  /** Display names for whatever ids a refusal can cite. */
+  const blockerNames = Object.fromEntries([
+    ...(allPosts ?? []).map((post: Post) => [post.id, post.title]),
+    ...entries.map((row) => [row.place.id, row.place.name]),
+  ]) as Record<string, string>;
 
   const safeName = () =>
     list.name.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^-+|-+$/g, "") || "list";
 
-  /**
-   * My Maps accepts ≤2,000 features per layer AND ≤5 MB per file — larger
-   * lists split into parts along whichever limit binds first.
-   */
-  const MY_MAPS_LAYER_LIMIT = 2000;
-  const MY_MAPS_FILE_LIMIT = 5 * 1024 * 1024;
-  const chunkedViews = async (): Promise<ExportPlaceView[][]> => {
-    const views = await collectViews();
-    const byCount: ExportPlaceView[][] = [];
-    for (let i = 0; i < views.length; i += MY_MAPS_LAYER_LIMIT) {
-      byCount.push(views.slice(i, i + MY_MAPS_LAYER_LIMIT));
-    }
-    if (byCount.length === 0) byCount.push([]);
-    const chunks: ExportPlaceView[][] = [];
-    // Measure with the LONGEST name a downloaded part can carry — the
-    // " (part N)" suffix is applied after splitting, and a boundary chunk
-    // measured under the bare name could exceed the limit once renamed.
-    const fits = (chunk: ExportPlaceView[]): boolean =>
-      new TextEncoder().encode(exportListKml({ ...list, name: `${list.name} (part 999)` }, chunk))
-        .byteLength <= MY_MAPS_FILE_LIMIT;
-    const bySize = (chunk: ExportPlaceView[]): void => {
-      if (fits(chunk)) {
-        chunks.push(chunk);
-        return;
-      }
-      if (chunk.length <= 1) {
-        // A single feature cannot be split — refusing beats emitting a file
-        // My Maps will reject.
-        throw new Error(
-          "one place's notes exceed the 5 MB My Maps file limit — trim the note and retry",
-        );
-      }
-      const mid = Math.ceil(chunk.length / 2);
-      bySize(chunk.slice(0, mid));
-      bySize(chunk.slice(mid));
-    };
-    for (const chunk of byCount) bySize(chunk);
-    return chunks;
-  };
   const partName = (chunks: unknown[], index: number) =>
     chunks.length > 1 ? `${list.name} (part ${(index + 1).toString()})` : list.name;
   const partFile = (chunks: unknown[], index: number, ext: string) =>
@@ -180,9 +85,10 @@ export function ListPage() {
       ? `${safeName()}-part${(index + 1).toString()}.${ext}`
       : `${safeName()}.${ext}`;
 
-  /** The guided My Maps handoff: KML download(s) sized to the layer limit. */
-  const sendToMyMaps = async () => {
-    const chunks = await chunkedViews();
+  /** Every advertised KML/KMZ download is My Maps-compatible: warn-and-split
+   *  along the 2,000-feature / 5 MB limits (spec/src/interop.md §Export). */
+  const exportKml = () => {
+    const chunks = splitForMyMaps(list, places);
     chunks.forEach((chunk, index) => {
       downloadText(
         partFile(chunks, index, "kml"),
@@ -192,8 +98,8 @@ export function ListPage() {
     });
   };
 
-  const exportKmz = async () => {
-    const chunks = await chunkedViews();
+  const exportKmz = () => {
+    const chunks = splitForMyMaps(list, places);
     chunks.forEach((chunk, index) => {
       downloadBytes(
         partFile(chunks, index, "kmz"),
@@ -203,27 +109,36 @@ export function ListPage() {
     });
   };
 
-  const exportAs = async (writer: (typeof EXPORTS)[number]) => {
-    // Every advertised KML export is My Maps-compatible: the direct button
-    // applies the same layer/file-size splitting as the guided handoff.
-    if (writer.key === "kml") {
-      await sendToMyMaps();
-      return;
+  const exportAs = (writer: (typeof EXPORTS)[number]) => {
+    // Fail closed: a broken artefact is worse than none — errors surface
+    // instead of downloading.
+    try {
+      if (writer.key === "kml") {
+        exportKml();
+        return;
+      }
+      downloadText(`${safeName()}.${writer.key}`, writer.mime, writer.write(list, places));
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : String(err));
     }
-    const views = await collectViews();
-    downloadText(`${safeName()}.${writer.key}`, writer.mime, writer.write(list, views));
   };
 
-  const move = (view: ListBlockView, direction: -1 | 1) => {
-    const index = placeBlocks.findIndex((v) => v.block.id === view.block.id);
+  const move = (row: { entry: ListEntry }, direction: -1 | 1) => {
+    const index = entries.findIndex((r) => r.entry.id === row.entry.id);
     const target = index + direction;
-    if (target < 0 || target >= placeBlocks.length) return;
-    // moveBlock places the block before the given sibling (null = end).
+    if (target < 0 || target >= entries.length) return;
+    // moveEntry places the entry before the given sibling (null = end).
     const before =
       direction === -1
-        ? (placeBlocks[target]?.block.id ?? null)
-        : (placeBlocks[target + 1]?.block.id ?? null);
-    void repo.moveBlock(view.block.id, before, nowIso());
+        ? (entries[target]?.entry.id ?? null)
+        : (entries[target + 1]?.entry.id ?? null);
+    void repo.moveEntry(row.entry.id, before);
+  };
+
+  const newPost = () => {
+    void repo.createPost({ kind: "list", listId: list.id }, list.name).then((post) => {
+      void navigate({ to: "/post/$postId/edit", params: { postId: post.id } });
+    });
   };
 
   return (
@@ -236,16 +151,15 @@ export function ListPage() {
               value={name ?? list.name}
               onChange={(e) => setName(e.target.value)}
               aria-label="List name"
-              className="w-full rounded border border-rule px-2 py-1 text-lg font-semibold"
+              className="w-full rounded-crisp border border-hairline bg-paper px-2 py-1 font-display text-lg font-semibold text-ink"
               data-testid="list-name-input"
             />
+            {/* Marker change swaps within free pairs (spec/src/data-model.md §Markers). */}
             <MarkerSwatches
               radioName="list-page-marker"
               selected={list.marker}
-              used={(lists ?? []).filter((l) => l.id !== list.id).map((l) => l.marker)}
-              onSelect={(marker) => {
-                void repo.updateList({ ...list, marker, updatedAt: nowIso() });
-              }}
+              used={(lists ?? []).filter((l: List) => l.id !== list.id).map((l: List) => l.marker)}
+              onSelect={(marker) => void repo.setListMarker(list.id, marker)}
             />
           </div>
         ) : (
@@ -258,14 +172,12 @@ export function ListPage() {
         )}
         <button
           type="button"
-          className="shrink-0 rounded border border-rule px-3 py-1 text-sm font-medium text-ink-2"
+          className="shrink-0 rounded-crisp border border-hairline px-3 py-1 text-sm font-medium text-ink"
           data-testid="edit-list"
           onClick={() => {
             if (editing) {
               const trimmed = name?.trim();
-              if (trimmed && trimmed !== list.name) {
-                void repo.updateList({ ...list, name: trimmed, updatedAt: nowIso() });
-              }
+              if (trimmed && trimmed !== list.name) void repo.renameList(list.id, trimmed);
               setName(undefined);
             }
             setEditing(!editing);
@@ -275,104 +187,73 @@ export function ListPage() {
         </button>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-3">
-        <button
-          type="button"
-          className="rounded bg-ink px-2.5 py-1 font-medium text-white"
-          data-testid="share-list"
-          onClick={() => void openShare()}
-        >
-          Share…
-        </button>
-        <button
-          type="button"
-          className="rounded border border-rule px-2 py-0.5 font-medium text-ink-2 hover:bg-land"
-          data-testid="send-to-my-maps"
-          onClick={() =>
-            void sendToMyMaps().catch((err: unknown) =>
-              setExportError(err instanceof Error ? err.message : String(err)),
-            )
-          }
-        >
-          Send to Google My Maps
-        </button>
+      {/* Publish entry point (spec/src/sharing.md). */}
+      <PublishControls listId={list.id} />
+
+      {/* Export entry points (spec/src/interop.md §Export). */}
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink/60">
         Export:
         {EXPORTS.map((writer) => (
           <button
             key={writer.key}
             type="button"
-            className="rounded border border-rule px-2 py-0.5 font-medium text-ink-2 hover:bg-land"
+            className="rounded-crisp border border-hairline px-2 py-0.5 font-medium text-ink hover:bg-ink/5"
             data-testid={`export-${writer.key}`}
-            onClick={() =>
-              void exportAs(writer).catch((err: unknown) =>
-                setExportError(err instanceof Error ? err.message : String(err)),
-              )
-            }
+            onClick={() => exportAs(writer)}
           >
             {writer.label}
           </button>
         ))}
         <button
           type="button"
-          className="rounded border border-rule px-2 py-0.5 font-medium text-ink-2 hover:bg-land"
+          className="rounded-crisp border border-hairline px-2 py-0.5 font-medium text-ink hover:bg-ink/5"
           data-testid="export-kmz"
-          onClick={() =>
-            void exportKmz().catch((err: unknown) =>
-              setExportError(err instanceof Error ? err.message : String(err)),
-            )
-          }
+          onClick={() => {
+            try {
+              exportKmz();
+            } catch (err) {
+              setExportError(err instanceof Error ? err.message : String(err));
+            }
+          }}
         >
           KMZ
         </button>
       </div>
       {exportError ? (
-        <output className="mt-1 block rounded bg-orange-50 p-2 text-[11px] text-orange-800">
+        <output className="mt-1 block rounded-crisp border border-hairline p-2 text-[11px] text-ink">
           Export failed — nothing was downloaded ({exportError}).
         </output>
       ) : null}
-      <p className="mt-1 text-[11px] text-ink-3">
-        Google My Maps accepts up to 2,000 features per layer and 5 MB per file — larger lists split
-        into numbered parts automatically. Then: My Maps → Import → choose this file.
+      <p className="mt-1 text-[11px] text-ink/60">
+        Google My Maps: Import → choose the KML (large lists split into numbered parts
+        automatically). OSM: upload the GeoJSON or KML to uMap (umap.openstreetmap.fr).
       </p>
-      <PublishControls listId={list.id} />
 
-      {/* The editorial layer (spec/src/posts.md): a list may have several
-          posts; the list page links to them and each post links back. */}
-      <section className="mt-4" id="posts" data-testid="list-posts">
+      {/* The posts sidebar (spec/src/map-view.md §The list page): this list's
+          posts, with New post — a list post about this list. */}
+      <section className="mt-4 border-t border-hairline pt-3" id="posts" data-testid="list-posts">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-ink-2">Posts</h2>
+          <h2 className="font-display text-sm font-semibold text-ink">Posts</h2>
           <button
             type="button"
-            className="rounded border border-rule px-2.5 py-1 text-xs font-medium text-ink-2"
+            className="rounded-crisp border border-hairline px-2.5 py-1 text-xs font-medium text-ink"
             data-testid="new-post"
-            onClick={() => {
-              const postId = newId();
-              const now = nowIso();
-              void repo
-                .createPost({
-                  id: postId,
-                  title: list.name,
-                  listId: list.id,
-                  createdAt: now,
-                  updatedAt: now,
-                })
-                .then(() => navigate({ to: "/post/$postId/edit", params: { postId } }));
-            }}
+            onClick={newPost}
           >
             + New post
           </button>
         </div>
         {(posts ?? []).length > 0 ? (
           <ul className="mt-1.5 space-y-1">
-            {(posts ?? []).map((post) => (
+            {(posts ?? []).map((post: Post) => (
               <li key={post.id}>
                 <button
                   type="button"
-                  className="text-sm font-medium text-water-ink underline"
+                  className="text-sm font-medium text-ink underline"
                   data-testid="list-post-link"
-                  onClick={() => {
-                    void navigate({ to: "/post/$postId", params: { postId: post.id } });
-                  }}
+                  onClick={() =>
+                    void navigate({ to: "/post/$postId", params: { postId: post.id } })
+                  }
                 >
                   ✍ {post.title}
                 </button>
@@ -380,141 +261,90 @@ export function ListPage() {
             ))}
           </ul>
         ) : (
-          <p className="mt-1 text-xs text-ink-3">
-            No posts yet — a post is an article about this list.
+          <p className="mt-1 text-xs text-ink/60">
+            No posts yet — a post is the article about this list.
           </p>
         )}
       </section>
 
-      {sharing ? (
-        <SharePreview
-          title={list.name}
-          guide={sharing.guide}
-          stats={sharing.stats}
-          {...(sharing.snapshotUrl ? { snapshotUrl: sharing.snapshotUrl } : {})}
-          {...(sharing.compressedBytes !== undefined
-            ? { compressedBytes: sharing.compressedBytes }
-            : {})}
-          {...(sharing.tooLargeReason ? { tooLargeReason: sharing.tooLargeReason } : {})}
-          copied={copied}
-          onCopy={() => {
-            if (sharing.snapshotUrl) {
-              void navigator.clipboard.writeText(sharing.snapshotUrl).then(() => setCopied(true));
-            }
-          }}
-          onClose={() => setSharing(undefined)}
-        />
-      ) : null}
-
       <ul className="mt-4 space-y-2">
-        {placeBlocks.map((view) => {
-          const facts = view.place ? displayFacts(view.place) : undefined;
-          return (
-            <li
-              key={view.block.id}
-              className="rounded-lg border border-rule bg-land p-3"
-              data-testid="place-item"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  {/* Selection is bidirectional (spec/src/map-view.md): select
-                      in the pane → the canvas highlights and flies. */}
-                  <button
-                    type="button"
-                    className="text-left font-medium text-ink hover:underline"
-                    data-testid="select-place"
-                    onClick={() => {
-                      selectPlace(view.place.id);
-                      if (facts) requestFlyTo({ lat: facts.lat, lng: facts.lng, zoom: 16 });
-                    }}
-                  >
-                    {facts?.name ?? "Missing place"}
-                  </button>
-                  {facts?.category ? (
-                    <span className="ml-2 text-xs capitalize text-ink-3">{facts.category}</span>
-                  ) : null}
-                  {view.place ? (
-                    <span className="ml-2">
-                      <StateBadge state={view.place.resolutionState} />
-                    </span>
-                  ) : null}
-                  {facts?.address ? (
-                    <span className="block text-sm text-ink-2">{facts.address}</span>
-                  ) : null}
-                  {facts?.website ? (
-                    <a
-                      href={facts.website}
-                      target="_blank"
-                      rel="noopener noreferrer nofollow ugc"
-                      className="block text-sm text-water-ink underline"
-                    >
-                      {facts.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
-                    </a>
-                  ) : null}
-                </div>
-                {editing ? (
-                  <span className="flex shrink-0 gap-1">
-                    <button
-                      type="button"
-                      aria-label="Move up"
-                      className="rounded px-1.5 py-0.5 text-xs text-ink-2 hover:bg-rule"
-                      onClick={() => move(view, -1)}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Move down"
-                      className="rounded px-1.5 py-0.5 text-xs text-ink-2 hover:bg-rule"
-                      onClick={() => move(view, 1)}
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      className="rounded px-1.5 py-0.5 text-xs text-coral-ink hover:bg-red-50"
-                      data-testid="remove-from-list"
-                      onClick={() =>
-                        guarded("Can’t remove this place yet", () =>
-                          repo.removeBlock(view.block.id, nowIso()),
-                        )
-                      }
-                    >
-                      Remove
-                    </button>
-                  </span>
+        {entries.map((row) => (
+          <li
+            key={row.entry.id}
+            className="rounded-crisp border border-hairline p-3"
+            data-testid="place-item"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                {/* Selection is bidirectional (spec/src/map-view.md): select
+                    in the notebook → the canvas highlights and flies. */}
+                <button
+                  type="button"
+                  className="text-left font-medium text-ink hover:underline"
+                  data-testid="select-place"
+                  onClick={() => focusPlace(row.place.id)}
+                >
+                  {row.place.name}
+                </button>
+                {row.place.category ? (
+                  <span className="ml-2 text-xs capitalize text-ink/60">{row.place.category}</span>
+                ) : null}
+                {row.place.address ? (
+                  <span className="block text-sm text-ink/70">{row.place.address}</span>
                 ) : null}
               </div>
-            </li>
-          );
-        })}
-        {blocks !== undefined && placeBlocks.length === 0 ? (
-          <li className="py-4 text-sm text-ink-3">
-            Nothing here yet — add places to this list from their cards on the map, or import a file
+              {editing ? (
+                <span className="flex shrink-0 gap-1">
+                  <button
+                    type="button"
+                    aria-label="Move up"
+                    className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
+                    onClick={() => move(row, -1)}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Move down"
+                    className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
+                    onClick={() => move(row, 1)}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-crisp px-1.5 py-0.5 text-xs text-accent-vermilion-deep hover:bg-ink/5"
+                    data-testid="remove-from-list"
+                    onClick={() =>
+                      // Last membership deletes the place — refused while
+                      // posts target it (spec/src/data-model.md §Teardown).
+                      guarded("Can’t remove this place yet", () => repo.removeEntry(row.entry.id))
+                    }
+                  >
+                    Remove
+                  </button>
+                </span>
+              ) : null}
+            </div>
+          </li>
+        ))}
+        {rows !== undefined && entries.length === 0 ? (
+          <li className="py-4 text-sm text-ink/60">
+            Nothing here yet — paste a link or search on the home page, or import a Takeout archive
             in Settings.
           </li>
         ) : null}
       </ul>
 
       {editing ? (
-        <div className="mt-6 flex items-center gap-2">
+        <div className="mt-6">
           <button
             type="button"
-            className="rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-coral-ink hover:bg-red-50"
-            data-testid="remove-all-places"
-            onClick={() =>
-              guarded("Can’t empty this list yet", () => repo.removeAllPlaces(list.id, nowIso()))
-            }
-          >
-            Remove all places
-          </button>
-          <button
-            type="button"
-            className="rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-coral-ink hover:bg-red-50"
+            className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-accent-vermilion-deep hover:bg-ink/5"
             data-testid="delete-list"
             onClick={() =>
               guarded("Can’t delete this list yet", () =>
-                repo.deleteList(list.id, nowIso()).then(() => {
+                repo.deleteList(list.id).then(() => {
                   void navigate({ to: "/" });
                 }),
               )
@@ -529,18 +359,7 @@ export function ListPage() {
         <BlockerDialog
           title={refusal.title}
           blockers={refusal.blockers}
-          placeNames={blockerPlaceNames}
-          onOpenPlace={(placeId) => {
-            const blocked = placeBlocks.find((view) => view.place.id === placeId);
-            const facts = blocked ? displayFacts(blocked.place) : undefined;
-            setRefusal(undefined);
-            selectPlace(placeId);
-            if (facts) requestFlyTo({ lat: facts.lat, lng: facts.lng, zoom: 16 });
-          }}
-          onDeleteNotes={async (noteIds) => {
-            for (const noteId of noteIds) await repo.deleteNote(noteId, nowIso());
-            setRefusal(undefined);
-          }}
+          names={blockerNames}
           onClose={() => setRefusal(undefined)}
         />
       ) : null}

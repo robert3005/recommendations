@@ -1,44 +1,44 @@
 /**
- * Import places (spec/src/interop.md): drop a Google Takeout archive, CSV,
- * KML/KMZ, GPX, or GeoJSON. Shows the every-row-accounted-for report; rows
- * that need a decision wait in the review queue — its own pane route, where
- * the item under review projects onto the main canvas (2026-07-19 late; the
- * bespoke mini map is retired).
+ * Import places (spec/src/interop.md §Import): drop a Google Takeout archive
+ * (or one of its pieces — a Saved list CSV, Saved Places.json) or a My Maps
+ * KML/KMZ. Parsed on this device — nothing is sent to Google. Shows the
+ * every-row-accounted-for report; rows that need a decision wait in the
+ * review queue, its own pane route projecting onto the canvas.
  */
-
 import { Link } from "@tanstack/react-router";
+import { useLiveQuery } from "dexie-react-hooks";
 import { useRef, useState } from "react";
-import { useReviewItems } from "../../data/hooks";
-import { useDexieRepo } from "../../data/RepoContext";
+import { useRepo } from "../../data/RepoContext";
 import { nowIso } from "../../lib/time";
-import { poiResolver, searchProvider } from "../../providers";
-import { type ImportReport, runImport } from "./importer";
-
-const DEPS = { search: searchProvider, resolver: poiResolver };
+import { geocoder } from "../../providers";
+import { type ImportReport, listReviewItems, runImport } from "./importer";
 
 function reportLine(report: ImportReport): string {
   const parts = [
     `${report.placed} placed`,
-    ...(report.linked > 0 ? [`${report.linked} linked to OSM`] : []),
-    ...(report.duplicates > 0 ? [`${report.duplicates} already present`] : []),
+    ...(report.alreadyPresent > 0 ? [`${report.alreadyPresent} already present`] : []),
     ...(report.review > 0 ? [`${report.review} to review`] : []),
+    ...(report.geocodePending > 0 ? [`${report.geocodePending} waiting on the geocoder`] : []),
     ...(report.skipped > 0 ? [`${report.skipped} unusable rows`] : []),
+    ...(report.droppedNotes > 0
+      ? [`${report.droppedNotes} notes dropped (place already has a post)`]
+      : []),
   ];
-  return `Imported ${report.fileName}: ${parts.join(", ")}.`;
+  return `Imported ${report.fileName} (${report.rows} rows): ${parts.join(", ")}.`;
 }
 
 export function ImportSection() {
-  const repo = useDexieRepo();
+  const repo = useRepo();
   const fileRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const reviewItems = useReviewItems();
+  const queue = useLiveQuery(() => listReviewItems(repo), [repo]);
 
   const doImport = async (file: File) => {
     setBusy(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const report = await runImport(repo, { name: file.name, bytes }, DEPS, nowIso());
+      const report = await runImport(repo, { name: file.name, bytes }, { geocoder }, nowIso());
       setMessage(reportLine(report));
     } catch (err) {
       setMessage(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -47,22 +47,22 @@ export function ImportSection() {
     }
   };
 
-  const pending = (reviewItems ?? []).length;
+  const pending = (queue ?? []).length;
 
   return (
     <section className="mt-6" data-testid="import-section">
-      <h2 className="text-sm font-semibold text-ink-2">Import places</h2>
-      <p className="mt-1 text-xs text-ink-3">
-        A Google Takeout archive (Saved lists), CSV, KML/KMZ, GPX, or GeoJSON. Parsed on this device
-        — nothing is sent to Google. Rows that can't be placed automatically wait in the review
-        queue.
+      <h2 className="text-sm font-semibold text-ink/70">Import places</h2>
+      <p className="mt-1 text-xs text-ink/60">
+        A Google Takeout archive (Saved lists), a single Saved list CSV, Saved Places.json, or a My
+        Maps KML/KMZ. Parsed on this device — nothing is sent to Google. Rows that can't be placed
+        automatically wait in the review queue.
       </p>
       <div className="mt-2">
         <button
           type="button"
           disabled={busy}
           onClick={() => fileRef.current?.click()}
-          className="rounded bg-ink px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+          className="rounded-crisp bg-ink px-3 py-1.5 text-sm font-medium text-paper disabled:opacity-40"
           data-testid="import-places"
         >
           {busy ? "Importing…" : "Import places…"}
@@ -70,7 +70,7 @@ export function ImportSection() {
         <input
           ref={fileRef}
           type="file"
-          accept=".zip,.csv,.kml,.kmz,.gpx,.json,.geojson"
+          accept=".zip,.csv,.kml,.kmz,.json"
           className="hidden"
           aria-label="Import places file"
           onChange={(e) => {
@@ -81,7 +81,7 @@ export function ImportSection() {
         />
       </div>
       {message ? (
-        <p className="mt-2 text-xs text-ink-2" data-testid="import-report">
+        <p className="mt-2 text-xs text-ink/70" data-testid="import-report">
           {message}
         </p>
       ) : null}
@@ -89,7 +89,7 @@ export function ImportSection() {
         <p className="mt-2 text-xs" data-testid="import-review">
           <Link
             to="/review"
-            className="font-medium text-water-ink underline"
+            className="font-medium text-accent-cobalt-deep underline"
             data-testid="open-review-queue"
           >
             Review {pending} pending {pending === 1 ? "item" : "items"}

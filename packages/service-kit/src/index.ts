@@ -1,14 +1,8 @@
 /**
- * Primitives both services need, defined once.
- *
- * The share and sync services each carried a byte-identical copy of these —
- * including the 43-to-512-character Bearer pattern that encodes "at least 256
- * random bits". Two copies of a token comparison is exactly the kind of
- * duplication that drifts silently and only matters once.
- *
- * This is a shared package, not a merged service: the two runtimes genuinely
- * differ (a public read path that wants an edge cache and scale-to-zero, and a
- * per-account write log that wants Postgres), so they share code, not a deploy.
+ * Security primitives for the share service (spec/src/sharing.md §The editor
+ * token): the token is sent as a Bearer header, stored server-side only as a
+ * hash, and compared in constant time. The 43-to-512-character Bearer pattern
+ * encodes "at least 256 random bits" of base64url.
  */
 
 /** SHA-256 of a UTF-8 string, lowercase hex. */
