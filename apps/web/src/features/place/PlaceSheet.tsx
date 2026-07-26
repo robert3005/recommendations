@@ -32,14 +32,14 @@ function SheetShell({ children, label }: { children: React.ReactNode; label: str
       tabIndex={-1}
       role="dialog"
       aria-label={label}
-      className="absolute inset-x-0 bottom-0 z-40 max-h-[60%] overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-4 shadow-xl md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-2xl"
+      className="absolute inset-x-0 bottom-0 z-40 max-h-[60%] overflow-y-auto rounded-t-2xl border border-rule bg-paper p-4 shadow-xl md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-2xl"
       data-testid="place-sheet"
     >
       <button
         type="button"
         onClick={clearSelection}
         aria-label="Close"
-        className="absolute top-2 right-3 rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+        className="absolute top-2 right-3 rounded p-1 text-ink-3 hover:bg-land hover:text-ink-2"
       >
         ✕
       </button>
@@ -67,7 +67,7 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
     return (
       <SheetShell label={label}>
         <PlaceFields {...(hint?.name ? { name: hint.name } : {})} source="live" />
-        <p className="mt-2 text-sm text-stone-500" data-testid="sheet-loading">
+        <p className="mt-2 text-sm text-ink-3" data-testid="sheet-loading">
           Loading OSM details…
         </p>
       </SheetShell>
@@ -78,13 +78,13 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
     return (
       <SheetShell label={label}>
         <PlaceFields {...(hint?.name ? { name: hint.name } : {})} source="live" />
-        <p className="mt-2 text-sm text-stone-600" data-testid="sheet-error">
+        <p className="mt-2 text-sm text-ink-2" data-testid="sheet-error">
           OpenStreetMap is unreachable right now. This is not evidence the place is gone.
         </p>
         <button
           type="button"
           onClick={() => void resolveQuery.refetch()}
-          className="mt-2 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
+          className="mt-2 rounded bg-ink px-3 py-1.5 text-sm font-medium text-white"
         >
           Retry
         </button>
@@ -98,14 +98,14 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
     return (
       <SheetShell label={label}>
         <PlaceFields {...(hint?.name ? { name: hint.name } : {})} source="live" />
-        <p className="mt-2 text-sm text-red-700" data-testid="sheet-gone">
+        <p className="mt-2 text-sm text-coral-ink" data-testid="sheet-gone">
           This element no longer exists on OpenStreetMap.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => void resolveQuery.refetch()}
-            className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
+            className="rounded bg-ink px-3 py-1.5 text-sm font-medium text-white"
           >
             Retry
           </button>
@@ -113,7 +113,7 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
             <button
               type="button"
               onClick={() => openPicker({ lat: hint.lat, lng: hint.lng })}
-              className="rounded border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700"
+              className="rounded border border-rule px-3 py-1.5 text-sm font-medium text-ink-2"
               data-testid="find-candidates"
             >
               Find nearby candidates
@@ -144,7 +144,7 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
           <button
             type="button"
             onClick={() => selectPlace(existingPlace.id)}
-            className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
+            className="rounded bg-ink px-3 py-1.5 text-sm font-medium text-white"
             data-testid="open-place"
           >
             Open place
@@ -153,7 +153,7 @@ function OsmSelectionSheet({ selection }: { selection: Extract<Selection, { kind
       ) : null}
       {!existingPlace ? (
         <div className="mt-3">
-          <h3 className="text-xs font-semibold tracking-wide text-stone-500 uppercase">Lists</h3>
+          <h3 className="text-xs font-semibold tracking-wide text-ink-3 uppercase">Lists</h3>
           <AddToList
             lists={lists}
             memberListIds={[]}

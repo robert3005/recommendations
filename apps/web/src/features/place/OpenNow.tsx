@@ -20,6 +20,6 @@ export function OpenNow({ openingHours, at }: { openingHours: string; at?: Date 
   return state.open ? (
     <span className="text-xs font-medium text-emerald-700">Open now</span>
   ) : (
-    <span className="text-xs font-medium text-red-700">Closed</span>
+    <span className="text-xs font-medium text-coral-ink">Closed</span>
   );
 }

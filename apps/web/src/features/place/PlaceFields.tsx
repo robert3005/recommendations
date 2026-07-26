@@ -24,17 +24,17 @@ export function PlaceFields(props: PlaceFieldsProps) {
   return (
     <div data-testid="place-fields">
       <div className="flex items-start justify-between gap-2 pr-7">
-        <h2 className="text-lg font-semibold text-stone-900">{name ?? "Unnamed place"}</h2>
+        <h2 className="text-lg font-semibold text-ink">{name ?? "Unnamed place"}</h2>
         {state ? <StateBadge state={state} /> : null}
       </div>
       <div className="mt-0.5 flex items-center gap-2">
-        {category ? <span className="text-sm capitalize text-stone-500">{category}</span> : null}
+        {category ? <span className="text-sm capitalize text-ink-3">{category}</span> : null}
         {openingHours ? (
           <OpenNow openingHours={openingHours} {...(now ? { at: now } : {})} />
         ) : null}
       </div>
       {source === "manual" ? (
-        <p className="mt-1 text-xs text-orange-700" data-testid="manual-note">
+        <p className="mt-1 text-xs text-clay-ink" data-testid="manual-note">
           Owner-provided details — not linked to OpenStreetMap
         </p>
       ) : null}
@@ -42,7 +42,7 @@ export function PlaceFields(props: PlaceFieldsProps) {
         {address ? (
           <div>
             <dt className="sr-only">Address</dt>
-            <dd className="text-stone-700">{address}</dd>
+            <dd className="text-ink-2">{address}</dd>
           </div>
         ) : null}
         {website ? (
@@ -53,7 +53,7 @@ export function PlaceFields(props: PlaceFieldsProps) {
                 href={website}
                 target="_blank"
                 rel="noopener noreferrer nofollow ugc"
-                className="break-all text-blue-700 underline"
+                className="break-all text-water-ink underline"
                 data-testid="website-link"
               >
                 {website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
@@ -65,7 +65,7 @@ export function PlaceFields(props: PlaceFieldsProps) {
           <div>
             <dt className="sr-only">Phone</dt>
             <dd>
-              <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="text-blue-700 underline">
+              <a href={`tel:${phone.replace(/[^\d+]/g, "")}`} className="text-water-ink underline">
                 {phone}
               </a>
             </dd>
@@ -74,7 +74,7 @@ export function PlaceFields(props: PlaceFieldsProps) {
         {openingHours ? (
           <div>
             <dt className="sr-only">Opening hours</dt>
-            <dd className="text-stone-600">{openingHours}</dd>
+            <dd className="text-ink-2">{openingHours}</dd>
           </div>
         ) : null}
       </dl>

@@ -52,17 +52,17 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-white"
+      className="fixed inset-0 z-50 flex flex-col bg-paper"
       role="dialog"
       aria-modal="true"
       aria-label="Edit note"
       data-testid="note-editor"
     >
-      <header className="flex shrink-0 items-center gap-3 border-b border-stone-200 px-4 py-2">
+      <header className="flex shrink-0 items-center gap-3 border-b border-rule px-4 py-2">
         <button
           type="button"
           onClick={onCancel}
-          className="rounded px-2 py-1 text-sm text-stone-600 hover:bg-stone-100"
+          className="rounded px-2 py-1 text-sm text-ink-2 hover:bg-land"
         >
           Cancel
         </button>
@@ -72,9 +72,9 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Note title (optional)"
           aria-label="Note title"
-          className="min-w-0 flex-1 rounded border border-transparent px-2 py-1 text-base font-medium focus:border-stone-300 focus:outline-none"
+          className="min-w-0 flex-1 rounded border border-transparent px-2 py-1 text-base font-medium focus:border-rule focus:outline-none"
         />
-        <label className="flex shrink-0 items-center gap-1.5 text-xs text-stone-600">
+        <label className="flex shrink-0 items-center gap-1.5 text-xs text-ink-2">
           <input
             type="checkbox"
             checked={shareable}
@@ -95,21 +95,21 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
               updatedAt: nowIso(),
             });
           }}
-          className="shrink-0 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
+          className="shrink-0 rounded bg-ink px-3 py-1.5 text-sm font-medium text-white"
         >
           Save note
         </button>
       </header>
       <div className="grid min-h-0 flex-1 grid-rows-2 md:grid-cols-2 md:grid-rows-1">
-        <div className="flex min-h-0 flex-col border-b border-stone-200 md:border-r md:border-b-0">
+        <div className="flex min-h-0 flex-col border-b border-rule md:border-r md:border-b-0">
           <div className="flex shrink-0 items-center justify-between px-4 pt-2">
-            <span className="text-[11px] font-semibold tracking-wide text-stone-400 uppercase">
+            <span className="text-[11px] font-semibold tracking-wide text-ink-3 uppercase">
               Markdown
             </span>
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="rounded border border-stone-200 px-2 py-0.5 text-xs font-medium text-stone-600 hover:bg-stone-100"
+              className="rounded border border-rule px-2 py-0.5 text-xs font-medium text-ink-2 hover:bg-land"
             >
               Add image
             </button>
@@ -136,12 +136,12 @@ export function NoteEditor({ note, onSave, onCancel }: NoteEditorProps) {
           />
         </div>
         <div className="min-h-0 overflow-y-auto p-4" data-testid="note-preview">
-          <span className="text-[11px] font-semibold tracking-wide text-stone-400 uppercase">
+          <span className="text-[11px] font-semibold tracking-wide text-ink-3 uppercase">
             Preview
           </span>
           <div className="mt-2">
             {body.trim() === "" ? (
-              <p className="text-sm text-stone-400">Nothing to preview yet.</p>
+              <p className="text-sm text-ink-3">Nothing to preview yet.</p>
             ) : (
               <Markdown body={body} />
             )}

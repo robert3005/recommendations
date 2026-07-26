@@ -26,8 +26,8 @@ export function SnapshotViewerPage() {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptySharedCanvasProjection />
-        <p className="max-w-sm text-center text-sm text-stone-600" data-testid="snapshot-error">
-          <span className="font-semibold text-stone-800">Could not open this shared page.</span>{" "}
+        <p className="max-w-sm text-center text-sm text-ink-2" data-testid="snapshot-error">
+          <span className="font-semibold text-ink">Could not open this shared page.</span>{" "}
           {state.error}
         </p>
       </div>

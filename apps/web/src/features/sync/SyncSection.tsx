@@ -23,8 +23,8 @@ export function SyncSection() {
 
   return (
     <section className="mt-6" data-testid="sync-section">
-      <h2 className="text-sm font-semibold text-stone-700">Sync between devices</h2>
-      <p className="mt-1 text-xs text-stone-500">
+      <h2 className="text-sm font-semibold text-ink-2">Sync between devices</h2>
+      <p className="mt-1 text-xs text-ink-3">
         An account only names your sync scope — lists, posts, notes, tags, and places move between
         your signed-in devices. Without one, everything keeps working on this device alone.
       </p>
@@ -38,13 +38,13 @@ export function SyncSection() {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               aria-label="Sync account email"
-              className="min-w-0 flex-1 rounded border border-stone-300 px-2 py-1 text-sm"
+              className="min-w-0 flex-1 rounded border border-rule px-2 py-1 text-sm"
               data-testid="sync-email"
             />
             <button
               type="button"
               disabled={phase === "busy" || email.trim() === ""}
-              className="shrink-0 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+              className="shrink-0 rounded bg-ink px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
               data-testid="sync-request-code"
               onClick={() => {
                 setPhase("busy");
@@ -71,13 +71,13 @@ export function SyncSection() {
                 onChange={(e) => setCode(e.target.value)}
                 placeholder="6-digit code"
                 aria-label="Sign-in code"
-                className="min-w-0 flex-1 rounded border border-stone-300 px-2 py-1 text-sm"
+                className="min-w-0 flex-1 rounded border border-rule px-2 py-1 text-sm"
                 data-testid="sync-code"
               />
               <button
                 type="button"
                 disabled={code.trim() === ""}
-                className="shrink-0 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+                className="shrink-0 rounded bg-ink px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
                 data-testid="sync-complete-login"
                 onClick={() => {
                   setPhase("busy");
@@ -106,7 +106,7 @@ export function SyncSection() {
           ) : null}
         </div>
       ) : (
-        <div className="mt-2 space-y-1 text-xs text-stone-600" data-testid="sync-status">
+        <div className="mt-2 space-y-1 text-xs text-ink-2" data-testid="sync-status">
           <p>
             Syncing as <span className="font-medium">{state?.email}</span>
           </p>
@@ -123,7 +123,7 @@ export function SyncSection() {
             <button
               type="button"
               disabled={phase === "busy"}
-              className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+              className="rounded bg-ink px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
               data-testid="sync-now"
               onClick={() => {
                 setPhase("busy");
@@ -145,7 +145,7 @@ export function SyncSection() {
             <button
               type="button"
               disabled={phase === "busy"}
-              className="rounded border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700"
+              className="rounded border border-rule px-3 py-1.5 text-sm font-medium text-ink-2"
               data-testid="sync-sign-out"
               onClick={() => {
                 setPhase("busy");
@@ -163,7 +163,7 @@ export function SyncSection() {
             <button
               type="button"
               disabled={phase === "busy"}
-              className="rounded border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700"
+              className="rounded border border-rule px-3 py-1.5 text-sm font-medium text-ink-2"
               data-testid="sync-sign-out-others"
               onClick={() => {
                 setPhase("busy");
@@ -182,17 +182,17 @@ export function SyncSection() {
         </div>
       )}
       {message ? (
-        <p className="mt-2 text-xs text-stone-600" data-testid="sync-message">
+        <p className="mt-2 text-xs text-ink-2" data-testid="sync-message">
           {message}
         </p>
       ) : null}
 
       {(conflicts ?? []).length > 0 ? (
         <div className="mt-3" data-testid="sync-conflicts">
-          <h3 className="text-xs font-semibold tracking-wide text-stone-500 uppercase">
+          <h3 className="text-xs font-semibold tracking-wide text-ink-3 uppercase">
             Rescued during sync
           </h3>
-          <p className="mt-0.5 text-[11px] text-stone-500">
+          <p className="mt-0.5 text-[11px] text-ink-3">
             These notes raced a deletion on another device. Their text is preserved here — copy what
             you need, then dismiss.
           </p>
@@ -203,14 +203,12 @@ export function SyncSection() {
                 className="rounded border border-orange-200 bg-orange-50 p-2 text-xs"
                 data-testid="sync-conflict"
               >
-                {conflict.title ? (
-                  <p className="font-medium text-stone-800">{conflict.title}</p>
-                ) : null}
-                <p className="whitespace-pre-wrap text-stone-700">{conflict.body}</p>
-                <p className="mt-1 text-[11px] text-stone-500">{conflict.reason}</p>
+                {conflict.title ? <p className="font-medium text-ink">{conflict.title}</p> : null}
+                <p className="whitespace-pre-wrap text-ink-2">{conflict.body}</p>
+                <p className="mt-1 text-[11px] text-ink-3">{conflict.reason}</p>
                 <button
                   type="button"
-                  className="mt-1 rounded px-2 py-0.5 text-[11px] font-medium text-stone-600 hover:bg-orange-100"
+                  className="mt-1 rounded px-2 py-0.5 text-[11px] font-medium text-ink-2 hover:bg-amber-wash"
                   data-testid="dismiss-conflict"
                   onClick={() => void repo.db.syncConflicts.delete(conflict.id)}
                 >

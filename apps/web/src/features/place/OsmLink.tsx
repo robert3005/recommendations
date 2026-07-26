@@ -11,7 +11,7 @@ export function OsmLink({ osmRef }: { osmRef: OsmElementRef }) {
       href={osmElementUrl(osmRef)}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-[11px] text-stone-400 underline hover:text-stone-700"
+      className="text-[11px] text-ink-3 underline hover:text-ink-2"
       data-testid="osm-link"
     >
       View on OpenStreetMap

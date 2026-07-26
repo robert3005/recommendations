@@ -27,14 +27,14 @@ export function TagEditor({ tags, onAdd, onRemove }: TagEditorProps) {
         {tags.map((tag) => (
           <span
             key={tag.id}
-            className="inline-flex items-center gap-1 rounded-full bg-stone-200 px-2 py-0.5 text-xs font-medium text-stone-800"
+            className="inline-flex items-center gap-1 rounded-full bg-rule px-2 py-0.5 text-xs font-medium text-ink"
           >
             {tag.name}
             <button
               type="button"
               aria-label={`Remove tag ${tag.name}`}
               onClick={() => onRemove(tag.id)}
-              className="text-stone-500 hover:text-stone-900"
+              className="text-ink-3 hover:text-ink"
             >
               ×
             </button>
@@ -54,7 +54,7 @@ export function TagEditor({ tags, onAdd, onRemove }: TagEditorProps) {
           placeholder="Add tag…"
           aria-label="Add tag"
           list="tag-suggestions"
-          className="w-24 rounded border border-stone-200 px-2 py-0.5 text-xs"
+          className="w-24 rounded border border-rule px-2 py-0.5 text-xs"
         />
         <datalist id="tag-suggestions">
           {suggestions.map((t) => (

@@ -50,7 +50,7 @@ export const CreatesListInline: Story = {
       { name: "Trailhead", lat: 38.7139, lng: -9.1394 },
       // Default marker: the next unused (colour, icon) combination after the
       // existing list's markerAt(0).
-      { kind: "new", name: "Hikes", marker: { color: "#2563eb", icon: "diamond" } },
+      { kind: "new", name: "Hikes", marker: { color: "#2b8fd6", icon: "diamond" } },
     );
   },
 };

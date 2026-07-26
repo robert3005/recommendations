@@ -45,18 +45,18 @@ export function BlockerDialog({
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
       data-testid="blocker-dialog"
     >
-      <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
-        <h2 className="text-base font-semibold text-stone-900">{title}</h2>
-        <p className="mt-1 text-sm text-stone-600">
+      <div className="w-full max-w-md rounded-lg bg-paper p-4 shadow-xl">
+        <h2 className="text-base font-semibold text-ink">{title}</h2>
+        <p className="mt-1 text-sm text-ink-2">
           Nothing you wrote is deleted as a side effect — remove these first:
         </p>
-        <ul className="mt-2 space-y-1 text-sm text-stone-800">
+        <ul className="mt-2 space-y-1 text-sm text-ink">
           {blockers.map((blocker) => {
             if (blocker.kind === "post") {
               return (
                 <li key={`post-${blocker.id}`} data-testid="blocker-post">
                   ✍ The post{" "}
-                  <a href={postHref(blocker.id)} className="font-medium text-blue-700 underline">
+                  <a href={postHref(blocker.id)} className="font-medium text-water-ink underline">
                     “{blocker.label ?? "Untitled post"}”
                   </a>{" "}
                   is about this list — open it and delete the post first.
@@ -69,7 +69,7 @@ export function BlockerDialog({
                   ◉{" "}
                   <button
                     type="button"
-                    className="font-medium text-blue-700 underline"
+                    className="font-medium text-water-ink underline"
                     onClick={() => onOpenPlace(blocker.id)}
                   >
                     {placeName(blocker.placeId ?? blocker.id)}
@@ -84,7 +84,7 @@ export function BlockerDialog({
                   ⌘ Embedded in the post{" "}
                   <a
                     href={postHref(blocker.postId ?? "", blocker.id)}
-                    className="font-medium text-blue-700 underline"
+                    className="font-medium text-water-ink underline"
                   >
                     “{blocker.label ?? "Untitled post"}”
                   </a>{" "}
@@ -97,7 +97,7 @@ export function BlockerDialog({
                 ✎{" "}
                 <button
                   type="button"
-                  className="font-medium text-blue-700 underline"
+                  className="font-medium text-water-ink underline"
                   onClick={() => blocker.placeId && onOpenPlace(blocker.placeId)}
                 >
                   {placeName(blocker.placeId)}
@@ -110,10 +110,10 @@ export function BlockerDialog({
         </ul>
 
         {onDeleteNotes && noteBlockers.length > 0 ? (
-          <div className="mt-3 rounded border border-stone-200 bg-stone-50 p-2 text-sm">
+          <div className="mt-3 rounded border border-rule bg-land p-2 text-sm">
             {confirmingNotes ? (
               <>
-                <p className="text-stone-700">
+                <p className="text-ink-2">
                   Delete {noteBlockers.length} {noteBlockers.length === 1 ? "note" : "notes"}{" "}
                   permanently? This cannot be undone.
                 </p>
@@ -121,7 +121,7 @@ export function BlockerDialog({
                   <button
                     type="button"
                     disabled={busy}
-                    className="rounded bg-red-700 px-2 py-1 font-medium text-white disabled:opacity-40"
+                    className="rounded bg-coral-ink px-2 py-1 font-medium text-white disabled:opacity-40"
                     data-testid="blocker-delete-notes-confirm"
                     onClick={() => {
                       setBusy(true);
@@ -137,7 +137,7 @@ export function BlockerDialog({
                   </button>
                   <button
                     type="button"
-                    className="rounded border border-stone-300 px-2 py-1 font-medium text-stone-600"
+                    className="rounded border border-rule px-2 py-1 font-medium text-ink-2"
                     onClick={() => setConfirmingNotes(false)}
                   >
                     Keep them
@@ -147,7 +147,7 @@ export function BlockerDialog({
             ) : (
               <button
                 type="button"
-                className="font-medium text-blue-700 underline"
+                className="font-medium text-water-ink underline"
                 data-testid="blocker-delete-notes"
                 onClick={() => setConfirmingNotes(true)}
               >
@@ -160,7 +160,7 @@ export function BlockerDialog({
         <div className="mt-4 flex justify-end">
           <button
             type="button"
-            className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
+            className="rounded bg-ink px-3 py-1.5 text-sm font-medium text-white"
             onClick={onClose}
             data-testid="blocker-dialog-close"
           >

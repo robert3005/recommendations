@@ -86,22 +86,22 @@ export function SearchBar({ onSelect, bias }: SearchBarProps) {
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        className="w-full rounded-full border border-stone-300 bg-white px-4 py-2 text-sm shadow-md focus:border-stone-500 focus:outline-none"
+        className="w-full rounded-full border border-rule bg-paper px-4 py-2 text-sm shadow-md focus:border-ink-3 focus:outline-none"
       />
       {open && debouncedQuery.length >= 2 ? (
         // A listbox may only contain options — status text renders as its own
         // live region instead (continuous axe check, spec/src/roadmap.md).
         searchQuery.isPending || searchQuery.isError || results.length === 0 ? (
           <output
-            className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-xl border border-stone-200 bg-white px-4 py-2 text-sm shadow-lg"
+            className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-xl border border-rule bg-paper px-4 py-2 text-sm shadow-lg"
             data-testid="search-status"
           >
             {searchQuery.isPending ? (
-              <span className="text-stone-500">Searching…</span>
+              <span className="text-ink-3">Searching…</span>
             ) : searchQuery.isError ? (
-              <span className="text-red-700">Search is unavailable right now.</span>
+              <span className="text-coral-ink">Search is unavailable right now.</span>
             ) : (
-              <span className="text-stone-500">No places found.</span>
+              <span className="text-ink-3">No places found.</span>
             )}
           </output>
         ) : (
@@ -110,7 +110,7 @@ export function SearchBar({ onSelect, bias }: SearchBarProps) {
             // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: ul[role=listbox] with option children is the standard ARIA combobox pattern
             role="listbox"
             aria-label="Search results"
-            className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-xl border border-stone-200 bg-white shadow-lg"
+            className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-xl border border-rule bg-paper shadow-lg"
           >
             {results.map((result, index) => (
               <li key={`${result.ref.type}/${result.ref.id}`} role="presentation">
@@ -121,17 +121,15 @@ export function SearchBar({ onSelect, bias }: SearchBarProps) {
                   onClick={() => select(result)}
                   onMouseEnter={() => setActiveIndex(index)}
                   className={`block w-full px-4 py-2 text-left text-sm ${
-                    index === activeIndex ? "bg-stone-100" : ""
+                    index === activeIndex ? "bg-land" : ""
                   }`}
                 >
-                  <span className="font-medium text-stone-900">{result.name}</span>
+                  <span className="font-medium text-ink">{result.name}</span>
                   {result.category ? (
-                    <span className="ml-2 text-xs capitalize text-stone-500">
-                      {result.category}
-                    </span>
+                    <span className="ml-2 text-xs capitalize text-ink-3">{result.category}</span>
                   ) : null}
                   {result.address ? (
-                    <span className="block text-xs text-stone-500">{result.address}</span>
+                    <span className="block text-xs text-ink-3">{result.address}</span>
                   ) : null}
                 </button>
               </li>

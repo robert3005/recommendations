@@ -70,15 +70,17 @@ export function PostPage() {
     ...(visibleEmbeds.length > 0 ? { focusPlaceIds: visibleEmbeds } : {}),
   });
 
-  if (!post) return <div className="p-4 text-stone-500">Post not found.</div>;
+  if (!post) return <div className="p-4 text-ink-3">Post not found.</div>;
 
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="post-page" ref={articleRef}>
       <div className="flex items-start justify-between gap-2">
-        <h1 className="text-2xl font-semibold text-stone-900">{post.title}</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight text-ink">
+          {post.title}
+        </h1>
         <button
           type="button"
-          className="shrink-0 rounded border border-stone-300 px-3 py-1 text-sm font-medium text-stone-700"
+          className="shrink-0 rounded border border-rule px-3 py-1 text-sm font-medium text-ink-2"
           data-testid="edit-post"
           onClick={() => {
             void navigate({ to: "/post/$postId/edit", params: { postId: post.id } });
@@ -88,12 +90,12 @@ export function PostPage() {
         </button>
       </div>
       {list ? (
-        <p className="mt-1 text-sm text-stone-500">
+        <p className="mt-1 text-sm text-ink-3">
           From the list:{" "}
           <Link
             to="/list/$listId"
             params={{ listId: list.id }}
-            className="inline-flex items-center gap-1 font-medium text-blue-700 underline"
+            className="inline-flex items-center gap-1 font-medium text-water-ink underline"
             data-testid="post-list-link"
           >
             <MarkerGlyph marker={list.marker} size={14} />
@@ -115,7 +117,7 @@ export function PostPage() {
                 data-post-follow={view.block.id}
               >
                 {note.title ? (
-                  <h2 className="mb-1 text-lg font-semibold text-stone-900">{note.title}</h2>
+                  <h2 className="mb-1 font-display text-lg font-semibold text-ink">{note.title}</h2>
                 ) : null}
                 <Markdown body={note.body} />
               </section>
@@ -135,16 +137,14 @@ export function PostPage() {
               data-embed-place={place.id}
               data-post-follow={view.block.id}
               data-selected={selectedEmbed === place.id ? "true" : "false"}
-              className={`rounded-lg border bg-stone-50 p-3 ${
-                selectedEmbed === place.id
-                  ? "border-stone-500 ring-2 ring-stone-300"
-                  : "border-stone-200"
+              className={`rounded-lg border bg-land p-3 ${
+                selectedEmbed === place.id ? "border-ink-3 ring-2 ring-rule" : "border-rule"
               }`}
             >
               {/* Selection is bidirectional: the embed card selects and flies. */}
               <button
                 type="button"
-                className="text-left text-base font-semibold text-stone-900 hover:underline"
+                className="text-left text-base font-semibold text-ink hover:underline"
                 data-testid="post-embed-select"
                 onClick={() => {
                   setSelectedEmbed(place.id);
@@ -155,12 +155,12 @@ export function PostPage() {
                 {facts.name ?? "Place"}
               </button>
               {facts.category ? (
-                <span className="ml-2 text-xs text-stone-500 capitalize">{facts.category}</span>
+                <span className="ml-2 text-xs text-ink-3 capitalize">{facts.category}</span>
               ) : null}
-              {facts.address ? <p className="text-sm text-stone-600">{facts.address}</p> : null}
+              {facts.address ? <p className="text-sm text-ink-2">{facts.address}</p> : null}
               {(view.attachments ?? []).map(({ attachment, note }) => (
-                <div key={attachment.id} className="mt-2 border-t border-stone-200 pt-2 text-sm">
-                  {note.title ? <p className="font-medium text-stone-800">{note.title}</p> : null}
+                <div key={attachment.id} className="mt-2 border-t border-rule pt-2 text-sm">
+                  {note.title ? <p className="font-medium text-ink">{note.title}</p> : null}
                   <Markdown body={note.body} />
                 </div>
               ))}
@@ -181,7 +181,7 @@ export function PostPage() {
           );
         })}
         {blocks !== undefined && blocks.length === 0 ? (
-          <p className="py-6 text-sm text-stone-500">
+          <p className="py-6 text-sm text-ink-3">
             Nothing here yet — open Edit to write sections and embed places from{" "}
             {list?.name ?? "the list"}.
           </p>

@@ -71,7 +71,7 @@ export function ListPage() {
   const [copied, setCopied] = useState(false);
   const [exportError, setExportError] = useState<string>();
 
-  if (!list) return <div className="p-4 text-stone-500">List not found.</div>;
+  if (!list) return <div className="p-4 text-ink-3">List not found.</div>;
 
   /** Teardown refusals surface as an actionable blocker report, never a crash. */
   const guarded = (title: string, action: () => Promise<void>) => {
@@ -232,7 +232,7 @@ export function ListPage() {
               value={name ?? list.name}
               onChange={(e) => setName(e.target.value)}
               aria-label="List name"
-              className="w-full rounded border border-stone-300 px-2 py-1 text-lg font-semibold"
+              className="w-full rounded border border-rule px-2 py-1 text-lg font-semibold"
               data-testid="list-name-input"
             />
             <MarkerSwatches
@@ -245,7 +245,7 @@ export function ListPage() {
             />
           </div>
         ) : (
-          <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-900">
+          <h1 className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
             <span data-testid="list-marker" data-color={list.marker.color}>
               <MarkerGlyph marker={list.marker} size={18} />
             </span>
@@ -254,7 +254,7 @@ export function ListPage() {
         )}
         <button
           type="button"
-          className="shrink-0 rounded border border-stone-300 px-3 py-1 text-sm font-medium text-stone-700"
+          className="shrink-0 rounded border border-rule px-3 py-1 text-sm font-medium text-ink-2"
           data-testid="edit-list"
           onClick={() => {
             if (editing) {
@@ -271,10 +271,10 @@ export function ListPage() {
         </button>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-stone-500">
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-3">
         <button
           type="button"
-          className="rounded bg-stone-800 px-2.5 py-1 font-medium text-white"
+          className="rounded bg-ink px-2.5 py-1 font-medium text-white"
           data-testid="share-list"
           onClick={() => void openShare()}
         >
@@ -282,7 +282,7 @@ export function ListPage() {
         </button>
         <button
           type="button"
-          className="rounded border border-stone-200 px-2 py-0.5 font-medium text-stone-600 hover:bg-stone-100"
+          className="rounded border border-rule px-2 py-0.5 font-medium text-ink-2 hover:bg-land"
           data-testid="send-to-my-maps"
           onClick={() =>
             void sendToMyMaps().catch((err: unknown) =>
@@ -297,7 +297,7 @@ export function ListPage() {
           <button
             key={writer.key}
             type="button"
-            className="rounded border border-stone-200 px-2 py-0.5 font-medium text-stone-600 hover:bg-stone-100"
+            className="rounded border border-rule px-2 py-0.5 font-medium text-ink-2 hover:bg-land"
             data-testid={`export-${writer.key}`}
             onClick={() =>
               void exportAs(writer).catch((err: unknown) =>
@@ -310,7 +310,7 @@ export function ListPage() {
         ))}
         <button
           type="button"
-          className="rounded border border-stone-200 px-2 py-0.5 font-medium text-stone-600 hover:bg-stone-100"
+          className="rounded border border-rule px-2 py-0.5 font-medium text-ink-2 hover:bg-land"
           data-testid="export-kmz"
           onClick={() =>
             void exportKmz().catch((err: unknown) =>
@@ -326,7 +326,7 @@ export function ListPage() {
           Export failed — nothing was downloaded ({exportError}).
         </output>
       ) : null}
-      <p className="mt-1 text-[11px] text-stone-400">
+      <p className="mt-1 text-[11px] text-ink-3">
         Google My Maps accepts up to 2,000 features per layer and 5 MB per file — larger lists split
         into numbered parts automatically. Then: My Maps → Import → choose this file.
       </p>
@@ -336,10 +336,10 @@ export function ListPage() {
           posts; the list page links to them and each post links back. */}
       <section className="mt-4" id="posts" data-testid="list-posts">
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-stone-700">Posts</h2>
+          <h2 className="text-sm font-semibold text-ink-2">Posts</h2>
           <button
             type="button"
-            className="rounded border border-stone-300 px-2.5 py-1 text-xs font-medium text-stone-700"
+            className="rounded border border-rule px-2.5 py-1 text-xs font-medium text-ink-2"
             data-testid="new-post"
             onClick={() => {
               const postId = newId();
@@ -364,7 +364,7 @@ export function ListPage() {
               <li key={post.id}>
                 <button
                   type="button"
-                  className="text-sm font-medium text-blue-700 underline"
+                  className="text-sm font-medium text-water-ink underline"
                   data-testid="list-post-link"
                   onClick={() => {
                     void navigate({ to: "/post/$postId", params: { postId: post.id } });
@@ -376,7 +376,7 @@ export function ListPage() {
             ))}
           </ul>
         ) : (
-          <p className="mt-1 text-xs text-stone-400">
+          <p className="mt-1 text-xs text-ink-3">
             No posts yet — a post is an article about this list.
           </p>
         )}
@@ -408,7 +408,7 @@ export function ListPage() {
           return (
             <li
               key={view.block.id}
-              className="rounded-lg border border-stone-200 bg-stone-50 p-3"
+              className="rounded-lg border border-rule bg-land p-3"
               data-testid="place-item"
             >
               <div className="flex items-start justify-between gap-2">
@@ -417,7 +417,7 @@ export function ListPage() {
                       in the pane → the canvas highlights and flies. */}
                   <button
                     type="button"
-                    className="text-left font-medium text-stone-900 hover:underline"
+                    className="text-left font-medium text-ink hover:underline"
                     data-testid="select-place"
                     onClick={() => {
                       selectPlace(view.place.id);
@@ -427,7 +427,7 @@ export function ListPage() {
                     {facts?.name ?? "Missing place"}
                   </button>
                   {facts?.category ? (
-                    <span className="ml-2 text-xs capitalize text-stone-500">{facts.category}</span>
+                    <span className="ml-2 text-xs capitalize text-ink-3">{facts.category}</span>
                   ) : null}
                   {view.place ? (
                     <span className="ml-2">
@@ -435,14 +435,14 @@ export function ListPage() {
                     </span>
                   ) : null}
                   {facts?.address ? (
-                    <span className="block text-sm text-stone-600">{facts.address}</span>
+                    <span className="block text-sm text-ink-2">{facts.address}</span>
                   ) : null}
                   {facts?.website ? (
                     <a
                       href={facts.website}
                       target="_blank"
                       rel="noopener noreferrer nofollow ugc"
-                      className="block text-sm text-blue-700 underline"
+                      className="block text-sm text-water-ink underline"
                     >
                       {facts.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
                     </a>
@@ -453,7 +453,7 @@ export function ListPage() {
                     <button
                       type="button"
                       aria-label="Move up"
-                      className="rounded px-1.5 py-0.5 text-xs text-stone-600 hover:bg-stone-200"
+                      className="rounded px-1.5 py-0.5 text-xs text-ink-2 hover:bg-rule"
                       onClick={() => move(view, -1)}
                     >
                       ↑
@@ -461,14 +461,14 @@ export function ListPage() {
                     <button
                       type="button"
                       aria-label="Move down"
-                      className="rounded px-1.5 py-0.5 text-xs text-stone-600 hover:bg-stone-200"
+                      className="rounded px-1.5 py-0.5 text-xs text-ink-2 hover:bg-rule"
                       onClick={() => move(view, 1)}
                     >
                       ↓
                     </button>
                     <button
                       type="button"
-                      className="rounded px-1.5 py-0.5 text-xs text-red-700 hover:bg-red-50"
+                      className="rounded px-1.5 py-0.5 text-xs text-coral-ink hover:bg-red-50"
                       data-testid="remove-from-list"
                       onClick={() =>
                         guarded("Can’t remove this place yet", () =>
@@ -485,7 +485,7 @@ export function ListPage() {
           );
         })}
         {blocks !== undefined && placeBlocks.length === 0 ? (
-          <li className="py-4 text-sm text-stone-500">
+          <li className="py-4 text-sm text-ink-3">
             Nothing here yet — add places to this list from their cards on the map, or import a file
             in Settings.
           </li>
@@ -496,7 +496,7 @@ export function ListPage() {
         <div className="mt-6 flex items-center gap-2">
           <button
             type="button"
-            className="rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+            className="rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-coral-ink hover:bg-red-50"
             data-testid="remove-all-places"
             onClick={() =>
               guarded("Can’t empty this list yet", () => repo.removeAllPlaces(list.id, nowIso()))
@@ -506,7 +506,7 @@ export function ListPage() {
           </button>
           <button
             type="button"
-            className="rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+            className="rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-coral-ink hover:bg-red-50"
             data-testid="delete-list"
             onClick={() =>
               guarded("Can’t delete this list yet", () =>

@@ -62,43 +62,43 @@ export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPin
         role="dialog"
         aria-modal="true"
         aria-label="Add unlinked pin to a list"
-        className="w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl"
+        className="w-full max-w-sm rounded-2xl bg-paper p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={() => {}}
         data-testid="manual-pin-dialog"
       >
-        <h2 className="text-base font-semibold text-stone-900">Add unlinked pin</h2>
-        <p className="mt-1 text-xs text-orange-700">
+        <h2 className="text-base font-semibold text-ink">Add unlinked pin</h2>
+        <p className="mt-1 text-xs text-clay-ink">
           Owner-provided details, not linked to OpenStreetMap. The pin lives in the list you choose
           — you can link it to OSM later.
         </p>
-        <label className="mt-3 block text-xs font-medium text-stone-600">
+        <label className="mt-3 block text-xs font-medium text-ink-2">
           Name
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Our picnic bench"
-            className="mt-1 w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded border border-rule px-2 py-1.5 text-sm"
             data-testid="manual-name"
           />
         </label>
-        <label className="mt-2 block text-xs font-medium text-stone-600">
+        <label className="mt-2 block text-xs font-medium text-ink-2">
           Category (optional)
           <input
             type="text"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             placeholder="e.g. viewpoint"
-            className="mt-1 w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded border border-rule px-2 py-1.5 text-sm"
           />
         </label>
-        <label className="mt-2 block text-xs font-medium text-stone-600">
+        <label className="mt-2 block text-xs font-medium text-ink-2">
           List
           <select
             value={listChoice}
             onChange={(e) => setListChoice(e.target.value)}
-            className="mt-1 w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+            className="mt-1 w-full rounded border border-rule px-2 py-1.5 text-sm"
             data-testid="manual-list-choice"
           >
             <option value="">Choose a list…</option>
@@ -118,7 +118,7 @@ export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPin
               onChange={(e) => setNewListName(e.target.value)}
               placeholder="New list name"
               aria-label="New list name"
-              className="w-full rounded border border-stone-300 px-2 py-1.5 text-sm"
+              className="w-full rounded border border-rule px-2 py-1.5 text-sm"
               data-testid="manual-new-list-name"
             />
             <MarkerSwatches
@@ -129,14 +129,14 @@ export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPin
             />
           </div>
         ) : null}
-        <p className="mt-2 text-xs text-stone-400">
+        <p className="mt-2 text-xs text-ink-3">
           at {lat.toFixed(5)}, {lng.toFixed(5)}
         </p>
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
-            className="rounded px-3 py-1.5 text-sm text-stone-600 hover:bg-stone-100"
+            className="rounded px-3 py-1.5 text-sm text-ink-2 hover:bg-land"
           >
             Cancel
           </button>
@@ -155,7 +155,7 @@ export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPin
                 listTarget,
               );
             }}
-            className="rounded bg-orange-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+            className="rounded bg-clay-ink px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
             data-testid="manual-save"
           >
             Add pin

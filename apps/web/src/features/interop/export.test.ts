@@ -15,7 +15,7 @@ const NOW = "2026-07-18T12:00:00.000Z";
 const list: List = {
   id: "list-1",
   name: "Lisbon <trip>",
-  marker: { color: "#dc2626", icon: "star" },
+  marker: { color: "#2e9e5b", icon: "star" },
   createdAt: NOW,
   updatedAt: NOW,
 };
@@ -84,7 +84,7 @@ describe("export writers", () => {
   <Document>
     <name>Lisbon &lt;trip&gt;</name>
     <description>Contains OSM-derived data © OpenStreetMap contributors, ODbL 1.0 (opendatacommons.org/licenses/odbl/1-0/)</description>
-    <Style id="placemarks-star"><IconStyle><color>ff2626dc</color></IconStyle></Style>
+    <Style id="placemarks-star"><IconStyle><color>ff5b9e2e</color></IconStyle></Style>
     <Placemark>
       <name>Café Central</name>
       <description>Rua Example 12, Lisboa

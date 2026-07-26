@@ -47,7 +47,7 @@ export function AddToList({ lists, memberListIds, onPick }: AddToListProps) {
       <CurrentLists lists={currentLists} />
       <select
         aria-label="Add to list"
-        className="mt-1 w-full rounded border border-stone-200 px-2 py-1 text-sm"
+        className="mt-1 w-full rounded border border-rule px-2 py-1 text-sm"
         value=""
         data-testid="add-to-list"
         onChange={(e) => {
@@ -78,14 +78,14 @@ function CurrentLists({ lists }: { lists: List[] }) {
   if (lists.length === 0) return null;
   return (
     <ul
-      className="mb-1 flex flex-wrap gap-1.5 text-xs text-stone-600"
+      className="mb-1 flex flex-wrap gap-1.5 text-xs text-ink-2"
       aria-label="Current lists"
       data-testid="current-list-memberships"
     >
       {lists.map((list) => (
         <li
           key={list.id}
-          className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-0.5"
+          className="inline-flex items-center gap-1 rounded-full bg-land px-2 py-0.5"
         >
           <MarkerGlyph marker={list.marker} size={12} />
           {list.name}

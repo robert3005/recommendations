@@ -40,7 +40,7 @@ export function PublishControls({ listId }: { listId: string }) {
         <>
           {status === "revoked" ? (
             <span
-              className="rounded-full bg-stone-200 px-2 py-0.5 font-medium text-stone-700"
+              className="rounded-full bg-rule px-2 py-0.5 font-medium text-ink-2"
               data-testid="publication-status"
               data-status="revoked"
             >
@@ -57,20 +57,20 @@ export function PublishControls({ listId }: { listId: string }) {
                 if (projection) setPreflight(projection.guide);
               })
             }
-            className="rounded border border-stone-300 px-2.5 py-1 font-medium text-stone-700 disabled:opacity-40"
+            className="rounded border border-rule px-2.5 py-1 font-medium text-ink-2 disabled:opacity-40"
             data-testid="publish-list"
           >
             Publish hosted link…
           </button>
           {preflight ? (
             <div
-              className="w-full rounded border border-stone-200 bg-stone-50 p-2"
+              className="w-full rounded border border-rule bg-land p-2"
               data-testid="publish-preflight"
             >
-              <p className="font-medium text-stone-800">
+              <p className="font-medium text-ink">
                 Exactly this becomes public at a hosted link — “{preflight.title}”:
               </p>
-              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-stone-700">
+              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-ink-2">
                 {preflight.blocks.map((block) => (
                   <li key={block.id}>
                     {block.type === "section" ? (
@@ -92,7 +92,7 @@ export function PublishControls({ listId }: { listId: string }) {
                         {(block.notes ?? []).map((note, index) => (
                           <span
                             key={`${block.id}-note-${index.toString()}`}
-                            className="block border-l-2 border-stone-300 pl-2 text-stone-600"
+                            className="block border-l-2 border-rule pl-2 text-ink-2"
                           >
                             {note.title ? `${note.title}: ` : ""}
                             {note.body}
@@ -111,7 +111,7 @@ export function PublishControls({ listId }: { listId: string }) {
                     setPreflight(null);
                     act(() => publishList(repo, listId, nowIso()));
                   }}
-                  className="rounded bg-stone-800 px-2.5 py-1 font-medium text-white disabled:opacity-40"
+                  className="rounded bg-ink px-2.5 py-1 font-medium text-white disabled:opacity-40"
                   data-testid="confirm-publish-list"
                 >
                   Publish
@@ -119,7 +119,7 @@ export function PublishControls({ listId }: { listId: string }) {
                 <button
                   type="button"
                   onClick={() => setPreflight(null)}
-                  className="rounded px-2.5 py-1 text-stone-600 hover:bg-stone-200"
+                  className="rounded px-2.5 py-1 text-ink-2 hover:bg-rule"
                 >
                   Cancel
                 </button>
@@ -132,10 +132,10 @@ export function PublishControls({ listId }: { listId: string }) {
           <span
             className={`rounded-full px-2 py-0.5 font-medium ${
               status === "published"
-                ? "bg-emerald-100 text-emerald-800"
+                ? "bg-leaf-wash text-leaf-ink"
                 : status === "failed"
-                  ? "bg-red-100 text-red-800"
-                  : "bg-stone-200 text-stone-700"
+                  ? "bg-coral-wash text-coral-ink"
+                  : "bg-rule text-ink-2"
             }`}
             data-testid="publication-status"
             data-status={status}
@@ -151,14 +151,14 @@ export function PublishControls({ listId }: { listId: string }) {
               href={publicUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-700 underline"
+              className="text-water-ink underline"
               data-testid="public-link"
             >
               {publicUrl.replace(/^https?:\/\//, "")}
             </a>
           ) : null}
           {publication.lastError && status === "failed" ? (
-            <span className="text-red-700">{publication.lastError}</span>
+            <span className="text-coral-ink">{publication.lastError}</span>
           ) : null}
           <button
             type="button"
@@ -175,7 +175,7 @@ export function PublishControls({ listId }: { listId: string }) {
                   : publishList(repo, listId, nowIso()),
               )
             }
-            className="rounded border border-stone-300 px-2 py-0.5 font-medium text-stone-600 disabled:opacity-40"
+            className="rounded border border-rule px-2 py-0.5 font-medium text-ink-2 disabled:opacity-40"
             data-testid="publish-update"
           >
             {status === "failed" ? "Retry" : "Publish update"}
@@ -184,12 +184,12 @@ export function PublishControls({ listId }: { listId: string }) {
             type="button"
             disabled={busy}
             onClick={() => act(() => revokePublication(repo, publication.id, nowIso()))}
-            className="rounded px-2 py-0.5 text-red-700 hover:bg-red-50 disabled:opacity-40"
+            className="rounded px-2 py-0.5 text-coral-ink hover:bg-red-50 disabled:opacity-40"
             data-testid="unpublish"
           >
             Unpublish
           </button>
-          <span className="w-full text-[11px] text-stone-500">
+          <span className="w-full text-[11px] text-ink-3">
             Unpublishing removes the public page, but already downloaded copies and third-party
             caches cannot be remotely erased or removed.
           </span>

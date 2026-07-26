@@ -10,7 +10,7 @@ export function StateBadge({ state }: { state: ResolutionState }) {
   if (state !== "unlinked") return null;
   return (
     <span
-      className="inline-block rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-800"
+      className="inline-block rounded-full bg-amber-wash px-2 py-0.5 text-xs font-medium text-orange-800"
       title="A manual pin with owner-provided details"
       data-testid="state-badge"
       data-state="unlinked"

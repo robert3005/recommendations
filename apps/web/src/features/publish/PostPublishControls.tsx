@@ -119,7 +119,7 @@ export function PostPublishControls({ postId }: { postId: string }) {
     >
       <button
         type="button"
-        className="rounded bg-stone-800 px-2.5 py-1 font-medium text-white"
+        className="rounded bg-ink px-2.5 py-1 font-medium text-white"
         data-testid="share-post"
         onClick={() => void openSnapshot()}
       >
@@ -148,7 +148,7 @@ export function PostPublishControls({ postId }: { postId: string }) {
         <>
           {status === "revoked" ? (
             <span
-              className="rounded-full bg-stone-200 px-2 py-0.5 font-medium text-stone-700"
+              className="rounded-full bg-rule px-2 py-0.5 font-medium text-ink-2"
               data-testid="post-publication-status"
               data-status="revoked"
             >
@@ -159,28 +159,28 @@ export function PostPublishControls({ postId }: { postId: string }) {
             type="button"
             disabled={busy}
             onClick={() => void openPreflight()}
-            className="rounded border border-stone-300 px-2.5 py-1 font-medium text-stone-700 disabled:opacity-40"
+            className="rounded border border-rule px-2.5 py-1 font-medium text-ink-2 disabled:opacity-40"
             data-testid="publish-post"
           >
             Publish hosted link…
           </button>
           {preflight ? (
             <div
-              className="w-full rounded border border-stone-200 bg-stone-50 p-2"
+              className="w-full rounded border border-rule bg-land p-2"
               data-testid="post-publish-preflight"
             >
-              <p className="font-medium text-stone-800">
+              <p className="font-medium text-ink">
                 Exactly this becomes public at a hosted link — “{preflight.guide.title}”:
               </p>
               {preflight.guide.list ? (
-                <p className="text-stone-600">
+                <p className="text-ink-2">
                   From the list: <span className="font-medium">{preflight.guide.list.title}</span>
                   {preflight.guide.list.slug
                     ? ` (links to /l/${preflight.guide.list.slug})`
                     : " (named, not linked — the list has no public page)"}
                 </p>
               ) : null}
-              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-stone-700">
+              <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-ink-2">
                 {preflight.guide.blocks.map((block) => (
                   <li key={block.id}>
                     {block.type === "section" ? (
@@ -200,7 +200,7 @@ export function PostPublishControls({ postId }: { postId: string }) {
                           ? `${block.place.lastVerified.lat.toString()}, ${block.place.lastVerified.lng.toString()}`
                           : `${block.place.lat.toString()}, ${block.place.lng.toString()}`}
                         {(block.tags ?? []).length > 0 ? (
-                          <span className="text-stone-500">
+                          <span className="text-ink-3">
                             {" "}
                             · tags: {(block.tags ?? []).join(", ")}
                           </span>
@@ -208,7 +208,7 @@ export function PostPublishControls({ postId }: { postId: string }) {
                         {(block.notes ?? []).map((note, index) => (
                           <span
                             key={`${block.id}-note-${index.toString()}`}
-                            className="block border-l-2 border-stone-300 pl-2 text-stone-600"
+                            className="block border-l-2 border-rule pl-2 text-ink-2"
                           >
                             {note.title ? `${note.title}: ` : ""}
                             {note.body}
@@ -220,7 +220,7 @@ export function PostPublishControls({ postId }: { postId: string }) {
                 ))}
               </ul>
               {preflight.listUnpublished ? (
-                <label className="mt-2 flex items-center gap-1.5 text-stone-700">
+                <label className="mt-2 flex items-center gap-1.5 text-ink-2">
                   <input
                     type="checkbox"
                     checked={publishListToo}
@@ -239,7 +239,7 @@ export function PostPublishControls({ postId }: { postId: string }) {
                     setPreflight(null);
                     act(confirmPublish);
                   }}
-                  className="rounded bg-stone-800 px-2.5 py-1 font-medium text-white disabled:opacity-40"
+                  className="rounded bg-ink px-2.5 py-1 font-medium text-white disabled:opacity-40"
                   data-testid="confirm-publish-post"
                 >
                   Publish
@@ -247,7 +247,7 @@ export function PostPublishControls({ postId }: { postId: string }) {
                 <button
                   type="button"
                   onClick={() => setPreflight(null)}
-                  className="rounded px-2.5 py-1 text-stone-600 hover:bg-stone-200"
+                  className="rounded px-2.5 py-1 text-ink-2 hover:bg-rule"
                 >
                   Cancel
                 </button>
@@ -260,10 +260,10 @@ export function PostPublishControls({ postId }: { postId: string }) {
           <span
             className={`rounded-full px-2 py-0.5 font-medium ${
               status === "published"
-                ? "bg-emerald-100 text-emerald-800"
+                ? "bg-leaf-wash text-leaf-ink"
                 : status === "failed"
-                  ? "bg-red-100 text-red-800"
-                  : "bg-stone-200 text-stone-700"
+                  ? "bg-coral-wash text-coral-ink"
+                  : "bg-rule text-ink-2"
             }`}
             data-testid="post-publication-status"
             data-status={status}
@@ -279,14 +279,14 @@ export function PostPublishControls({ postId }: { postId: string }) {
               href={publicUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-blue-700 underline"
+              className="text-water-ink underline"
               data-testid="post-public-link"
             >
               {publicUrl.replace(/^https?:\/\//, "")}
             </a>
           ) : null}
           {publication.lastError && status === "failed" ? (
-            <span className="text-red-700">{publication.lastError}</span>
+            <span className="text-coral-ink">{publication.lastError}</span>
           ) : null}
           <button
             type="button"
@@ -298,7 +298,7 @@ export function PostPublishControls({ postId }: { postId: string }) {
                   : publishPost(repo, postId, nowIso()),
               )
             }
-            className="rounded border border-stone-300 px-2.5 py-1 font-medium text-stone-700 disabled:opacity-40"
+            className="rounded border border-rule px-2.5 py-1 font-medium text-ink-2 disabled:opacity-40"
             data-testid="update-post-publication"
           >
             {status === "failed" ? "Retry" : "Publish update"}
@@ -307,7 +307,7 @@ export function PostPublishControls({ postId }: { postId: string }) {
             type="button"
             disabled={busy}
             onClick={() => act(() => revokePublication(repo, publication.id, nowIso()))}
-            className="rounded px-2.5 py-1 text-stone-600 hover:bg-stone-200 disabled:opacity-40"
+            className="rounded px-2.5 py-1 text-ink-2 hover:bg-rule disabled:opacity-40"
             data-testid="unpublish-post"
           >
             Unpublish

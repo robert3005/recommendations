@@ -138,7 +138,7 @@ describe("Phase 4 public projection privacy", () => {
       await repo.createList({
         id: "list-1",
         name: "Schema contract",
-        marker: { color: "#dc2626", icon: "star" },
+        marker: { color: "#2e9e5b", icon: "star" },
         createdAt: NOW,
         updatedAt: NOW,
       });

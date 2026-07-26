@@ -401,7 +401,7 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
       {!idle && !readOnly && placingImportItemId ? (
         <div
           role="status"
-          className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-orange-700/90 px-3 py-1 text-xs text-white"
+          className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-clay-ink/90 px-3 py-1 text-xs text-white"
           data-testid="placing-import-hint"
         >
           <span>Long-press (or right-click) the map to place the imported item</span>
@@ -433,7 +433,7 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
                 title={list.name}
                 onClick={() => toggleListVisibility(list.id)}
                 data-testid={`list-toggle-${list.id}`}
-                className={`rounded-full bg-white/95 p-0.5 shadow ${hidden ? "opacity-40" : ""}`}
+                className={`rounded-full bg-paper/95 p-0.5 shadow ${hidden ? "opacity-40" : ""}`}
               >
                 <MarkerGlyph marker={list.marker} size={22} />
               </button>
@@ -447,14 +447,14 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
       {interactiveChrome && poiPins.length > 0 ? (
         <section
           aria-label="Nearby places (list view)"
-          className="absolute bottom-16 left-3 z-10 max-h-40 w-56 overflow-y-auto rounded-lg bg-white/95 p-1.5 text-xs shadow"
+          className="absolute bottom-16 left-3 z-10 max-h-40 w-56 overflow-y-auto rounded-lg bg-paper/95 p-1.5 text-xs shadow"
         >
           <ul>
             {poiPins.map((pin) => (
               <li key={pin.refKey}>
                 <button
                   type="button"
-                  className="w-full rounded px-1.5 py-1 text-left hover:bg-stone-100"
+                  className="w-full rounded px-1.5 py-1 text-left hover:bg-land"
                   onClick={() =>
                     selectOsm(pin.ref, {
                       name: pin.name,
@@ -464,8 +464,8 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
                     })
                   }
                 >
-                  <span className="font-medium text-stone-800">{pin.name}</span>{" "}
-                  <span className="text-stone-500">({pin.category})</span>
+                  <span className="font-medium text-ink">{pin.name}</span>{" "}
+                  <span className="text-ink-3">({pin.category})</span>
                 </button>
               </li>
             ))}
@@ -494,7 +494,7 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
             data-testid="show-nearby-places"
             onClick={() => setShowNearby((on) => !on)}
             className={`shrink-0 rounded-full px-2.5 py-1.5 text-xs font-medium shadow disabled:opacity-40 ${
-              showNearby ? "bg-stone-800 text-white" : "bg-white/95 text-stone-700"
+              showNearby ? "bg-ink text-white" : "bg-paper/95 text-ink-2"
             }`}
           >
             {showNearby ? "Hide nearby" : "Show nearby"}
@@ -502,18 +502,18 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
         </div>
       ) : null}
       {interactiveChrome && viewport && !nearbyEligible ? (
-        <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-stone-800/85 px-3 py-1 text-xs text-white">
+        <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-ink/85 px-3 py-1 text-xs text-white">
           Zoom in to see nearby places
         </div>
       ) : null}
       {discoverEnabled && discoverQuery.data?.truncated ? (
-        <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-stone-800/85 px-3 py-1 text-xs text-white">
+        <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-ink/85 px-3 py-1 text-xs text-white">
           Showing a capped set of places — zoom in for more
         </div>
       ) : null}
       {discoverEnabled && discoverQuery.isError ? (
         <output
-          className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-orange-700/90 px-3 py-1 text-xs text-white"
+          className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-clay-ink/90 px-3 py-1 text-xs text-white"
           data-testid="discover-error"
         >
           Nearby places unavailable right now — your saved pins are unaffected

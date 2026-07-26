@@ -242,7 +242,7 @@ export function SharedGuideView({
     <div className="h-full" data-testid="shared-guide">
       <article ref={articleRef} className="h-full min-h-0 overflow-y-auto p-4">
         <header className="flex items-start justify-between gap-3">
-          <h1 className="flex items-center gap-2 text-xl font-semibold text-stone-900">
+          <h1 className="flex items-center gap-2 text-xl font-semibold text-ink">
             <span
               className="inline-block h-4 w-4 rounded-full"
               style={{ backgroundColor: DEFAULT_PIN_COLOR }}
@@ -258,7 +258,7 @@ export function SharedGuideView({
                 .then(setSaved)
                 .finally(() => setSaving(false));
             }}
-            className="shrink-0 rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+            className="shrink-0 rounded bg-ink px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
             data-testid="save-shared-guide"
           >
             {saved
@@ -273,12 +273,12 @@ export function SharedGuideView({
           // §Publishing): named always; a working link when the list has its
           // own hosted page (a tombstoned slug can only 404, never point
           // elsewhere).
-          <p className="mt-1 text-sm text-stone-600" data-testid="shared-post-list">
+          <p className="mt-1 text-sm text-ink-2" data-testid="shared-post-list">
             From the list:{" "}
             {guide.list.slug ? (
               <a
                 href={`/l/${guide.list.slug}`}
-                className="font-medium text-blue-700 underline"
+                className="font-medium text-water-ink underline"
                 data-testid="shared-post-list-link"
               >
                 {guide.list.title}
@@ -288,13 +288,13 @@ export function SharedGuideView({
             )}
           </p>
         ) : null}
-        <p className="mt-1 text-xs text-stone-500">
+        <p className="mt-1 text-xs text-ink-3">
           A shared, read-only {guide.kind === "list" ? "list" : "post"}
           {mode === "snapshot" ? " (snapshot link)" : ""}. Map data © OpenStreetMap contributors.
         </p>
         {saved ? (
           <p
-            className="mt-2 rounded bg-emerald-50 p-2 text-xs text-emerald-800"
+            className="mt-2 rounded bg-emerald-50 p-2 text-xs text-leaf-ink"
             data-testid="save-result"
           >
             Added {saved.added} places
@@ -355,35 +355,35 @@ export function SharedGuideView({
                 data-selected={selectedBlockId === row.blockId ? "true" : "false"}
                 data-shared-place={row.blockId}
                 data-shared-follow={row.blockId}
-                className={`rounded-lg border bg-stone-50 p-3 ${
-                  selectedBlockId === row.blockId ? "border-stone-500" : "border-stone-200"
+                className={`rounded-lg border bg-land p-3 ${
+                  selectedBlockId === row.blockId ? "border-ink-3" : "border-rule"
                 }`}
                 data-testid="shared-place"
               >
                 <button
                   type="button"
                   onClick={() => selectFromArticle(row)}
-                  className="text-left font-medium text-stone-900 hover:underline"
+                  className="text-left font-medium text-ink hover:underline"
                 >
                   {shown.name}
                 </button>
                 {shown.category ? (
-                  <span className="ml-2 text-xs capitalize text-stone-500">{shown.category}</span>
+                  <span className="ml-2 text-xs capitalize text-ink-3">{shown.category}</span>
                 ) : null}
                 {row.manual ? (
-                  <span className="ml-2 rounded bg-orange-100 px-1 text-[10px] text-orange-800">
+                  <span className="ml-2 rounded bg-amber-wash px-1 text-[10px] text-orange-800">
                     not linked to OSM
                   </span>
                 ) : null}
                 {shown.address ? (
-                  <span className="block text-sm text-stone-600">{shown.address}</span>
+                  <span className="block text-sm text-ink-2">{shown.address}</span>
                 ) : null}
                 {(row.tags ?? []).length > 0 ? (
                   <span className="mt-1 flex flex-wrap gap-1" data-testid="shared-place-tags">
                     {(row.tags ?? []).map((tag) => (
                       <span
                         key={tag}
-                        className="rounded-full bg-stone-200 px-2 py-0.5 text-[11px] text-stone-700"
+                        className="rounded-full bg-rule px-2 py-0.5 text-[11px] text-ink-2"
                       >
                         {tag}
                       </span>
@@ -396,21 +396,18 @@ export function SharedGuideView({
                       href={shown.website}
                       target="_blank"
                       rel="noopener noreferrer nofollow ugc"
-                      className="block text-sm text-blue-700 underline"
+                      className="block text-sm text-water-ink underline"
                     >
                       {shown.website.replace(/^https?:\/\//, "").replace(/\/$/, "")}
                     </a>
                   ) : (
                     // A copied website that is not plain http(s) is untrusted
                     // snapshot data — shown, never clickable.
-                    <span className="block text-sm text-stone-500">{shown.website}</span>
+                    <span className="block text-sm text-ink-3">{shown.website}</span>
                   )
                 ) : null}
                 {resolutionLabel(resolutions[row.blockId]) ? (
-                  <span
-                    className="mt-1 block text-[11px] text-stone-400"
-                    data-testid="resolution-note"
-                  >
+                  <span className="mt-1 block text-[11px] text-ink-3" data-testid="resolution-note">
                     {resolutionLabel(resolutions[row.blockId])}
                     {row.observedAt ? ` (observed ${row.observedAt.slice(0, 10)})` : ""}
                   </span>
@@ -418,10 +415,10 @@ export function SharedGuideView({
                 {(row.notes ?? []).map((note, index) => (
                   <div
                     key={`${row.blockId}-note-${index.toString()}`}
-                    className="mt-2 border-t border-stone-200 pt-2"
+                    className="mt-2 border-t border-rule pt-2"
                   >
                     {note.title ? (
-                      <span className="text-xs font-medium text-stone-700">{note.title}</span>
+                      <span className="text-xs font-medium text-ink-2">{note.title}</span>
                     ) : null}
                     <Markdown body={note.body} />
                   </div>
@@ -445,7 +442,7 @@ export function SharedGuideView({
             );
           })}
         </ol>
-        <footer className="mt-6 text-[11px] text-stone-400">
+        <footer className="mt-6 text-[11px] text-ink-3">
           Place facts{" "}
           <a
             href="https://www.openstreetmap.org/copyright"

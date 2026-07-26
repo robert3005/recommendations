@@ -29,7 +29,7 @@ vi.mock("../../data/hooks", () => ({
     {
       id: "takeout-list",
       name: "Takeout",
-      marker: { color: "#2563eb", icon: "circle" },
+      marker: { color: "#2b8fd6", icon: "circle" },
       createdAt: "2026-07-18T12:00:00.000Z",
       updatedAt: "2026-07-18T12:00:00.000Z",
     },
@@ -81,7 +81,7 @@ describe("Phase 3 imported map markers", () => {
     // an unlinked place wears its list marker colour; the `unlinked` flag only
     // drives the small "not linked" dot, never a special colour.
     expect(fixture.capturedProps?.placePins).toEqual([
-      expect.objectContaining({ placeId: "imported-place", color: "#2563eb", unlinked: true }),
+      expect.objectContaining({ placeId: "imported-place", color: "#2b8fd6", unlinked: true }),
     ]);
   });
 });

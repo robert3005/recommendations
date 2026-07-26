@@ -35,7 +35,7 @@ export function NavLinks({ lat, lng, name, externalUrl }: NavLinksProps) {
   const apple = `https://maps.apple.com/?ll=${lat},${lng}${
     name ? `&q=${encodeURIComponent(name)}` : ""
   }`;
-  const linkClass = "text-[11px] text-stone-400 underline hover:text-stone-700";
+  const linkClass = "text-[11px] text-ink-3 underline hover:text-ink-2";
   return (
     <>
       <a

@@ -68,11 +68,11 @@ export function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="settings-page">
-      <h1 className="text-xl font-semibold text-stone-900">Settings</h1>
+      <h1 className="text-xl font-semibold text-ink">Settings</h1>
 
       <section className="mt-4">
-        <h2 className="text-sm font-semibold text-stone-700">Backup</h2>
-        <p className="mt-1 text-xs text-stone-500">
+        <h2 className="text-sm font-semibold text-ink-2">Backup</h2>
+        <p className="mt-1 text-xs text-ink-3">
           A versioned ZIP with your places, tags, notes, lists, media, and the OSM evidence needed
           to preserve place identity. Data is device-local — back up regularly.
         </p>
@@ -90,7 +90,7 @@ export function SettingsPage() {
           <button
             type="button"
             onClick={() => void doExport()}
-            className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
+            className="rounded bg-ink px-3 py-1.5 text-sm font-medium text-white"
             data-testid="export-backup"
           >
             Export backup
@@ -98,12 +98,12 @@ export function SettingsPage() {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="rounded border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700"
+            className="rounded border border-rule px-3 py-1.5 text-sm font-medium text-ink-2"
             data-testid="import-backup"
           >
             Import backup…
           </button>
-          <label className="flex items-center gap-1 text-xs text-stone-600">
+          <label className="flex items-center gap-1 text-xs text-ink-2">
             <input
               type="radio"
               name="import-mode"
@@ -112,7 +112,7 @@ export function SettingsPage() {
             />
             Merge
           </label>
-          <label className="flex items-center gap-1 text-xs text-stone-600">
+          <label className="flex items-center gap-1 text-xs text-ink-2">
             <input
               type="radio"
               name="import-mode"
@@ -140,37 +140,32 @@ export function SettingsPage() {
       <SyncSection />
 
       <section className="mt-6">
-        <h2 className="text-sm font-semibold text-stone-700">Storage</h2>
+        <h2 className="text-sm font-semibold text-ink-2">Storage</h2>
         <button
           type="button"
           onClick={() => void requestPersistence()}
-          className="mt-2 rounded border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700"
+          className="mt-2 rounded border border-rule px-3 py-1.5 text-sm font-medium text-ink-2"
         >
           Request persistent storage
         </button>
       </section>
 
       {message ? (
-        <p
-          className="mt-4 rounded bg-stone-100 p-2 text-sm text-stone-700"
-          data-testid="settings-message"
-        >
+        <p className="mt-4 rounded bg-land p-2 text-sm text-ink-2" data-testid="settings-message">
           {message}
         </p>
       ) : null}
 
-      <section className="mt-6 text-xs text-stone-500">
-        <h2 className="text-sm font-semibold text-stone-700">Data sources</h2>
+      <section className="mt-6 text-xs text-ink-3">
+        <h2 className="text-sm font-semibold text-ink-2">Data sources</h2>
         <p className="mt-1">
           Map and place data © OpenStreetMap contributors, ODbL. Corrections to public place facts
           belong upstream on openstreetmap.org.
         </p>
       </section>
 
-      <section className="mt-6 text-xs text-stone-500">
-        <h2 className="text-sm font-semibold text-stone-700">
-          Privacy &amp; what leaves the device
-        </h2>
+      <section className="mt-6 text-xs text-ink-3">
+        <h2 className="text-sm font-semibold text-ink-2">Privacy &amp; what leaves the device</h2>
         <ul className="mt-1 list-disc space-y-1 pl-4">
           <li>
             <strong>Basemap tiles:</strong> the tile server receives the map area you view as tile

@@ -27,10 +27,10 @@ function EmbedEdges({ view }: { view: PostBlockView }) {
   const place = view.place;
   if (!placeId || !place) return null;
   return (
-    <div className="mt-1.5 space-y-1 border-t border-stone-200 pt-1.5 text-xs">
+    <div className="mt-1.5 space-y-1 border-t border-rule pt-1.5 text-xs">
       {shareable.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-stone-500">Attach notes:</span>
+          <span className="text-ink-3">Attach notes:</span>
           {shareable.map((note) => {
             const attached = attachedIds.has(note.id);
             return (
@@ -40,7 +40,7 @@ function EmbedEdges({ view }: { view: PostBlockView }) {
                 aria-pressed={attached}
                 data-testid={`attach-note-${note.id}`}
                 className={`rounded-full px-2 py-0.5 font-medium ${
-                  attached ? "bg-stone-800 text-white" : "bg-stone-200 text-stone-700"
+                  attached ? "bg-ink text-white" : "bg-rule text-ink-2"
                 }`}
                 onClick={() => {
                   const action = attached
@@ -57,7 +57,7 @@ function EmbedEdges({ view }: { view: PostBlockView }) {
           })}
         </div>
       ) : null}
-      {error ? <p className="text-red-700">{error}</p> : null}
+      {error ? <p className="text-coral-ink">{error}</p> : null}
     </div>
   );
 }
@@ -92,7 +92,7 @@ export function PostEditorPage() {
     document.getElementById(blockId)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [blockKey]);
 
-  if (!post) return <div className="p-4 text-stone-500">Post not found.</div>;
+  if (!post) return <div className="p-4 text-ink-3">Post not found.</div>;
 
   const embeddedIds = new Set(
     (blocks ?? []).flatMap((view) =>
@@ -125,10 +125,10 @@ export function PostEditorPage() {
           setTitle(undefined);
         }}
         aria-label="Post title"
-        className="w-full rounded border border-stone-300 px-2 py-1 text-xl font-semibold"
+        className="w-full rounded border border-rule px-2 py-1 text-xl font-semibold"
         data-testid="post-title-input"
       />
-      <p className="mt-1 text-xs text-stone-500">
+      <p className="mt-1 text-xs text-ink-3">
         An article about {list?.name ?? "its list"} — prose sections between place embeds. Embeds
         come from the list, or tap a pin on the map and choose “Embed in post”.
       </p>
@@ -136,7 +136,7 @@ export function PostEditorPage() {
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
+          className="rounded bg-ink px-3 py-1.5 text-sm font-medium text-white"
           data-testid="add-section"
           onClick={() => {
             void repo.addPostSection(postId, "", nowIso()).then(async (block) => {
@@ -156,7 +156,7 @@ export function PostEditorPage() {
         {candidates.length > 0 ? (
           <select
             aria-label="Embed a place from the list"
-            className="rounded border border-stone-300 px-2 py-1.5 text-sm"
+            className="rounded border border-rule px-2 py-1.5 text-sm"
             value=""
             data-testid="embed-picker"
             onChange={(e) => {
@@ -181,7 +181,7 @@ export function PostEditorPage() {
         ) : null}
         <button
           type="button"
-          className="ml-auto rounded border border-stone-300 px-3 py-1 text-sm font-medium text-stone-700"
+          className="ml-auto rounded border border-rule px-3 py-1 text-sm font-medium text-ink-2"
           data-testid="done-editing-post"
           onClick={() => {
             void navigate({ to: "/post/$postId", params: { postId } });
@@ -204,7 +204,7 @@ export function PostEditorPage() {
             <li
               key={view.block.id}
               id={view.block.id}
-              className="rounded-lg border border-stone-200 bg-stone-50 p-3 target:ring-2 target:ring-stone-400"
+              className="rounded-lg border border-rule bg-land p-3 target:ring-2 target:ring-ink-3"
               data-testid={isSection ? "editor-section" : "editor-embed"}
             >
               <div className="flex items-start justify-between gap-2">
@@ -216,10 +216,10 @@ export function PostEditorPage() {
                       data-testid="edit-section"
                       onClick={() => view.sectionNote && setEditingNote(view.sectionNote)}
                     >
-                      <span className="text-xs font-semibold tracking-wide text-stone-400 uppercase">
+                      <span className="text-xs font-semibold tracking-wide text-ink-3 uppercase">
                         Section
                       </span>
-                      <span className="block truncate text-sm text-stone-800">
+                      <span className="block truncate text-sm text-ink">
                         {view.sectionNote?.title ??
                           (view.sectionNote?.body.trim()
                             ? view.sectionNote.body.slice(0, 80)
@@ -228,10 +228,10 @@ export function PostEditorPage() {
                     </button>
                   ) : (
                     <>
-                      <span className="text-xs font-semibold tracking-wide text-stone-400 uppercase">
+                      <span className="text-xs font-semibold tracking-wide text-ink-3 uppercase">
                         Place
                       </span>
-                      <span className="block truncate text-sm font-medium text-stone-900">
+                      <span className="block truncate text-sm font-medium text-ink">
                         {facts?.name ?? "Unnamed place"}
                       </span>
                     </>
@@ -241,7 +241,7 @@ export function PostEditorPage() {
                   <button
                     type="button"
                     aria-label="Move up"
-                    className="rounded px-1.5 py-0.5 text-xs text-stone-600 hover:bg-stone-200"
+                    className="rounded px-1.5 py-0.5 text-xs text-ink-2 hover:bg-rule"
                     onClick={() => move(view, -1)}
                   >
                     ↑
@@ -249,14 +249,14 @@ export function PostEditorPage() {
                   <button
                     type="button"
                     aria-label="Move down"
-                    className="rounded px-1.5 py-0.5 text-xs text-stone-600 hover:bg-stone-200"
+                    className="rounded px-1.5 py-0.5 text-xs text-ink-2 hover:bg-rule"
                     onClick={() => move(view, 1)}
                   >
                     ↓
                   </button>
                   <button
                     type="button"
-                    className="rounded px-1.5 py-0.5 text-xs text-red-700 hover:bg-red-50"
+                    className="rounded px-1.5 py-0.5 text-xs text-coral-ink hover:bg-red-50"
                     data-testid="remove-post-block"
                     onClick={() => void repo.removePostBlock(view.block.id, nowIso())}
                   >
@@ -269,7 +269,7 @@ export function PostEditorPage() {
           );
         })}
         {blocks !== undefined && blocks.length === 0 ? (
-          <li className="py-4 text-sm text-stone-500">
+          <li className="py-4 text-sm text-ink-3">
             Start with a section, or embed the list's places between passages.
           </li>
         ) : null}
@@ -277,7 +277,7 @@ export function PostEditorPage() {
 
       <button
         type="button"
-        className="mt-6 rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50"
+        className="mt-6 rounded border border-red-200 px-3 py-1.5 text-sm font-medium text-coral-ink hover:bg-red-50"
         data-testid="delete-post"
         onClick={() => {
           const listId = post.listId;

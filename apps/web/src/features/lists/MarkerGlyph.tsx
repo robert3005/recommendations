@@ -36,7 +36,7 @@ export function MarkerGlyph({
       </svg>
       {unlinkedDot ? (
         <span
-          className="absolute -right-0.5 -top-0.5 block rounded-full border border-white bg-stone-500"
+          className="absolute -right-0.5 -top-0.5 block rounded-full border border-white bg-ink-3"
           style={{ width: size * 0.35, height: size * 0.35 }}
           data-testid="unlinked-dot"
         />

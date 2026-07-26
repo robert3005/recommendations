@@ -135,14 +135,14 @@ vi.mock("../data/hooks", () => ({
     {
       id: "list-1",
       name: "A",
-      marker: { color: "#dc2626", icon: "circle" },
+      marker: { color: "#2e9e5b", icon: "circle" },
       createdAt: "2026-07-19T10:00:00.000Z",
       updatedAt: "2026-07-19T10:00:00.000Z",
     },
     {
       id: "list-2",
       name: "B",
-      marker: { color: "#2563eb", icon: "diamond" },
+      marker: { color: "#2b8fd6", icon: "diamond" },
       createdAt: "2026-07-19T10:00:00.000Z",
       updatedAt: "2026-07-19T10:00:00.000Z",
     },
@@ -436,7 +436,7 @@ describe("Phase 6 canvas idling at full scale", () => {
     try {
       await waitFor(() =>
         expect(fixture.captured?.placePins.find((pin) => pin.placeId === "place-1")).toMatchObject({
-          color: "#2563eb",
+          color: "#2b8fd6",
           icon: "diamond",
           multi: false,
         }),

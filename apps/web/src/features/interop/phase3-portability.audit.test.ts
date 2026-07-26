@@ -28,7 +28,7 @@ const NOW = "2026-07-19T10:00:00.000Z";
 const list: List = {
   id: "list-1",
   name: "Lisbon",
-  marker: { color: "#dc2626", icon: "star" },
+  marker: { color: "#2e9e5b", icon: "star" },
   createdAt: NOW,
   updatedAt: NOW,
 };

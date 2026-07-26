@@ -712,7 +712,7 @@ export function MapView({
         target="_blank"
         rel="noopener noreferrer"
         data-testid="map-attribution"
-        className="absolute bottom-0 left-0 z-10 rounded-tr bg-white/90 px-1 py-0.5 text-[10px] text-stone-700 hover:underline"
+        className="absolute bottom-0 left-0 z-10 rounded-tr bg-paper/90 px-1 py-0.5 text-[10px] text-ink-2 hover:underline"
       >
         {OSM_ATTRIBUTION}
       </a>
@@ -722,7 +722,7 @@ export function MapView({
       {unavailable ? (
         <div
           role="status"
-          className="absolute inset-x-0 top-0 z-10 bg-stone-800/90 px-3 py-2 text-center text-xs text-white"
+          className="absolute inset-x-0 top-0 z-10 bg-ink/90 px-3 py-2 text-center text-xs text-white"
         >
           <span className="font-semibold">Map unavailable.</span> Part of the map could not load.
           Search and your lists keep working — it returns when the connection does.

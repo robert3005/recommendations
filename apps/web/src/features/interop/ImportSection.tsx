@@ -51,8 +51,8 @@ export function ImportSection() {
 
   return (
     <section className="mt-6" data-testid="import-section">
-      <h2 className="text-sm font-semibold text-stone-700">Import places</h2>
-      <p className="mt-1 text-xs text-stone-500">
+      <h2 className="text-sm font-semibold text-ink-2">Import places</h2>
+      <p className="mt-1 text-xs text-ink-3">
         A Google Takeout archive (Saved lists), CSV, KML/KMZ, GPX, or GeoJSON. Parsed on this device
         — nothing is sent to Google. Rows that can't be placed automatically wait in the review
         queue.
@@ -62,7 +62,7 @@ export function ImportSection() {
           type="button"
           disabled={busy}
           onClick={() => fileRef.current?.click()}
-          className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+          className="rounded bg-ink px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
           data-testid="import-places"
         >
           {busy ? "Importing…" : "Import places…"}
@@ -81,7 +81,7 @@ export function ImportSection() {
         />
       </div>
       {message ? (
-        <p className="mt-2 text-xs text-stone-600" data-testid="import-report">
+        <p className="mt-2 text-xs text-ink-2" data-testid="import-report">
           {message}
         </p>
       ) : null}
@@ -89,7 +89,7 @@ export function ImportSection() {
         <p className="mt-2 text-xs" data-testid="import-review">
           <Link
             to="/review"
-            className="font-medium text-blue-700 underline"
+            className="font-medium text-water-ink underline"
             data-testid="open-review-queue"
           >
             Review {pending} pending {pending === 1 ? "item" : "items"}

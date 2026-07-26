@@ -31,7 +31,7 @@ import { type PaneState, usePaneStore } from "./state/pane";
 /** Pane geometry per state — desktop panel widths / mobile sheet detents. */
 function paneClasses(pane: PaneState): string {
   const base =
-    "absolute inset-x-0 bottom-0 z-20 flex min-h-0 flex-col rounded-t-2xl border-t border-stone-200 bg-white shadow-2xl " +
+    "absolute inset-x-0 bottom-0 z-20 flex min-h-0 flex-col rounded-t-2xl border-t border-rule bg-paper shadow-2xl " +
     "md:inset-x-auto md:left-0 md:top-0 md:h-full md:rounded-none md:border-t-0 md:border-r";
   if (pane === "collapsed") {
     // Peek: a slim handle strip on mobile; hidden entirely on desktop.
@@ -85,12 +85,12 @@ function RootLayout() {
           className="flex h-5 shrink-0 items-center justify-center md:hidden"
           onClick={() => (pane === "expanded" ? collapse() : expand())}
         >
-          <span aria-hidden="true" className="h-1 w-10 rounded-full bg-stone-300" />
+          <span aria-hidden="true" className="h-1 w-10 rounded-full bg-rule" />
         </button>
-        <header className="flex shrink-0 items-center gap-1 border-b border-stone-100 px-3 py-2">
+        <header className="flex shrink-0 items-center gap-1 border-b border-land px-3 py-2">
           {readOnly ? (
             <div
-              className="min-w-0 flex-1 text-sm font-medium text-stone-700"
+              className="min-w-0 flex-1 text-sm font-medium text-ink-2"
               data-testid="public-readonly-chrome"
             >
               Placemarks · Shared page
@@ -99,19 +99,19 @@ function RootLayout() {
             <nav aria-label="Primary" className="flex min-w-0 flex-1 items-center gap-1">
               <Link
                 to="/"
-                className="rounded px-2.5 py-1 text-sm font-medium text-stone-700 [&.active]:bg-stone-200"
+                className="rounded px-2.5 py-1 text-sm font-medium text-ink-2 [&.active]:bg-rule"
               >
                 Lists
               </Link>
               <Link
                 to="/review"
-                className="rounded px-2.5 py-1 text-sm font-medium text-stone-700 [&.active]:bg-stone-200"
+                className="rounded px-2.5 py-1 text-sm font-medium text-ink-2 [&.active]:bg-rule"
               >
                 Review
               </Link>
               <Link
                 to="/settings"
-                className="rounded px-2.5 py-1 text-sm font-medium text-stone-700 [&.active]:bg-stone-200"
+                className="rounded px-2.5 py-1 text-sm font-medium text-ink-2 [&.active]:bg-rule"
               >
                 Settings
               </Link>
@@ -126,7 +126,7 @@ function RootLayout() {
             data-testid="pane-collapse"
             disabled={pane === "collapsed"}
             onClick={collapse}
-            className="rounded px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 disabled:opacity-30"
+            className="rounded px-2 py-1 text-sm text-ink-2 hover:bg-land disabled:opacity-30"
           >
             ⟨
           </button>
@@ -137,7 +137,7 @@ function RootLayout() {
             data-testid="pane-expand"
             disabled={pane === "expanded"}
             onClick={expand}
-            className="rounded px-2 py-1 text-sm text-stone-600 hover:bg-stone-100 disabled:opacity-30"
+            className="rounded px-2 py-1 text-sm text-ink-2 hover:bg-land disabled:opacity-30"
           >
             ⟩
           </button>
@@ -153,7 +153,7 @@ function RootLayout() {
           type="button"
           data-testid="pane-reopen"
           onClick={() => setPane("split")}
-          className="absolute bottom-16 left-3 z-10 hidden rounded-full bg-white/95 px-3 py-1.5 text-sm font-medium text-stone-800 shadow md:block"
+          className="absolute bottom-16 left-3 z-10 hidden rounded-full bg-paper/95 px-3 py-1.5 text-sm font-medium text-ink shadow md:block"
         >
           {readOnly ? "⟩ Shared page" : "⟩ Lists"}
         </button>

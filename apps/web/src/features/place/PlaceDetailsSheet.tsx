@@ -43,7 +43,7 @@ function EmbedInPost({ placeId, memberListIds }: { placeId: string; memberListId
     <div className="mt-3">
       <button
         type="button"
-        className="rounded bg-stone-800 px-2.5 py-1 text-xs font-medium text-white"
+        className="rounded bg-ink px-2.5 py-1 text-xs font-medium text-white"
         data-testid="embed-in-post"
         onClick={() => {
           void (async () => {
@@ -63,7 +63,7 @@ function EmbedInPost({ placeId, memberListIds }: { placeId: string; memberListId
       >
         {isMember ? "Embed in post" : "Add to list & embed in post"}
       </button>
-      {message ? <p className="mt-1 text-xs text-stone-600">{message}</p> : null}
+      {message ? <p className="mt-1 text-xs text-ink-2">{message}</p> : null}
     </div>
   );
 }
@@ -104,14 +104,14 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
       tabIndex={-1}
       role="dialog"
       aria-label={facts?.name ?? "Place"}
-      className="absolute inset-x-0 bottom-0 z-40 max-h-[70%] overflow-y-auto rounded-t-2xl border border-stone-200 bg-white p-4 shadow-xl md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-2xl"
+      className="absolute inset-x-0 bottom-0 z-40 max-h-[70%] overflow-y-auto rounded-t-2xl border border-rule bg-paper p-4 shadow-xl md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-2xl"
       data-testid="place-details"
     >
       <button
         type="button"
         onClick={clearSelection}
         aria-label="Close"
-        className="absolute top-2 right-3 rounded p-1 text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+        className="absolute top-2 right-3 rounded p-1 text-ink-3 hover:bg-land hover:text-ink-2"
       >
         ✕
       </button>
@@ -179,7 +179,7 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
                 throw err;
               });
           }}
-          className="ml-auto text-[11px] font-medium text-red-700 underline hover:text-red-900"
+          className="ml-auto text-[11px] font-medium text-coral-ink underline hover:text-red-900"
           data-testid="remove-place"
         >
           Remove place
@@ -199,7 +199,7 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
         />
       ) : null}
       {message ? (
-        <p className="mt-2 text-xs text-stone-600" data-testid="sheet-message">
+        <p className="mt-2 text-xs text-ink-2" data-testid="sheet-message">
           {message}
         </p>
       ) : null}
@@ -211,7 +211,7 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
 
       {/* Lists: the place card is the only write surface for lists. */}
       <div className="mt-4">
-        <h3 className="text-xs font-semibold tracking-wide text-stone-500 uppercase">Lists</h3>
+        <h3 className="text-xs font-semibold tracking-wide text-ink-3 uppercase">Lists</h3>
         <AddToList
           lists={lists}
           memberListIds={memberListIds ?? []}
@@ -252,7 +252,7 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
       {/* Notes */}
       <div className="mt-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold tracking-wide text-stone-500 uppercase">Notes</h3>
+          <h3 className="text-xs font-semibold tracking-wide text-ink-3 uppercase">Notes</h3>
           <button
             type="button"
             onClick={() =>
@@ -265,7 +265,7 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
                 updatedAt: now,
               })
             }
-            className="rounded px-2 py-0.5 text-xs font-medium text-stone-600 hover:bg-stone-100"
+            className="rounded px-2 py-0.5 text-xs font-medium text-ink-2 hover:bg-land"
             data-testid="add-note"
           >
             + Add note
@@ -273,12 +273,12 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
         </div>
         <ul className="mt-2 space-y-2">
           {(notes ?? []).map((note) => (
-            <li key={note.id} className="rounded-lg border border-stone-100 bg-stone-50 p-2">
+            <li key={note.id} className="rounded-lg border border-land bg-land p-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-medium text-stone-700">
+                <span className="text-xs font-medium text-ink-2">
                   {note.title ?? "Note"}
                   {note.shareable ? (
-                    <span className="ml-1 rounded bg-emerald-100 px-1 text-[10px] text-emerald-800">
+                    <span className="ml-1 rounded bg-leaf-wash px-1 text-[10px] text-leaf-ink">
                       shareable
                     </span>
                   ) : null}
@@ -287,7 +287,7 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
                   <button
                     type="button"
                     onClick={() => setEditingNote(note)}
-                    className="rounded px-1.5 text-xs text-stone-500 hover:bg-stone-200"
+                    className="rounded px-1.5 text-xs text-ink-3 hover:bg-rule"
                   >
                     Edit
                   </button>

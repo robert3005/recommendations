@@ -45,7 +45,7 @@ export function NewListForm({
           onKeyDown={(e) => {
             if (e.key === "Escape") onCancel();
           }}
-          className="min-w-0 flex-1 rounded border border-stone-300 px-2 py-1 text-sm"
+          className="min-w-0 flex-1 rounded border border-rule px-2 py-1 text-sm"
         />
         <button
           type="button"
@@ -57,7 +57,7 @@ export function NewListForm({
             setMarker(undefined);
             onCreate(trimmed, selectedMarker);
           }}
-          className="shrink-0 rounded bg-stone-800 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+          className="shrink-0 rounded bg-ink px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
           data-testid={submitTestId}
         >
           {submitLabel}
@@ -65,7 +65,7 @@ export function NewListForm({
         <button
           type="button"
           onClick={onCancel}
-          className="shrink-0 rounded px-2 py-1 text-xs text-stone-600 hover:bg-stone-100"
+          className="shrink-0 rounded px-2 py-1 text-xs text-ink-2 hover:bg-land"
         >
           Cancel
         </button>

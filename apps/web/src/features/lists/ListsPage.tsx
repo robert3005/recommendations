@@ -28,13 +28,13 @@ export function ListsPage() {
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="lists-page">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-stone-900">Lists</h1>
+        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Lists</h1>
         <div className="flex items-center gap-2">
           {creating ? null : (
             <button
               type="button"
               onClick={() => setCreating(true)}
-              className="rounded bg-stone-800 px-3 py-1.5 text-sm font-medium text-white"
+              className="rounded bg-ink px-3 py-1.5 text-sm font-medium text-white"
               data-testid="new-list"
             >
               + New list
@@ -43,7 +43,7 @@ export function ListsPage() {
           <Link
             to="/settings"
             hash="import"
-            className="rounded border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-700"
+            className="rounded border border-rule px-3 py-1.5 text-sm font-medium text-ink-2"
             data-testid="import-entry"
           >
             ⤓ Import
@@ -66,20 +66,20 @@ export function ListsPage() {
           />
         </div>
       ) : null}
-      <ul className="mt-4 divide-y divide-stone-100">
+      <ul className="mt-4 divide-y divide-land">
         {(previews ?? []).map(({ list, placeCount, postCount, previewNames }) => (
           <li key={list.id} data-testid="list-row">
-            <div className="flex items-start gap-3 px-1 py-3 hover:bg-stone-50">
+            <div className="flex items-start gap-3 px-1 py-3 hover:bg-land">
               <MarkerGlyph marker={list.marker} size={20} />
               <div className="min-w-0 flex-1">
                 <Link to="/list/$listId" params={{ listId: list.id }} className="block">
-                  <span className="font-medium text-stone-900">{list.name}</span>
-                  <span className="ml-2 text-xs text-stone-500" data-testid="list-place-count">
+                  <span className="font-medium text-ink">{list.name}</span>
+                  <span className="ml-2 text-xs text-ink-3" data-testid="list-place-count">
                     {placeCount} {placeCount === 1 ? "place" : "places"}
                   </span>
                 </Link>
                 {previewNames.length > 0 ? (
-                  <p className="mt-0.5 truncate text-xs text-stone-500" data-testid="list-preview">
+                  <p className="mt-0.5 truncate text-xs text-ink-3" data-testid="list-preview">
                     {previewNames.join(" · ")} …
                   </p>
                 ) : null}
@@ -89,7 +89,7 @@ export function ListsPage() {
                   to="/list/$listId"
                   params={{ listId: list.id }}
                   hash="posts"
-                  className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                  className="shrink-0 rounded px-2 py-0.5 text-xs font-medium text-water-ink hover:bg-blue-50"
                   data-testid="list-posts-link"
                 >
                   ▸ {postCount === 1 ? "post" : `${postCount.toString()} posts`}
@@ -99,7 +99,7 @@ export function ListsPage() {
           </li>
         ))}
         {previews !== undefined && previews.length === 0 && !creating ? (
-          <li className="py-6 text-sm text-stone-500">
+          <li className="py-6 text-sm text-ink-3">
             No lists yet. Create one here, or add a place to a new list from its card on the map.
           </li>
         ) : null}

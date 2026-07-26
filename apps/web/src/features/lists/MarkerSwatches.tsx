@@ -45,7 +45,7 @@ export function MarkerSwatches({ radioName, selected, used = [], onSelect }: Mar
           <label
             key={markerKey(option)}
             className={`inline-flex cursor-pointer items-center justify-center rounded-full border-2 p-0.5 ${
-              isSelected ? "border-stone-800" : "border-transparent"
+              isSelected ? "border-ink" : "border-transparent"
             }`}
           >
             <MarkerGlyph marker={option} size={20} />

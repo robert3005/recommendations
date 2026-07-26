@@ -79,8 +79,8 @@ export function ReviewPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="review-page">
-      <h1 className="text-xl font-semibold text-stone-900">Review imported places</h1>
-      <p className="mt-1 text-xs text-stone-500">
+      <h1 className="text-xl font-semibold text-ink">Review imported places</h1>
+      <p className="mt-1 text-xs text-ink-3">
         Rows that couldn't be placed automatically. The item under review shows its lettered
         candidates on the map — pick one there or here, enter coordinates, place it on the map, or
         skip it.
@@ -92,7 +92,7 @@ export function ReviewPage() {
             <li
               key={item.id}
               className={`rounded-lg border p-2 ${
-                underReview ? "border-stone-400 bg-white shadow-sm" : "border-stone-200 bg-stone-50"
+                underReview ? "border-ink-3 bg-paper shadow-sm" : "border-rule bg-land"
               }`}
               data-testid="review-item"
             >
@@ -102,9 +102,9 @@ export function ReviewPage() {
                 onClick={() => setSelectedId(item.id)}
                 aria-pressed={underReview}
               >
-                <span className="text-sm font-medium text-stone-900">{item.raw.title}</span>
+                <span className="text-sm font-medium text-ink">{item.raw.title}</span>
                 {item.raw.address ? (
-                  <span className="block text-xs text-stone-500">{item.raw.address}</span>
+                  <span className="block text-xs text-ink-3">{item.raw.address}</span>
                 ) : null}
               </button>
               {underReview ? (
@@ -112,7 +112,7 @@ export function ReviewPage() {
                   {(item.candidates ?? []).length > 0 ? (
                     <div className="flex items-center gap-1">
                       <select
-                        className="rounded border border-stone-300 px-2 py-1 text-xs"
+                        className="rounded border border-rule px-2 py-1 text-xs"
                         value={candidateChoice}
                         aria-label={`Link ${item.raw.title} to a candidate`}
                         data-testid="review-candidates"
@@ -134,7 +134,7 @@ export function ReviewPage() {
                       </select>
                       <button
                         type="button"
-                        className="rounded border border-stone-300 px-2 py-1 text-xs font-medium text-stone-700 disabled:opacity-40"
+                        className="rounded border border-rule px-2 py-1 text-xs font-medium text-ink-2 disabled:opacity-40"
                         disabled={busy || candidateChoice === ""}
                         data-testid="review-try-candidate"
                         onClick={() => {
@@ -160,7 +160,7 @@ export function ReviewPage() {
                       onChange={(event) => setLatitude(event.target.value)}
                       aria-label={`Latitude for ${item.raw.title}`}
                       placeholder="Latitude"
-                      className="w-24 rounded border border-stone-300 px-2 py-1 text-xs"
+                      className="w-24 rounded border border-rule px-2 py-1 text-xs"
                     />
                     <input
                       type="number"
@@ -171,11 +171,11 @@ export function ReviewPage() {
                       onChange={(event) => setLongitude(event.target.value)}
                       aria-label={`Longitude for ${item.raw.title}`}
                       placeholder="Longitude"
-                      className="w-24 rounded border border-stone-300 px-2 py-1 text-xs"
+                      className="w-24 rounded border border-rule px-2 py-1 text-xs"
                     />
                     <button
                       type="button"
-                      className="rounded border border-stone-300 px-2 py-1 text-xs font-medium text-stone-700 disabled:opacity-40"
+                      className="rounded border border-rule px-2 py-1 text-xs font-medium text-ink-2 disabled:opacity-40"
                       disabled={busy || latitude.trim() === "" || longitude.trim() === ""}
                       data-testid="review-place-at-coordinates"
                       onClick={() => {
@@ -191,7 +191,7 @@ export function ReviewPage() {
                   </div>
                   <button
                     type="button"
-                    className="rounded border border-stone-300 px-2 py-1 text-xs font-medium text-stone-700"
+                    className="rounded border border-rule px-2 py-1 text-xs font-medium text-ink-2"
                     data-testid="review-place-on-map"
                     aria-pressed={placingItemId === item.id}
                     onClick={() => {
@@ -211,7 +211,7 @@ export function ReviewPage() {
                   <button
                     type="button"
                     disabled={busy}
-                    className="rounded px-2 py-1 text-xs text-stone-500 hover:bg-stone-100 disabled:opacity-40"
+                    className="rounded px-2 py-1 text-xs text-ink-3 hover:bg-land disabled:opacity-40"
                     data-testid="review-skip"
                     onClick={() => void resolve(item.id, { kind: "skip" })}
                   >
@@ -220,7 +220,7 @@ export function ReviewPage() {
                   {reviewError?.itemId === item.id ? (
                     <p
                       role="alert"
-                      className="basis-full text-xs text-red-700"
+                      className="basis-full text-xs text-coral-ink"
                       data-testid="review-error"
                     >
                       {reviewError.message}
@@ -232,7 +232,7 @@ export function ReviewPage() {
           );
         })}
         {items.length === 0 ? (
-          <li className="py-6 text-sm text-stone-500" data-testid="review-empty">
+          <li className="py-6 text-sm text-ink-3" data-testid="review-empty">
             Nothing waiting for review. Imports that need a decision will appear here.
           </li>
         ) : null}

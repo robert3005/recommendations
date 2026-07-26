@@ -29,7 +29,7 @@ export function HostedViewerPage() {
     return (
       <>
         <EmptySharedCanvasProjection />
-        <p className="p-6 text-sm text-stone-500">Loading shared page…</p>
+        <p className="p-6 text-sm text-ink-3">Loading shared page…</p>
       </>
     );
   }
@@ -38,8 +38,8 @@ export function HostedViewerPage() {
     return (
       <div className="flex h-full items-center justify-center p-6">
         <EmptySharedCanvasProjection />
-        <p className="max-w-sm text-center text-sm text-stone-600" data-testid="hosted-error">
-          <span className="font-semibold text-stone-800">
+        <p className="max-w-sm text-center text-sm text-ink-2" data-testid="hosted-error">
+          <span className="font-semibold text-ink">
             {gone ? "This shared page is no longer available." : "Could not load this shared page."}
           </span>{" "}
           {gone

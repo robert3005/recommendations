@@ -2,9 +2,95 @@
 @import "maplibre-gl/dist/maplibre-gl.css";
 @plugin "@tailwindcss/typography";
 
+/**
+ * The visual system.
+ *
+ * Placemarks renders OpenStreetMap, so the palette is taken from OSM Carto's own
+ * land cover — leaf green, water blue, route amber on map paper — rather than a
+ * generic travel-app scheme. It is bright because maps are bright, and natural
+ * because the colours are literally those of land and water. Neutrals are biased
+ * green, so grey never reads as an unconsidered default and never fights amber.
+ *
+ * These are Tailwind `@theme` tokens, so they generate real utilities:
+ * `bg-paper`, `text-ink`, `border-rule`, `bg-leaf`, `text-water-ink`. Components
+ * use those names — never `stone-*`, never a raw hex.
+ */
+@theme {
+  /* Grounds */
+  --color-paper: #fbfaf4;
+  --color-land: #f1f0e4;
+  --color-land-2: #e6e7d8;
+  --color-rule: #d7daca;
+
+  /* Ink — forest, never black */
+  --color-ink: #16231b;
+  --color-ink-2: #3c4c42;
+  --color-ink-3: #5f6e64;
+
+  /* Cartographic accents (the list-marker palette itself lives in @placemarks/domain) */
+  --color-leaf: #2e9e5b;
+  --color-water: #2b8fd6;
+  --color-amber: #d8901a;
+  --color-coral: #e44e38;
+  --color-plum: #7250d0;
+  --color-teal: #0c9385;
+  --color-clay: #b75c31;
+  --color-rose: #cc3789;
+
+  /* Washes, for tinted surfaces */
+  --color-leaf-wash: #e2f2e5;
+  --color-water-wash: #ddecf8;
+  --color-amber-wash: #f8eeda;
+  --color-coral-wash: #fbe5e1;
+
+  /*
+   * Deepened accents for SMALL text. The bright accents are for fills and large
+   * type; at 12–14px on paper they fall below 4.5:1, so text uses these.
+   */
+  --color-leaf-ink: #1d6b3c;
+  --color-water-ink: #196490;
+  --color-clay-ink: #8a4520;
+  --color-coral-ink: #b3301e;
+
+  /*
+   * Type roles. Geometric sans for chrome (the expedition-signage lineage a map
+   * app earns), a transitional serif for post prose — the reader is the one
+   * screen someone spends minutes on, and the one a shared link lands on — and
+   * mono for coordinates, counts and labels.
+   */
+  --font-display: Futura, "Avenir Next", "Century Gothic", Questrial, "Trebuchet MS", sans-serif;
+  --font-sans: "Avenir Next", Futura, "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-serif: "Iowan Old Style", Charter, "Palatino Linotype", Palatino, Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Cascadia Mono", Consolas, monospace;
+}
+
 html,
 body,
 #root {
   height: 100%;
   margin: 0;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+/* Selection reads as a highlighter on paper, not a browser default. */
+::selection {
+  background: var(--color-leaf);
+  color: var(--color-paper);
+}
+
+/* One visible focus treatment everywhere, in water blue so it never reads as an error. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2.5px solid var(--color-water);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Post prose gets the reading face; chrome stays geometric. */
+.prose {
+  font-family: var(--font-serif);
 }

@@ -66,49 +66,49 @@ export function CandidatePicker({
         role="dialog"
         aria-modal="true"
         aria-label="Nearby places on OpenStreetMap"
-        className="max-h-[70%] w-full overflow-y-auto rounded-t-2xl bg-white p-4 shadow-xl md:w-[28rem] md:rounded-2xl"
+        className="max-h-[70%] w-full overflow-y-auto rounded-t-2xl bg-paper p-4 shadow-xl md:w-[28rem] md:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={() => {}}
         data-testid="candidate-picker"
       >
-        <h2 className="text-base font-semibold text-stone-900">Nearby on OpenStreetMap</h2>
-        <p className="mt-0.5 text-xs text-stone-500">
+        <h2 className="text-base font-semibold text-ink">Nearby on OpenStreetMap</h2>
+        <p className="mt-0.5 text-xs text-ink-3">
           Pick the place you meant — saving links it to its OSM record.
         </p>
         {nearbyQuery.isPending ? (
-          <p className="mt-3 text-sm text-stone-500">Looking around…</p>
+          <p className="mt-3 text-sm text-ink-3">Looking around…</p>
         ) : nearbyQuery.isError ? (
           <div className="mt-3">
-            <p className="text-sm text-red-700">
+            <p className="text-sm text-coral-ink">
               Could not reach OpenStreetMap services. Try again, or use the options below.
             </p>
             <button
               type="button"
               onClick={() => void nearbyQuery.refetch()}
-              className="mt-2 rounded border border-stone-300 px-2 py-1 text-xs font-medium text-stone-700 hover:bg-stone-100"
+              className="mt-2 rounded border border-rule px-2 py-1 text-xs font-medium text-ink-2 hover:bg-land"
               data-testid="retry-nearby"
             >
               Retry
             </button>
           </div>
         ) : nearbyQuery.data.length === 0 ? (
-          <p className="mt-3 text-sm text-stone-600" data-testid="no-candidates">
+          <p className="mt-3 text-sm text-ink-2" data-testid="no-candidates">
             Nothing mapped here yet.
           </p>
         ) : (
-          <ul className="mt-3 divide-y divide-stone-100">
+          <ul className="mt-3 divide-y divide-land">
             {nearbyQuery.data.map((poi) => (
               <li key={`${poi.osmRef.type}/${poi.osmRef.id}`}>
                 <button
                   type="button"
                   onClick={() => onSelect(poi)}
-                  className="flex w-full items-center justify-between gap-2 px-1 py-2 text-left hover:bg-stone-50"
+                  className="flex w-full items-center justify-between gap-2 px-1 py-2 text-left hover:bg-land"
                 >
                   <span>
-                    <span className="text-sm font-medium text-stone-900">{poi.name}</span>
-                    <span className="ml-2 text-xs capitalize text-stone-500">{poi.category}</span>
+                    <span className="text-sm font-medium text-ink">{poi.name}</span>
+                    <span className="ml-2 text-xs capitalize text-ink-3">{poi.category}</span>
                   </span>
-                  <span className="shrink-0 text-xs text-stone-400">
+                  <span className="shrink-0 text-xs text-ink-3">
                     {Math.round(distanceMeters(lat, lng, poi.lat, poi.lng))} m
                   </span>
                 </button>
@@ -116,18 +116,18 @@ export function CandidatePicker({
             ))}
           </ul>
         )}
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-stone-100 pt-3">
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-land pt-3">
           {allowOsmAdd ? (
             <div className="w-full">
               <a
                 href={osmEditAtUrl(lat, lng)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded border border-stone-300 px-2 py-1 text-xs font-medium text-stone-700 hover:bg-stone-100"
+                className="rounded border border-rule px-2 py-1 text-xs font-medium text-ink-2 hover:bg-land"
               >
                 Add it on OpenStreetMap
               </a>
-              <p className="mt-1 text-[11px] text-stone-500">
+              <p className="mt-1 text-[11px] text-ink-3">
                 OSM edits are public and permanent. Check existing places before adding, use only
                 verifiable facts you observed yourself — no personal data, and do not copy from
                 proprietary maps.
@@ -147,7 +147,7 @@ export function CandidatePicker({
           <button
             type="button"
             onClick={onClose}
-            className="ml-auto rounded px-2 py-1 text-xs font-medium text-stone-500 hover:bg-stone-100"
+            className="ml-auto rounded px-2 py-1 text-xs font-medium text-ink-3 hover:bg-land"
           >
             Cancel
           </button>

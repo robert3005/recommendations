@@ -43,7 +43,7 @@ function AssetImage({ src, alt }: { src?: string | Blob; alt?: string }) {
 
   // Remote/unknown image sources are dropped entirely.
   if (!assetId) return null;
-  if (!url) return <span className="text-xs text-stone-400">loading image…</span>;
+  if (!url) return <span className="text-xs text-ink-3">loading image…</span>;
   return <img src={url} alt={alt ?? ""} className="max-w-full rounded-lg" />;
 }
 
@@ -70,7 +70,7 @@ const components: Components = {
       href={href}
       target="_blank"
       rel="noopener noreferrer nofollow ugc"
-      className="text-blue-700 underline"
+      className="text-water-ink underline"
     >
       {children}
     </a>
@@ -79,7 +79,7 @@ const components: Components = {
 
 export function Markdown({ body }: { body: string }) {
   return (
-    <div className="prose prose-sm prose-stone max-w-none [&_table]:block [&_table]:overflow-x-auto">
+    <div className="prose prose-sm max-w-none font-serif [&_table]:block [&_table]:overflow-x-auto">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[[rehypeSanitize, schema]]}
