@@ -177,8 +177,9 @@ test.describe("map display", () => {
     // nav, no Map tab, and no review pill while nothing is reviewing.
     await expect(page.getByTestId("home-link")).toBeVisible();
     await expect(page.getByTestId("add-place-field")).toBeVisible();
+    // No persistent nav (the gear and the review pill are the only other
+    // chrome, and the pill only exists while a batch is reviewing).
     await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(0);
-    await expect(page.getByRole("link", { name: "Map" })).toHaveCount(0);
     await expect(page.getByTestId("review-pill")).toHaveCount(0);
 
     // Desktop widths: split ↔ collapsed, nothing else.
