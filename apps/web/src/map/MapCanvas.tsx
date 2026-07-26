@@ -21,7 +21,6 @@ import { CandidatePicker } from "../features/picker/CandidatePicker";
 import { ManualPinDialog } from "../features/picker/ManualPinDialog";
 import { SearchBar } from "../features/search/SearchBar";
 import { newId } from "../lib/id";
-import { DEFAULT_PIN_COLOR, FALLBACK_MARKER } from "../lib/markers";
 import { nowIso } from "../lib/time";
 import { initialViewport, persistViewport } from "../lib/viewport";
 import { mapStyleProvider, poiResolver, searchProvider } from "../providers";
@@ -29,6 +28,7 @@ import { usePaneStore } from "../state/pane";
 import { useProjectionStore } from "../state/projection";
 import { useUiStore } from "../state/ui";
 import { MapView, type MarkPinFeature, type PlacePinFeature, type PoiPinFeature } from "./MapView";
+import { fitForProjection, libraryPins } from "./projectionPins";
 
 interface Viewport {
   bbox: BBox;
@@ -37,30 +37,6 @@ interface Viewport {
 
 function roundBbox(bbox: BBox): string {
   return [bbox.west, bbox.south, bbox.east, bbox.north].map((v) => v.toFixed(4)).join(",");
-}
-
-function boundsOf(points: { lat: number; lng: number }[]): BBox | undefined {
-  if (points.length === 0) return undefined;
-  let west = Number.POSITIVE_INFINITY;
-  let south = Number.POSITIVE_INFINITY;
-  let east = Number.NEGATIVE_INFINITY;
-  let north = Number.NEGATIVE_INFINITY;
-  for (const point of points) {
-    west = Math.min(west, point.lng);
-    south = Math.min(south, point.lat);
-    east = Math.max(east, point.lng);
-    north = Math.max(north, point.lat);
-  }
-  // A single point still frames: give it a small span.
-  if (east - west < 0.002) {
-    west -= 0.001;
-    east += 0.001;
-  }
-  if (north - south < 0.002) {
-    south -= 0.001;
-    north += 0.001;
-  }
-  return { west, south, east, north };
 }
 
 export interface MapCanvasProps {
@@ -177,7 +153,7 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
     : [];
 
   // ---- The projection: which library places show, and which are dimmed ----
-  const listsById = new Map((lists ?? []).map((l) => [l.id, l]));
+  const _listsById = new Map((lists ?? []).map((l) => [l.id, l]));
   const focusPlaceIds = (() => {
     if (projection.kind === "list") {
       return new Set(
@@ -209,49 +185,15 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
   const placePins: PlacePinFeature[] =
     !privateMapProjection || readOnly
       ? []
-      : (libraryPlaces ?? []).flatMap((view) => {
-          const facts = displayFacts(view.place);
-          if (!facts) return [];
-          const memberListIds = membership?.[view.place.id] ?? [];
-          // Deterministic marker when in several lists: the lowest list id leads.
-          const memberLists = [...memberListIds]
-            .sort()
-            .map((id) => listsById.get(id))
-            .filter((l): l is NonNullable<typeof l> => l !== undefined);
-          const focused = focusPlaceIds?.has(view.place.id) ?? true;
-          if (projection.kind === "post") {
-            // Reading shows only the embeds; the editor adds the list as candidates.
-            if (!focused && !postCandidateIds?.has(view.place.id)) return [];
-          }
-          if (projection.kind === "all") {
-            // The list toggles are the canvas's primary filter: a place hides once
-            // EVERY list containing it is toggled off.
-            const visible = memberListIds.some((id) => !hiddenListIds.includes(id));
-            if (!visible) return [];
-          }
-          // A list/post projection belongs to exactly one list, even if a place is
-          // also a member elsewhere. Only the all-lists projection uses the
-          // deterministic multi-list badge.
-          const projectionList =
-            projection.kind === "list"
-              ? listsById.get(projection.listId)
-              : projection.kind === "post" && post
-                ? listsById.get(post.listId)
-                : undefined;
-          const marker = projectionList?.marker ?? memberLists[0]?.marker ?? FALLBACK_MARKER;
-          return [
-            {
-              placeId: view.place.id,
-              name: facts.name ?? "Place",
-              lat: facts.lat,
-              lng: facts.lng,
-              color: memberLists.length > 0 ? marker.color : DEFAULT_PIN_COLOR,
-              icon: marker.icon,
-              unlinked: view.place.resolutionState === "unlinked",
-              multi: projection.kind === "all" && memberLists.length > 1,
-              dimmed: !focused,
-            },
-          ];
+      : libraryPins({
+          projection,
+          places: libraryPlaces ?? [],
+          membership: membership ?? {},
+          lists: lists ?? [],
+          hiddenListIds,
+          ...(post ? { postListId: post.listId } : {}),
+          ...(focusPlaceIds ? { focusPlaceIds } : {}),
+          ...(postCandidateIds ? { candidatePlaceIds: postCandidateIds } : {}),
         });
 
   // Review projection: the item under review plus its labelled candidates on
@@ -302,39 +244,12 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
             : null;
 
   // One camera move per projection change — never before its pins exist.
-  const fitTo = (() => {
-    if (projection.kind === "post" && projection.focusPlaceIds?.length) {
-      // The camera follows the article as it scrolls (instant under reduced
-      // motion — MapView handles the preference).
-      const focusSet = new Set(projection.focusPlaceIds);
-      const bounds = boundsOf(placePins.filter((pin) => focusSet.has(pin.placeId)));
-      return bounds
-        ? { bounds, key: `post:${projection.postId}:${projection.focusPlaceIds.join(",")}` }
-        : null;
-    }
-    if (projection.kind === "list" || projection.kind === "post") {
-      const bounds = boundsOf(placePins.filter((pin) => !pin.dimmed));
-      const id = projection.kind === "list" ? projection.listId : projection.postId;
-      return bounds ? { bounds, key: `${projection.kind}:${id}` } : null;
-    }
-    if (projection.kind === "review" && reviewItem) {
-      const bounds = boundsOf(markPins);
-      return bounds ? { bounds, key: `review:${reviewItem.id}` } : null;
-    }
-    if (projection.kind === "shared") {
-      const focusKeys = projection.focusKeys?.length ? new Set(projection.focusKeys) : undefined;
-      const framedPins = focusKeys
-        ? projection.pins.filter((pin) => focusKeys.has(pin.key))
-        : projection.pins;
-      const bounds = boundsOf(framedPins);
-      const pinKey = projection.pins
-        .map((pin) => `${pin.key}:${pin.lat.toFixed(5)}:${pin.lng.toFixed(5)}`)
-        .join("|");
-      const focusKey = projection.focusKeys?.join(",") ?? "all";
-      return bounds ? { bounds, key: `shared:${pinKey}:focus:${focusKey}` } : null;
-    }
-    return null;
-  })();
+  const fitTo = fitForProjection({
+    projection,
+    placePins,
+    markPins,
+    ...(reviewItem ? { reviewItemId: reviewItem.id } : {}),
+  });
 
   const sharedPins: MarkPinFeature[] =
     projection.kind === "shared"

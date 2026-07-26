@@ -22,6 +22,7 @@ import { useUiStore } from "../../state/ui";
 import { NavLinks } from "../place/NavLinks";
 import { OsmLink } from "../place/OsmLink";
 import { articleFollowGroups } from "../posts/articleFollow";
+import { useVisibleFollowKeys } from "../posts/useVisibleFollowKeys";
 import { resolveAllAnchors, type SharedResolution } from "./resolveShared";
 import { type SaveSharedResult, saveSharedGuide } from "./saveSharedGuide";
 
@@ -121,7 +122,6 @@ export function SharedGuideView({
   const articleRef = useRef<HTMLElement>(null);
   const entryRefs = useRef(new Map<string, HTMLLIElement>());
   const [selectedBlockId, setSelectedBlockId] = useState<string>();
-  const [visiblePinKeys, setVisiblePinKeys] = useState<string[]>([]);
   const followGroups = useMemo(
     () =>
       articleFollowGroups(
@@ -169,7 +169,6 @@ export function SharedGuideView({
     let currentDocument = true;
     setResolutionState({ document: guide, values: {} });
     setSelectedBlockId(undefined);
-    setVisiblePinKeys([]);
     const anchors = new Map(
       guide.blocks.flatMap((block) =>
         block.type === "place" ? [[block.id, block.place] as const] : [],
@@ -217,43 +216,22 @@ export function SharedGuideView({
   const followKey = [...followGroups.entries()]
     .map(([blockId, placeIds]) => `${blockId}:${placeIds.join(",")}`)
     .join("|");
-  // biome-ignore lint/correctness/useExhaustiveDependencies: pinKey is the stable serialization of the pins consumed by this observer.
-  useEffect(() => {
-    if (!pinKey) return;
-    const root = articleRef.current;
-    if (!root || typeof IntersectionObserver === "undefined") return;
-    const visibleBlocks = new Set<string>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const blockId = (entry.target as HTMLElement).dataset.sharedFollow;
-          if (!blockId) continue;
-          if (entry.isIntersecting) visibleBlocks.add(blockId);
-          else visibleBlocks.delete(blockId);
-        }
-        const next = [
-          ...new Set([...visibleBlocks].flatMap((blockId) => followGroups.get(blockId) ?? [])),
-        ];
-        setVisiblePinKeys((current) =>
-          current.length === next.length && current.every((key, index) => key === next[index])
-            ? current
-            : next,
-        );
-
-        // Preserve the existing embed-highlight behavior; prose sections can
-        // frame several places without pretending that one card was selected.
-        const visiblePlace = entries.find(
-          (entry) =>
-            entry.isIntersecting && (entry.target as HTMLElement).dataset.sharedPlace !== undefined,
-        );
-        const placeBlockId = (visiblePlace?.target as HTMLElement | undefined)?.dataset.sharedPlace;
-        if (placeBlockId) setSelectedBlockId(placeBlockId);
-      },
-      { threshold: 0.4 },
-    );
-    for (const element of root.querySelectorAll("[data-shared-follow]")) observer.observe(element);
-    return () => observer.disconnect();
-  }, [followGroups, followKey, pinKey]);
+  const visiblePinKeys = useVisibleFollowKeys({
+    rootRef: articleRef,
+    attribute: "data-shared-follow",
+    groups: followGroups,
+    groupsKey: followKey && pinKey ? followKey : "",
+    // A prose section can frame several places without pretending one card was
+    // selected, so the embed highlight follows only place blocks.
+    onEntries: (entries) => {
+      const visiblePlace = entries.find(
+        (entry) =>
+          entry.isIntersecting && (entry.target as HTMLElement).dataset.sharedPlace !== undefined,
+      );
+      const placeBlockId = (visiblePlace?.target as HTMLElement | undefined)?.dataset.sharedPlace;
+      if (placeBlockId) setSelectedBlockId(placeBlockId);
+    },
+  });
   useCanvasProjection({
     kind: "shared",
     pins,

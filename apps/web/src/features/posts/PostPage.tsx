@@ -16,6 +16,7 @@ import { MarkerGlyph } from "../lists/MarkerGlyph";
 import { NavLinks } from "../place/NavLinks";
 import { PostPublishControls } from "../publish/PostPublishControls";
 import { articleFollowGroups } from "./articleFollow";
+import { useVisibleFollowKeys } from "./useVisibleFollowKeys";
 
 export function PostPage() {
   const { postId } = useParams({ from: "/post/$postId" });
@@ -28,7 +29,6 @@ export function PostPage() {
 
   // The camera follows both prose and embeds. A prose block owns the
   // consecutive embeds that follow it up to the next prose block.
-  const [visibleEmbeds, setVisibleEmbeds] = useState<string[]>([]);
   const [selectedEmbed, setSelectedEmbed] = useState<string>();
   const articleRef = useRef<HTMLDivElement>(null);
   const embedRefs = useRef(new Map<string, HTMLElement>());
@@ -45,36 +45,12 @@ export function PostPage() {
   const followKey = [...followGroups.entries()]
     .map(([blockId, placeIds]) => `${blockId}:${placeIds.join(",")}`)
     .join("|");
-  useEffect(() => {
-    if (!followKey) {
-      setVisibleEmbeds([]);
-      return;
-    }
-    const root = articleRef.current;
-    if (!root || typeof IntersectionObserver === "undefined") return;
-    const visible = new Set<string>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const blockId = (entry.target as HTMLElement).dataset.postFollow;
-          if (!blockId) continue;
-          if (entry.isIntersecting) visible.add(blockId);
-          else visible.delete(blockId);
-        }
-        setVisibleEmbeds((current) => {
-          const next = [
-            ...new Set([...visible].flatMap((blockId) => followGroups.get(blockId) ?? [])),
-          ].sort();
-          return current.length === next.length && current.every((id, i) => id === next[i])
-            ? current
-            : next;
-        });
-      },
-      { threshold: 0.4 },
-    );
-    for (const el of root.querySelectorAll("[data-post-follow]")) observer.observe(el);
-    return () => observer.disconnect();
-  }, [followGroups, followKey]);
+  const visibleEmbeds = useVisibleFollowKeys({
+    rootRef: articleRef,
+    attribute: "data-post-follow",
+    groups: followGroups,
+    groupsKey: followKey,
+  });
 
   const setPostSelectHandler = useProjectionStore((state) => state.setPostSelectHandler);
   const selectFromMap = useCallback((placeId: string) => {
