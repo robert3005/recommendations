@@ -215,7 +215,7 @@ describe("Backup replace-mode graph validation", () => {
     }
   });
 
-  it('rejects a live note whose target kind is not one the model defines', async () => {
+  it("rejects a live note whose target kind is not one the model defines", async () => {
     const source = freshRepo("pivot-list-note-source");
     const target = freshRepo("pivot-list-note-target");
     try {

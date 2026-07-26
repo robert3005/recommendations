@@ -227,8 +227,10 @@ export async function projectPost(
 
   for (const view of blocks) {
     if (view.block.content.type === "section") {
-      // A section's own post note travels only when marked shareable.
-      if (!view.sectionNote?.shareable) continue;
+      // A post's prose publishes because the POST publishes. `shareable`
+      // governs place notes — private write-ups the author opts into sharing —
+      // and gating sections on it published articles with no article at all.
+      if (!view.sectionNote) continue;
       stats.sections += 1;
       noteImages(view.sectionNote.body);
       sharedBlocks.push({

@@ -1661,17 +1661,19 @@ export class DexieRepository implements PlacemarksRepository {
           throw new Error("note not found — updateNote is not a creation path");
         }
         const wasShareable = oldRow.shareable === true;
-        const retargeted = noteTargetKey(oldRow.target) !== noteTargetKey(note.target);
-        // A retarget must land on a live aggregate — like creation, an update
-        // never leaves a note targeting a missing row.
-        if (retargeted && !(await this.noteTargetIsLive(note))) {
-          throw new Error("note target not found — notes attach to a live place or post");
+        // A note's target is immutable. Prose that belongs to another place or
+        // post is created there — no UI ever retargeted one, and supporting it
+        // cost a liveness check, a section-dismantling branch, and an
+        // attachment-tombstoning branch on every ordinary edit.
+        if (noteTargetKey(oldRow.target) !== noteTargetKey(note.target)) {
+          throw new Error("a note's target is immutable — create it on the new target instead");
         }
-        // Retargeting invalidates every attachment made under the old target —
-        // an attachment joins a block and note about the SAME place, so the edge
-        // tombstones with the retarget rather than dangling inconsistently.
+        // `shareable` still gates a note's own standalone page and its
+        // attachment edges. What it no longer gates is a post's prose: a
+        // section publishes because its post publishes (see projectPost).
+        const goingPrivate = !note.shareable;
         const attachedBlockIds: string[] = [];
-        if (retargeted || !note.shareable) {
+        if (goingPrivate) {
           const edges = (await this.db.blockNoteAttachments.toArray()).filter(
             (edge) => !edge.deleted && edge.noteId === note.id,
           );
@@ -1684,26 +1686,10 @@ export class DexieRepository implements PlacemarksRepository {
             });
           }
         }
-        // A section edge encodes the note's post target. Retargeting that note
-        // must dismantle the old section in the same transaction; otherwise a
-        // live block would point at prose owned by another aggregate.
-        if (retargeted && oldRow.target.kind === "post") {
-          const sections = (
-            await this.db.postBlocks.where("refId").equals(note.id).toArray()
-          ).filter((block) => !block.deleted && block.kind === "section");
-          for (const section of sections) {
-            attachedBlockIds.push(section.id);
-            await this.syncedPut("postBlocks", {
-              ...section,
-              deleted: true,
-              updatedAt: note.updatedAt,
-            });
-          }
-        }
-        if (!note.shareable) {
-          // A note that stops being shareable queues removal of its public page
-          // (spec/src/notes.md): the old revision stays up until revocation
-          // lands — and the revocation supersedes every pending page update.
+        if (goingPrivate) {
+          // A place note that stops being shareable queues removal of its
+          // public page (spec/src/notes.md): the old revision stays up until
+          // revocation lands, and it supersedes every pending page update.
           await this.revokePublicationsFor({ kind: "note", id: note.id }, note.updatedAt);
         }
         await this.syncedPut("notes", toNoteRow(note));
@@ -1712,23 +1698,21 @@ export class DexieRepository implements PlacemarksRepository {
           await this.dirtyPublicationsFor({ kind: "note", id: note.id }, note.updatedAt);
         }
         // Any transition visible in a hosted projection dirties it — including
-        // a shareable note going private (it disappears), and the OLD
-        // containers when a retarget happens in the same edit.
+        // a shareable place note going private, which makes it disappear.
         const touchedLists = new Set<string>();
         const touchedPosts = new Set<string>();
-        for (const target of [note.target, oldRow.target]) {
-          if (target.kind === "post") {
-            // A post section note is part of the post's article regardless of
-            // shareability of other notes; its edit re-projects the post.
-            touchedPosts.add(target.postId);
-          } else if (note.shareable || wasShareable) {
-            // Shareable place notes ride along in list projections
-            // (spec/src/sharing.md §First-release simplifications) and enter
-            // posts through explicit attachments.
-            for (const id of await this.listIdsForPlace(target.placeId)) touchedLists.add(id);
-            for (const embed of await this.liveEmbedsOfPlace(target.placeId)) {
-              touchedPosts.add(embed.post.id);
-            }
+        const target = note.target;
+        if (target.kind === "post") {
+          // A section note is part of its post's article; editing it
+          // re-projects the post.
+          touchedPosts.add(target.postId);
+        } else if (note.shareable || wasShareable) {
+          // Shareable place notes ride along in list projections
+          // (spec/src/sharing.md §First-release simplifications) and enter
+          // posts through explicit attachments.
+          for (const id of await this.listIdsForPlace(target.placeId)) touchedLists.add(id);
+          for (const embed of await this.liveEmbedsOfPlace(target.placeId)) {
+            touchedPosts.add(embed.post.id);
           }
         }
         // Blocks that lost this note's attachment through a retarget.
@@ -2447,6 +2431,8 @@ export class DexieRepository implements PlacemarksRepository {
           target: { kind: "post", postId },
           ...(title ? { title } : {}),
           body,
+          // Meaningless on a post note: `shareable` is the place-note opt-in.
+          // A section publishes because its post publishes.
           shareable: false,
           createdAt: now,
           updatedAt: now,

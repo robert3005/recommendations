@@ -329,7 +329,7 @@ describe("repository create/update lifecycle boundaries", () => {
     }
   });
 
-  it("tombstones an old section when its note retargets and detaches a note made private", async () => {
+  it("refuses to retarget a note and detaches a note made private", async () => {
     const repo = repoFor("note-edge-lifecycle");
     try {
       const place = await seedPlace(repo);
@@ -345,12 +345,16 @@ describe("repository create/update lifecycle boundaries", () => {
         section.content.type === "section" ? section.content.noteId : "",
       );
       if (!sectionNote) throw new Error("section note missing");
-      await repo.updateNote({
-        ...sectionNote,
-        target: { kind: "place", placeId: place.id },
-        updatedAt: LATER,
-      });
-      expect(await repo.db.postBlocks.get(section.id)).toMatchObject({ deleted: true });
+      // A note's target is immutable, so the section it backs cannot be
+      // orphaned by an edit — the write is refused and nothing is tombstoned.
+      await expect(
+        repo.updateNote({
+          ...sectionNote,
+          target: { kind: "place", placeId: place.id },
+          updatedAt: LATER,
+        }),
+      ).rejects.toThrow(/immutable/);
+      expect((await repo.db.postBlocks.get(section.id))?.deleted).toBeUndefined();
 
       const embed = await repo.embedPlaceInPost("post-1", place.id, NOW);
       await repo.createNote({
