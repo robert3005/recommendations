@@ -1,380 +1,141 @@
-# Sharing — Lists & Posts
+# Sharing & Publishing
 
-Two things publish (2026-07-19, the lists-and-posts pivot): a **list** — the curation itself,
-name plus ordered places — and a **[post](./posts.md)** — the editorialised article about a list.
-Both share the same machinery and differ only in projection. Three requirements drive the design:
+Every list and every post can be published as a read-only public page. Publishing is the only
+remote act in Placemarks: all editing is local, and a public page changes only when its owner
+explicitly publishes an update. No account exists on either side — the owner holds a
+per-publication secret, and a reader just follows a link.
 
-1. **Private by default** — only explicitly selected content leaves the device.
-2. **Durable place context** — each place carries its current OSM link plus bounded copied evidence
-   so it still renders and can be re-resolved if that OSM element is replaced.
-3. **Persistent named links** — hosted links show the latest successfully published revision
-   and the latest OSM data the viewer can successfully resolve.
+## One sharing mode
 
-## One block document, two projections
-
-The versioned block document below serves both public pages:
-
-- A **shared list** projects the list's place blocks (each place's shareable notes may ride
-  along) — no narrative sections. Title = list name.
-- A **shared post** projects the post's full block sequence — prose sections interleaved with
-  place embeds, attached notes, and selected tags — plus a **reference to its list**: the list's
-  title always, and the list's public slug when the list itself has a hosted publication, so the
-  post page can offer *"From the list: 〈name〉"* as a working link
-  ([Posts](./posts.md#publishing)).
-
-One schema, one viewer component, one share service; a list page is simply the degenerate,
-sections-free case.
-
-“Latest successfully published” is deliberate. A local edit made offline, or a failed publish,
-cannot change an already-public document. The owner UI always distinguishes local draft, queued,
-failed, and published state.
-
-## Share source links plus recovery evidence
-
-A shared place does not use an OSM element id as permanent identity. An OSM-linked place carries:
-
-- the current node/way/relation reference;
-- a bounded first-seen and last-verified OSM observation;
-- a stable block id within that publication.
-
-An unlinked manual pin shares only its owner-provided name, coordinates, and optional category,
-explicitly marked as carrying no OSM claim.
-
-The viewer first resolves the exact OSM reference. If OSM confirms that it is gone or incompatible,
-the viewer may use the copied evidence for the conservative matching process from
-[Durable Place Identity](./place-identity.md#refresh-and-re-resolution). Provider failure is not a
-missing element and never causes relinking.
-
-Copied evidence is also the immediate and offline fallback. It is labeled with its observation time
-and never presented as current when live resolution fails.
-
-## Two sharing modes
-
-Both modes use the same versioned document schema and viewer component, but their URLs and update
-semantics differ.
-
-### Mode A — Snapshot link
-
-The document is compressed into the URL fragment:
+There is exactly one way to share: a hosted, named, read-only page per published list or post.
 
 ```text
-https://app.example/l#<base64url(compress(sharedDocument))>
+https://app.example/l/<slug>     a published list
+https://app.example/p/<slug>     a published post
 ```
 
-- No backend receives the document.
-- Membership and prose are immutable at share time.
-- OSM facts may still refresh or recover through the resolver.
-- Copied evidence keeps the page useful when offline or when an OSM element disappeared.
-- Images are omitted. A no-backend snapshot cannot hold a durable media lease; the share preview
-  explains the text placeholders before generation.
+Slugs are public and guessable — a slug is not a secret and not a read-access token. A revoked
+slug tombstones forever and is never reassigned, so an old link can never come to mean someone
+else's content. The `/l` and `/p` prefixes deliberately avoid the local `/list` and `/post`
+routes, because the viewer is the same web app on the same origin (see below).
 
-Snapshot generation enforces explicit compressed and inflated byte limits. The decoder validates
-the schema, caps decompression work, and rejects oversized documents. The UI shows the final URL
-size before copy/share and never silently truncates notes or places.
+## Explicit publish
 
-“No backend receives the document” describes HTTP fragment handling, not secrecy from the local
-browser. The full fragment is visible to the viewer's JavaScript, browser history/sync, extensions,
-screenshots, and anyone receiving the copied link. Analytics, error reporting, and logs must redact
-fragment-bearing URLs.
+Nothing leaves the device until the owner presses **Publish**. The public page changes only on
+**Publish update**, and **Unpublish** revokes it. Before anything is sent, a publish preview
+shows exactly what leaves: the title, the places with their coordinates, and the body.
 
-### Mode B — Hosted named link
+The app shows "unpublished changes" when the hash of the current projection differs from the
+[`Publication`](./data-model.md) row's `lastPublishedHash`. Publish, update, and unpublish are
+foreground actions: each visibly succeeds or fails in the UI, and retrying means pressing the
+button again. Publishing needs the network and says so when it is absent.
 
-The share service stores the current published document under a public, human-readable slug:
+## The editor token
 
-```text
-https://app.example/l/lisbon-trip
-```
+Each publication has one editor token, generated at its first publish from at least 256 random
+bits and stored on the local `Publication` row. It is sent as a Bearer header over TLS, stored
+server-side only as a hash, compared in constant time, and never appears in a URL or in a
+published document. Whoever holds the token can update or revoke that one publication; nobody
+else can.
 
-- Anyone can read or guess the public slug; it is not a secret or read-access token.
-- Before creation, the client generates and durably stores a high-entropy **editor bearer token**,
-  then sends it with the idempotent create request.
-- Updating and revoking require that bearer token; reading never does.
-- The public URL shows the last successfully published revision, not unuploaded local edits.
-- A slug remains reserved after revocation so an old link can never be reassigned to another owner.
+**Token loss is permanent.** After storage eviction, a restore without credentials, or a lost
+device, the page can no longer be updated or revoked through the API. The recourse is to
+republish under a new slug, and to have the stale page removed through the service's
+operator-mediated takedown contact. The UI states this plainly wherever tokens are at stake, and
+[Local Storage](./storage.md) repeats it for backups.
 
-No account is required. Bearer-token authorization solves write ownership without introducing user
-profiles or exposing an editing secret in the share URL.
+## Teardown
 
-## Shared document schema
+Deleting a published list or post is refused until the owner unpublishes it — no public page is
+ever orphaned by a local delete. Revoked `Publication` rows persist locally as tombstones.
+Publishing again after a revoke creates a new publication under a new slug; a tombstoned slug is
+never reused.
 
-The document mirrors ordered blocks (a list's place blocks, or a post's full sequence) while
-keeping the owner's private `PlaceId`, database ids, and editor bearer token out of the payload.
+## Published documents
+
+A published document is self-contained: it embeds every fact the public page needs, keyed by the
+place's `PlaceId` so mentions rewrite to stable fragments. `OsmRef` and `ListMarker` are the
+types from the [data model](./data-model.md).
 
 ```ts
-interface SharedPlaceEvidence {
-  osmRef: OsmElementRef;       // ref from which this evidence was observed
-  osmVersion?: number;
-  source: "OpenStreetMap";
-  license: "ODbL-1.0";
-  attribution: "© OpenStreetMap contributors";
-  name?: string;
-  category: string;
+interface PublishedPlace {
+  id: string;                 // the PlaceId — the stable key mentions rewrite to
+  name: string;
   lat: number;
   lng: number;
   address?: string;
-  website?: string;
-  phone?: string;
-  stableIds?: Record<string, string>; // bounded wikidata/brand/ref identifiers
-  observedAt: string;
+  category?: string;
+  osmRef?: OsmRef;            // attribution + OSM deep link on the public page
 }
 
-type SharedPlaceAnchor =
-  | {
-      kind: "osm";
-      currentOsmRef: OsmElementRef;
-      firstSeen: SharedPlaceEvidence;
-      lastVerified: SharedPlaceEvidence;
-    }
-  | {
-      kind: "manual";              // an unlinked pin: owner-provided facts, no OSM claim
-      name: string;
-      lat: number;
-      lng: number;
-      category?: string;
-    };
-
-interface SharedNoteBody {
-  pageSlug?: string;
-  title?: string;
-  body: string;
-  media?: Array<{ hostedMediaId: string }>;
-}
-
-type SharedBlock =
-  | {
-      id: string;
-      type: "section";
-      note: SharedNoteBody;
-    }
-  | {
-      id: string;
-      type: "place";
-      place: SharedPlaceAnchor;
-      notes?: SharedNoteBody[];
-      tags?: string[];         // reserved; nothing populates it today
-    };
-
-interface SharedDocument {
+interface PublishedList {
   v: 1;
-  kind?: "list" | "post";     // absent in pre-pivot documents, which read as posts
-  slug?: string;              // hosted mode only
+  kind: "list";
   title: string;
-  description?: string;
-  list?: { title: string; slug?: string }; // posts: the list this post editorialises
-  cover?: { hostedMediaId: string };
-  blocks: SharedBlock[];
-  contentHash: string;
-  publishedAt?: string;
+  marker: ListMarker;
+  places: PublishedPlace[];   // list order
+  posts?: Array<{ title: string; url: string }>;  // published posts about this list
+}
+
+interface PublishedPost {
+  v: 1;
+  kind: "post";
+  title: string;
+  body: string;               // Markdown, links rewritten at publish (below)
+  places: PublishedPlace[];   // the post's projection at publish time
+  list?: { title: string; url?: string };  // list posts only; url when the list is published
 }
 ```
 
-*(Implementation note: the schema package still calls this type `SharedGuide`; `kind` and `list`
-are additive optional fields, so `v: 1` documents remain wire-compatible.)*
+A published **place post** carries no back-link — `list` is for list posts only. A published
+list's `posts` array links the published posts about it: the public edition of the list page's
+posts sidebar ([The notebook & the map](./map-view.md)).
 
-A shared **list** contains only place blocks. A shared **post** may interleave sections and
-carries `list` — its list's title, plus the list's public slug when the list is itself hosted;
-the client drops a slug whose list page was revoked at the next successful publish
-([Posts](./posts.md#publishing)).
+## Publish-time link rewrite
 
-A live section block always includes its own prose: the unit of privacy is the **post**, so a
-section travels because the post travels. (`shareable` governs *place* notes — private write-ups
-the author opts into sharing — and gating sections on it published articles with no article at all.) A place note is
-included only through a live `BlockNoteAttachment`, and a personal tag only through a live
-an explicit attachment edge. `Note.shareable` is a prerequisite, not sufficient publication state.
+Post bodies use `place:` and `post:` links locally ([Posts](./posts.md)); published bodies never
+contain them. At publish time:
 
-A shared list carries **every shareable note of each place** directly, and **no tags at all** — more
-private than a per-embed selection model, never less. A shared post carries its own prose plus the
-notes explicitly attached to its embeds.
+- `place:<placeId>` → `#place-<placeId>` when that place is in the published `places` set, else
+  the link renders as plain text.
+- `post:<postId>` → the target's public URL when the target is published, else plain text.
 
-The publish preview lists the exact title, prose, tags, copied OSM evidence, and media that will
-leave the device. Public pages default to `noindex`; discoverability can be a later explicit option.
+The publish preflight offers to publish linked-but-unpublished posts (and a list post's list)
+alongside. The viewer maps `#place-<id>` fragments to pin focus; it never sees `place:`/`post:`
+protocols, and its sanitizer allowlists only `http:`/`https:` links and `#` fragments.
 
-## Local publication record
+## The public viewer
 
-The private [`Publication`](./data-model.md#publication-state) entity tracks the target, slug,
-credential reference, local revision, server revision, hash, status, and errors. The editor token
-itself lives in private local credential storage and never appears in `SharedDocument`.
+The viewer is the same deployed web app: `/l/:slug` and `/p/:slug` are SPA routes that fetch the
+published document from the share service and render it read-only in the notebook+map shell
+([The notebook & the map](./map-view.md)). There is no live OSM resolution and no import — a
+published page renders exactly what was published, as of publish time. Pages are `noindex` by
+default and carry ODbL attribution when any published place has an `osmRef`. The service serves
+documents, never pages.
 
-Publication follows a durable state machine:
+## The share service
 
-```text
-local edit → queued → publishing → published
-                              └──→ failed → queued on retry
+The share service is the only backend: Hono on Cloudflare Workers with D1, two tables
+(`documents` and `rate`). The protocol, in full:
 
-unpublish → revoking → revoked
-                    └→ failed → revoking on retry
-```
+- `PUT /s/lists/:slug` and `PUT /s/posts/:slug` — Bearer; create-or-update. The first PUT claims
+  the slug and binds the token hash (201); later PUTs with the same token replace the document
+  (200); a PUT with a different token is 403; a tombstoned slug is 410. The client proposes a
+  slug derived from the normalised title and walks `-2…-9` suffixes on both 403 (owned by
+  another token) and 410 (tombstoned — including the owner's own earlier revoke); if all are
+  taken, publish fails visibly.
+- `GET /s/lists/:slug`, `GET /s/posts/:slug` — public; ETag plus a short `s-maxage` (~60 s); on
+  update or revoke the worker purges that single URL.
+- `DELETE …/:slug` — Bearer; tombstones the slug. Repeating a DELETE is 204 — idempotent by
+  nature.
 
-Closing the tab, losing the network, or retrying a request must not roll the public document back.
-Each immutable outbox job records the local revision it projects. Idempotency keys and conditional
-server revisions prevent rollback; completing an older job never clears a newer pending revision.
-The UI derives “changes pending” from
-`localRevision !== lastPublishedLocalRevision`, not from one transient request status.
+Documents are schema-validated; requests are subject to size and rate limits; slugs are
+normalised and reserved names rejected. The service maintains an abuse/takedown path — which is
+also the recourse after token loss.
 
-Losing the only device-held editor token makes the hosted page uneditable. Recovery exports may
-include tokens only inside an explicitly encrypted secrets bundle; ordinary list/post exports do
-not include them.
+## Privacy
 
-> **Implementation decisions (2026-07-19, Phase 5).**
->
-> - **Edits mark, creators publish.** A local edit on a hosted target commits — in the same
->   IndexedDB transaction as the edit itself — a `queued` publication state and one coalesced
->   *payload-less* outbox job (a dirty marker). Drains never send dirty markers: only an explicit
->   publish action projects the current document, attaches the payload, and sends. The launch-time
->   outbox retry therefore completes interrupted explicit work but never auto-publishes local
->   edits — the public page changes only when the creator acts.
-> - **Idempotency-key hygiene.** A retry of the same revision reuses the failed job and its
->   `Idempotency-Key`. Once a job has been *attempted*, its key may have committed server-side, so
->   a newer revision always retires that job and goes out under a fresh key — a key is never
->   reattached to a different payload.
-> - **First-publish slug claim.** On a `409` the client first probes whether the slug is already
->   its own from a commit whose acknowledgement was lost (public `GET` for the revision, then a
->   conditional `PUT` with its own token); only when that reclaim is refused does it walk
->   `-2…-9` suffixes. Note documents rewrite their embedded `slug` to each candidate.
-> - **Failure isolation and revocation precedence.** Outbox order holds per publication — one
->   failing page never starves another (this includes a missing editor credential). A failed
->   revocation surfaces as `failed` and retries under its original key; an explicit revocation
->   deletes pending publish jobs first so a failed draft can never strand the unpublish.
-> - **In-flight edits stay queued.** When an older publish completes while a newer local revision
->   already exists, the publication records the published revision but keeps `queued` status and
->   its dirty marker.
-> - **Preflight before first publish.** Creating a hosted link stops for an exact disclosure of
->   the projection (title, places with coordinates, shareable note prose); nothing leaves the
->   device until the creator confirms. The unpublish controls carry the standing honesty note
->   that downloaded copies and third-party caches cannot be remotely erased.
-> - **Deletion queues revocation.** Deleting a published list or post (directly or through a
->   place-deletion cascade) marks its publication `revoking` with a durable DELETE job — never an
->   orphaned public page; removing content from a published document makes it out of date the same way.
-> - **Revoked means a fresh claim.** Publishing again after revocation creates a new publication
->   and claims a new slug; the tombstone is never updated. A failed revocation retries its
->   pending DELETE job — the Retry control never turns an unpublish into a publish.
-> - **Transport.** An absolute non-localhost `http:` share URL blocks all mutations at the
->   client: the Bearer credential never crosses an explicitly insecure transport.
-> - **Viewer recovery uses both epochs as one decision.** Recovery searches near each distinct
->   copied coordinate and relinks only when first-seen and last-verified evidence converge on one
->   unique winner; disagreeing winners render as ambiguity. Snapshot generation also enforces the
->   decoder's inflated-size limit, the preview names every omitted image and stable-id key, and
->   the disclosed link size is the final URL's.
-> - **Convergence, refined (2026-07-19, late):** a high-confidence winner in one epoch is accepted
->   when the other epoch does not contradict it — it names the same winner, lists it among its
->   plausible candidates, or its own observation is still plausibly the same real-world place.
->   An epoch that actively points elsewhere (moved + renamed) makes the recovery ambiguous. The
->   same rule governs offline local-evidence reuse when importing a shared list.
-> - **Retry knows its meaning first.** A failed publication's Retry control stays disabled until
->   the outbox has answered whether an unpublish is pending — the unknown window can never default
->   to a publish. First-publishing a NOTE page also stops for the exact-prose preflight.
-> - **Selection follows resolution.** In the public viewer, selecting an article entry recentres
->   at the live-resolved coordinates when resolution succeeded, never stale copied ones.
-
-## Public viewer
-
-The public route is read-only and needs no account. It reuses the app's pane-and-canvas grammar
-([Views](./map-view.md#the-grammar)) with read-only chrome: a shared post renders as an article
-in the pane with the canvas following it, plus its *"From the list"* link when one is carried; a
-shared list renders as the place sequence on the same shell:
-
-1. Decode the fragment or fetch the current hosted `SharedDocument` revision.
-2. Paint sections and place cards immediately from copied evidence or manual facts.
-3. Resolve each `kind: "osm"` anchor's `currentOsmRef` through the production resolver. Manual
-   anchors are never resolved: they render as labeled unlinked pins with owner-provided facts.
-4. On a confirmed missing/incompatible element, attempt a unique high-confidence evidence match.
-5. On ambiguity or provider failure, retain the fallback and show its state/timestamp.
-6. Render the interleaved article and synchronized map without exposing editing controls.
-7. Offer **Add these places to my library** (a shared list imports as a list; a shared post's
-   embeds import into a list named after it). Reuse an existing local place where possible;
-   create a new one only after the shared ref or a unique high-confidence replacement resolves.
-   Unresolved OSM items remain pending previews rather than silently degrading into unlinked
-   pins; a shared **manual** anchor imports as a manual place per the
-   [deduplication rules](./place-identity.md#import-and-deduplication).
-
-The viewer never modifies the author's document after a temporary match. A confirmed owner-side
-relink dirties the hosted publication so the next successful publish carries the repaired OSM
-reference.
-
-## Share service
-
-The service is separate from account sync. Reads are public; mutations use a bearer token from the
-first hosted release. Two collections publish under one protocol and one document schema —
-`/s/lists` (the list projection) and `/s/posts` (the post projection) — so "one schema, one viewer,
-one service" is literal. The `/s/lists` contract below is normative for both:
-
-```text
-POST   /s/lists
-       Authorization: Bearer <editor-token>
-       Idempotency-Key: <publication-job-id>
-       { desiredSlug, document }
-       → 201 { slug, revision }
-
-GET    /s/lists/:slug
-       → 200 SharedDocument + ETag
-
-PUT    /s/lists/:slug
-       Authorization: Bearer <editor-token>
-       If-Match: <revision>
-       Idempotency-Key: <publication-job-id>
-       { document }
-       → 200 { revision }
-
-DELETE /s/lists/:slug
-       Authorization: Bearer <editor-token>
-       If-Match: <revision>
-       Idempotency-Key: <publication-job-id>
-       → 204
-```
-
-- The client generates at least 256 random bits with a cryptographic RNG and persists the token
-  before enqueueing `POST`; retry reuses the same token and idempotency key.
-- Only a hash of the editor token is stored server-side. TLS is mandatory; token comparison is
-  constant-time; tokens and authorization headers are redacted from logs, traces, and errors.
-- Mutation and creation responses use `Cache-Control: no-store`.
-- `POST` claims a slug atomically and returns `409` on collision.
-- `If-Match` prevents stale clients from overwriting a newer revision.
-- Documents are schema-validated and subject to request, document, note, and media limits.
-- Slugs are normalized; reserved names are rejected. Creation has stricter quotas/challenges than
-  reading, plus abuse reporting/takedown and per-publication media budgets.
-- Mutations and reads are rate-limited; revoked slugs retain a non-readable tombstone. There is no
-  audit log: nothing read it, and auditing every public read turned a CDN-cacheable page into a
-  database write per view.
-- Replaying an already-completed `DELETE` with the same idempotency key returns success.
-- Idempotency keys are scoped to `(kind, operation, slug, token)` — a key can neither complete a
-  different operation nor replay one slug's result as another's, and never leaks across tokens.
-- Each verb is ONE statement. Create is an atomic slug claim (`INSERT`); update is a conditional
-  revision write (`UPDATE … WHERE revision = ?`); revoke is a conditional tombstone. The replayable
-  success record is written **after** the mutation it acknowledges.
-- An interrupted write therefore re-executes, and recovery runs through content rather than
-  bookkeeping. A stale `If-Match` whose stored document is byte-identical to the request, owned by
-  the requesting token, at exactly the revision this write would have produced, is acknowledged:
-  the requested end state holds and nothing was written since. A tombstone under the requesting
-  token likewise proves a revoke applied. A stale `If-Match` with *different* content is a 412.
-- An update's acknowledgement is its own committed transition — `expectedRevision + 1` with the
-  body it wrote — never re-read from storage after the commit, where a later writer's revision
-  could masquerade as this update's result.
-- Public `GET`/`304` responses carry a stable per-publication `Surrogate-Key` so an update or
-  revoke can purge every cached representation deterministically.
-- An update's acknowledgement (response body and replay record) is its own committed transition —
-  `expectedRevision + 1` with the body it wrote. It is never re-read from storage after the
-  commit, where a later writer's already-landed revision could masquerade as this update's
-  result.
-- The schema is three tables: `documents`, `idempotency` (replay handles, purged after **90 days**
-  — services/share/OPERATIONS.md), and `rate`. There are no version backups: an append-only
-  per-revision body store was written by triggers and read by nothing.
-- `DELETE` counts against the same per-token mutation quota as create and update.
-- Every `/s/*` response (not just the preflight) carries the CORS grant for the separately hosted
-  web client.
-- The chosen deployment uses transactional D1/SQL for atomic slug claims and conditional revision
-  updates; another consistent SQL/document store may sit behind the same contract. No PostGIS is
-  required.
-
-Public `GET` responses use bounded cache lifetimes and purgeable surrogate keys. On update, old
-revisions become non-public; on revoke, document and media CDN entries are purged within the stated
-service window. Replay handles have a documented retention period and are never
-publicly addressable. The UI explains that already-downloaded copies and third-party caches cannot
-be remotely erased.
-
-## Relationship to sync
-
-Publishing and multi-device sync solve different problems. Publication jobs send only explicit
-public projections; the sync transport (in v1 since 2026-07-19 —
-[Storage & Sync](./storage-sync.md#multi-device-sync)) moves private owned entities between the
-owner's devices. A sync account may allow editor-token recovery and private readership later, but
-public named links and their URL shape do not depend on accounts.
+Only explicitly published projections ever leave the device, and the publish preview is the
+exact disclosure of what does. Unpublish removes the hosted document, but the honest boundary
+stands: copies already downloaded and third-party caches cannot be remotely erased, and the UI
+says so next to the unpublish control.

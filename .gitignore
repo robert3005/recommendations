@@ -8,3 +8,4 @@ playwright-report/
 *.local
 *.log
 .pnpm-store/
+spec/book/

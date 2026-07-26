@@ -16,6 +16,70 @@ produces a union-of-all-designs codebase: roughly 8,500 lines of it, removed ove
 
 ---
 
+## 2026-07-26 — the refocus (second pass)
+
+Same day, second pass. The morning pass deleted what no decision had ever removed; this one
+re-derives scope. The owner restated the product as nine requirements plus one directive —
+local editing first, remote state exists to facilitate sharing and nothing else, no syncing
+mechanism, the user explicitly publishes updates. **The nine requirements are now the scope
+test: anything not in service of them left the spec.** Each item below is a deletion unless
+stated otherwise.
+
+- **Multi-device sync and accounts are gone** — transport, mutation outbox, HLC ordering,
+  tombstone retention, conflict copies, sync status surface, the Postgres service, auth of any
+  kind. Remote state is published documents, full stop. Two devices are two libraries; the
+  library archive moves one to the other.
+- **Sync-shaped rationales lapsed with the mechanism.** The morning pass kept prose off blocks
+  because a losing Markdown body needed a note-shaped conflict copy to live in, and kept
+  `resolutionState` because `needs-review` recorded a cross-device relink conflict. No peers,
+  no conflicts: both objections are void, and both features go with them.
+- **Posts absorbed notes.** `Note`, `PostBlock` and `BlockNoteAttachment` are gone; a post is
+  one Markdown body targeting exactly one list or one place. "Place notes" become place posts
+  — the same writing, one entity instead of three.
+- **Tags** (`Tag`, `TagAssignment`) — not in the nine points. The argument that kept the edge
+  (concurrent tag adds must converge) was a sync argument, and lapsed with it.
+- **Media** — posts are text plus places in v1; images in posts are a listed future.
+- **Snapshot (URL-fragment) links** — one sharing mode remains: the hosted named link.
+- **The freshness/re-resolution machinery** — all six states, evidence epochs, TTL refresh,
+  relink scoring, `pastOsmRefs`, stale and review badges. A place stores its facts flat; they
+  change when the user edits them or re-imports.
+- **The versioned ZIP backup protocol** (manifest, checksums, media entries, merge validators)
+  — replaced by the **library archive**: one id-preserving JSON file of the whole library, so
+  `place:`/`post:` links and post targets survive restore. Editor tokens are excluded unless
+  the user opts in at export; a restore without credentials sees its publications but cannot
+  update or revoke them.
+- **Viewer-side OSM resolution and import-from-a-shared-page** — a published page renders
+  exactly what was published, as of publish time.
+- **Nearby discovery in any form** — including the explicit "Show nearby places" the morning
+  pass had kept, the long-press candidate picker, the category taxonomy and Overpass. (The
+  import-review candidate picker survives — it serves the ladder, not discovery.) Not in the nine
+  points, and the only thing giving the canvas a standing network appetite.
+- **Standalone manual pins.** Manual placement survives only inside import review, where a
+  coordinate-less Takeout row can be placed by clicking the map.
+- **Takeout-shaped CSV export** and **dark mode** — v1 is light-only; dark is a listed future.
+- **The desktop expanded width** (canvas fully hidden), and with it the hidden-canvas idle
+  contract that existed only to serve it. Desktop has two notebook widths: split and collapsed.
+- **The share protocol collapsed to Bearer `PUT`/`GET`/`DELETE`.** The editor token never
+  leaves the device, so each publication has a single writer by construction; `If-Match`, the
+  idempotency replay table and `publicationJobs` protected races that cannot occur, and went
+  with the outbox. Publish is a foreground action: press the button, watch it succeed or fail,
+  press again to retry.
+- **Editor tokens moved onto the `Publication` row** — one per publication, device-held,
+  hashed server-side, never in a URL. Token loss means republish under a new slug; a stale
+  page goes through the takedown contact.
+- **Deleting a published list or post now refuses until it is unpublished** — the third
+  teardown refusal; no public page is ever orphaned by a local delete.
+- **KML import narrowed to Google My Maps** — still requirement 1's "import from Google Maps".
+  Standalone GPX/GeoJSON import is cut; GPX stays on the export side only.
+- **The OSM-Carto palette ruling is superseded** by [Visual Design](./design.md):
+  instrument-panel retrofuturism — warm paper, near-black ink, eight bright accents shared
+  with the list markers. Requirement 8 asks for bright accents and clean lines; a land-cover
+  palette answered a question nobody had asked.
+- **Reaffirmed**: membership-is-existence (an unlisted place has no marker to wear — still
+  load-bearing for the visual system) and bottom-up teardown (refusal, never cascade).
+
+---
+
 ## 2026-07-26 — the simplification pass
 
 The product thinking survived intact. What went was the scaffolding of three

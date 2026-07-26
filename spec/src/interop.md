@@ -1,264 +1,176 @@
-# Import & Export — Interop
+# Import & Export
 
-> **Implementation decisions (2026-07-19, hardening wave).**
->
-> - KML: a StyleMap resolves through its *normal* pair regardless of declaration order, and loose
->   document-level placemarks keep their own style beside styled folders. GeoJSON re-imports use
->   the FeatureCollection's own `name` (not the download filename) and round-trip `website`.
-> - A Google Maps listing URL is the identity and deep-link ref wherever it appears in a row's
->   URL list — generic web provenance never outranks it (dedup, navigation, CSV URL column).
-> - Geocode auto-linking additionally requires a non-contradicting category (a cafe row never
->   auto-links to a school); contradictions go to review, where ambiguous candidates render on a
->   labelled mini map beside the picker.
-> - ODbL continuity: manually placing a review row that descends from an OSM anchor records the
->   anchor as (unresolved) link history, so re-exports keep attributing OSM-derived facts.
-> - Exports fail closed when owned notes cannot be read, and My Maps handoffs split on whichever
->   binds first: 2,000 features per layer or 5 MB per file.
+Placemarks meets people where their places already live. Import brings saved places in from
+Google Maps — one place via a pasted link, whole lists via Takeout, custom maps via My Maps KML —
+and export hands curated lists back out to Google Maps, Apple Maps, and the OSM ecosystem, as
+custom POI maps and as deep links. Both directions are explicit, file-shaped, repeatable actions;
+neither ever calls a proprietary API.
 
-**Decision (2026-07-18).** Living with the Phase 0–2 build sharpened the thesis: Placemarks is
-**a way to editorialise lists of places**. The places people care about are already collected —
-overwhelmingly in Google Maps. OSM data and search quality trail Google's in many regions, and
-closing that gap is not our fight; making users *find everything again* through our OSM search
-would kill the product at the front door. So:
+## Import
 
-1. **Import is the primary way places enter Placemarks.** Google Maps first (Takeout), then the
-   file formats the rest of the ecosystem speaks (KML/KMZ, GPX, GeoJSON).
-2. **Our UI is the editorial layer**: adjust the list — order, membership, marker, notes — read
-   it on the map for navigation, and write [posts](./posts.md) about it.
-3. **Export and deep links hand back to the tools people actually navigate with.** We are not
-   trying to replace Google Maps as a navigator; we link out to it per place and export whole
-   lists it (and others) can ingest.
+### One place via a link
 
-OSM remains the open substrate — the basemap, the durable-identity anchor, and the enrichment
-source (website, hours) — but it is no longer the gatekeeper of existence. A place can live a full
-life in Placemarks linked only to the user's imported facts, exactly as manual pins already do.
+The add-a-place field ([the notebook & the map](./map-view.md)) accepts a pasted Google Maps,
+Apple Maps, or OpenStreetMap URL. Parsing is pure string work — the pasted URL is never fetched.
+Two parsing judgements worth recording: Google's `!3d`/`!4d` pair (the pin) is preferred over
+`@lat,lng` (the camera) because they differ, and a coordinate pair sitting in the name slot is
+not a name.
 
-## What we import
+- A **Google or Apple link** yields a place with coordinates, usually a name, and the URL
+  retained as `googleUrl`/`appleUrl` — provenance, dedup key, and the deep link back.
+- An **OSM element URL** yields an `osmRef` and fetches that element's facts through the
+  geocoder's exact `lookup` — the one network call at paste time. Offline it fails politely:
+  nothing queues, and the user retries online.
+- A **`maps.app.goo.gl` short link** reveals nothing without following a redirect, so the app
+  asks for the expanded URL instead; we never fetch.
+
+Every variant ends in "pick a list", because membership is existence
+([data model](./data-model.md)).
+
+### Lists via Takeout
+
+A Takeout archive is imported as a whole, because its two halves compensate for each other:
 
 | Source | Format | Fields | Coordinates |
 |---|---|---|---|
-| Google Takeout → **Saved** | One CSV per list; list name is the filename | Title, Note, URL, Address | **No** |
-| Google Takeout → **Maps (your places)** | `Saved Places.json` (GeoJSON) | Title, Google Maps URL, geometry | Usually — with a known `[0, 0]` bug |
-| Google My Maps, Organic Maps, others | KML / KMZ | Name, description, folders, styling | Yes |
-| OsmAnd, Garmin, hiking apps | GPX waypoints | Name, description | Yes |
-| Anything modern | GeoJSON | Free-form properties | Yes |
+| Takeout → **Saved** | One CSV per list; the list name is the filename | Title, Note, URL, Address | **No** |
+| Takeout → **Maps (your places)** | `Saved Places.json` (GeoJSON) | Title, Google Maps URL, geometry | Usually — `[0, 0]` geometry is treated as absent |
 
-Facts about the Takeout CSVs that shape the whole design:
+Facts about the CSVs that shape the whole design: **there are no coordinates** — Google exports
+the minimum needed to identify a place. The URL column is one of two shapes: a **place URL**
+carrying Google's opaque internal feature id (useful as a stable dedup key and as a deep link
+back into Google Maps), or, for user-dropped pins, a **search URL embedding literal `lat,lng`** —
+free coordinates. `Saved Places.json` has geometry but no list structure; the CSVs have list
+structure but no geometry.
 
-- **There are no coordinates.** Google exports the minimum needed to *identify* a place: a name,
-  an address, and a Google Maps URL.
-- The URL is one of two shapes: a **place URL** carrying Google's internal feature id (an opaque
-  hex pair — useful only as a stable dedup key and as a deep link back into Google Maps), or, for
-  user-dropped pins, a **search URL that embeds literal `lat,lng`** — free coordinates.
-- The Note column is the user's own writing and imports losslessly.
-- `Saved Places.json` covers starred/default saves with geometry, but not custom list structure;
-  the CSVs have the list structure but no geometry. A Takeout archive is imported as a whole so
-  each source compensates for the other.
+Saved Places entries that appear in no CSV import into an auto-created **"Saved places"** list —
+membership is existence, so a place with geometry but no list still needs a list to live in. The
+auto-created list binds to the GeoJSON filename as its `sourceKey`, so re-imports converge into
+it, and the import report accounts for these entries exactly like CSV rows.
+
+### CSV Note → place post
+
+The Note column is the user's own writing. It becomes a **place post** titled with the place's
+name ([posts](./posts.md)). The rule is per place, so it needs no import provenance to enforce: a
+Note materialises as a place post only when the deduped place has no place post yet; otherwise
+the Note is dropped and the import report says so. Re-import therefore never creates a duplicate
+and never overwrites a post edited in Placemarks — local edits are canon.
+
+### Google My Maps via KML/KMZ
+
+Custom maps export from My Maps as KML/KMZ, and importing them counts as importing from Google
+Maps: folders become lists, and each folder's style colour maps to the nearest of the eight
+accent colours when its marker is assigned ([data model](./data-model.md)).
+
+### The coordinate ladder
+
+A CSV row must gain coordinates to become a place. In order:
+
+1. **Literal coordinates** in the source — a dropped-pin URL embedding `lat,lng`.
+2. **Cross-reference the archive's GeoJSON** by Google feature id — by id only, never by name.
+3. **Geocode** Title + Address through the configured geocoder
+   ([map data & providers](./data-sources.md)).
+
+The auto-place rule: a single geocoder result whose normalised name matches the row title and
+whose address does not contradict auto-places (recording its `osmRef`); anything else — multiple
+candidates, name mismatch, no result — goes to the review queue (candidate picker on the canvas,
+manual placement by clicking the map, or skip). A geocoder *error* is not a miss: it pauses the
+batch's remaining geocode rung — the batch stays `reviewing` and those rows retry when the
+geocoder is back; only genuine empty results fall to review.
+
+### The review queue
+
+Review state is persisted (`ImportBatch` and `ImportItem` — [data model](./data-model.md)), so a
+half-reviewed import survives a reload. The queue is a notebook route: the item under review
+projects onto the canvas, its candidates rendered as labelled pins. Picking a candidate places
+the row with that result's facts and records its `osmRef` — geocoder results are OSM data.
+**Manual placement is clicking the map**: it yields user-provided coordinates and no `osmRef`.
+A row can also be skipped; skips appear in the report.
+
+### Source-list binding and re-import
+
+The first import sets `List.sourceKey` (the CSV filename or KML folder id), so re-imports follow
+the binding through local renames — "Google favourites" keeps flowing into the list the user
+renamed. Absent a binding, lists match by name.
+
+Re-importing the same or a newer archive converges instead of duplicating. Dedup follows the
+normative precedence everywhere: Google feature id (parsed from `googleUrl`) → `osmRef` → name +
+coordinate proximity, which prompts the user rather than merging silently. Re-import adds what is
+new and never deletes — the user's edits are canon.
+
+### The import report
+
+Every import ends with a report in which every source row and every Saved Places entry is
+accounted for: placed, in review, or skipped. No silent drops — truncating rows silently would
+poison trust in the front door.
 
 ### Explicit non-goals
 
-- ❌ **No Google API calls, ever** — no Places API, no geocoding through Google, no fetching a
-  Google URL to scrape coordinates. The proprietary-API ban ([vision](./vision.md)) stands.
-  Importing is *parsing files the user exported of their own data* — portability, not
-  integration.
-- ❌ **No shared-link scraping.** Pasting a Google *list* link will not import it: it requires
-  scraping Google's app markup, which is fragile and against terms. The supported answer is "run
-  Takeout, drop the archive here." Pasting a link to a *single place* is different and is
-  supported — see below — because the URL itself carries the coordinates; we read the string and
-  never fetch it. A `maps.app.goo.gl` short link is the exception in the other direction: only a
-  redirect would reveal what it points at, so we ask for the expanded URL instead of guessing.
-- ❌ **No live two-way sync with Google Maps.** Import and export are explicit, file-shaped,
+- **No Google API calls, ever** — no Places API, no geocoding through Google. Importing is
+  parsing files the user exported of their own data: portability, not integration.
+- **No fetching pasted URLs.** Link paste reads the string and nothing more.
+- **No shared-list scraping.** Pasting a Google *list* link will not import it: that would
+  require scraping Google's app markup. A link to a *single place* is different and is
+  supported, because the URL string itself carries the coordinates. The supported answer for
+  lists is "run Takeout, drop the archive here."
+- **No live two-way sync with Google Maps.** Import and export stay explicit, file-shaped,
   repeatable actions.
-
-### Adding one place (2026-07-26)
-
-Import is the bulk path, but requiring a Takeout archive to keep a single café someone just
-mentioned is the wrong shape. Two front doors sit together in one field, in the content pane
-where the app opens (search that only exists on a visible map is search that does not exist):
-
-- **Search** queries OpenStreetMap, as it always did.
-- **Paste a link** accepts a Google Maps, Apple Maps or OpenStreetMap URL. Parsing is pure string
-  work — no fetch, no API, so the non-goals above are untouched. An OSM element link is the good
-  case: it resolves to real copied evidence, so the place is OSM-bound from birth. Google and
-  Apple links carry coordinates and usually a name, which makes an import-origin place with the
-  URL retained as provenance and as the deep link back. Google-derived facts still never pre-fill
-  an OSM contribution.
-
-Two parsing judgements worth recording: Google's `!3d`/`!4d` pair (the pin) is preferred over
-`@lat,lng` (the camera) because they differ, and a coordinate pair sitting in the name slot is not
-a name.
-
-## Import pipeline
-
-```text
-archive/file → detect → parse → ImportItems → place (coords ladder) → match OSM (optional)
-                                                      │                        │
-                                                      ▼                        ▼
-                                              review queue  ──────▶  materialize into lists
-```
-
-**Detect & parse.** Accept a whole Takeout `.zip` (fflate, same dependency as backups), a single
-CSV, KML/KMZ, GPX, or GeoJSON. Each parsed row/placemark becomes an `ImportItem`; each source
-list (CSV file, KML folder) proposes a `List`.
-
-**Place — the coordinate ladder.** An item must have coordinates to become a place (places are
-pins; the map is the product). In order:
-
-1. **Literal coordinates** in the source (KML/GPX/GeoJSON geometry, dropped-pin URLs,
-   `Saved Places.json` geometry that isn't `[0, 0]`). Done.
-2. **Cross-reference within the import**: the same place appearing in both a CSV (structure) and
-   `Saved Places.json` (geometry) is joined by its Google URL id — by id only, never by name.
-3. **Geocode** Title + Address through our configured geocoding adapter (Photon/Nominatim family —
-   [data sources](./data-sources.md); public endpoints remain development-only). Candidates are
-   scored with the existing evidence ladder from
-   [Durable Place Identity](./place-identity.md) — name similarity, address, category; distance
-   alone never qualifies:
-   - a unique high-confidence candidate → **auto-placed** (and OSM-linked for free, since the
-     geocoder returned an OSM element);
-   - plausible-but-ambiguous candidates → **review queue** with a mini map + candidate picker;
-   - nothing usable → **review queue** for manual placement on the map, or skip.
-
-**Match OSM — opportunistic, never blocking.** OSM linkage is an upgrade exactly as it is for
-manual pins, not an import gate. An item placed with coordinates but no confident OSM match
-becomes an **`unlinked` place with imported facts** — the manual-pin machinery, with provenance
-recorded. It can be linked later through the same candidate picker.
-
-**Materialize.** Import goes through the one door that exists
-([membership is existence](./data-model.md#membership-is-existence-no-saves)):
-
-- each source list becomes a `List` (marker — icon + colour — auto-assigned as the next unused
-  combination; name from the filename/folder, deduplicated);
-- each placed item enters via `addToList` — the import *is* the adding-to-a-list;
-- the CSV Note column becomes a place note (plain text imported as a Markdown paragraph);
-- the Google Maps URL is retained as an **external ref** on the place — provenance and the best
-  deep link back into Google Maps
-  ([data model](./data-model.md#place-identity-and-osm-binding)).
-
-**Idempotent re-import.** Running the same (or a newer) Takeout again converges instead of
-duplicating: items dedup first by external-ref id (the Google URL's feature id), then by
-name + coordinate proximity against existing places — reusing the cross-list dedup that
-`addToList` already performs for OSM refs. Re-import adds what's new and touches nothing else; it
-never deletes (the user's edits in Placemarks are the canon after import).
-
-**No silent drops.** The import ends with a report: *n* placed automatically, *n* OSM-linked,
-*n* waiting in review, *n* skipped — every source row accounted for. Truncating or dropping rows
-silently would poison trust in the front door.
-
-### Import queue model
-
-Review state is persisted so a half-reviewed import survives a reload; the queue is workflow
-state, not part of the durable place graph. Under the pane-and-canvas grammar
-([Views](./map-view.md#the-grammar), 2026-07-19 late) the queue is a pane route and the item
-under review projects its labelled candidates onto the main map canvas — retiring the bespoke
-"mini map beside the picker" from the hardening ruling above; manual placement happens on the
-canvas itself.
-
-```ts
-interface ImportBatch {
-  id: string;
-  source: "google-takeout" | "csv" | "kml" | "gpx" | "geojson";
-  fileName: string;
-  startedAt: string;
-  status: "reviewing" | "done" | "abandoned";
-}
-
-interface ImportItem {
-  id: string;
-  batchId: string;
-  targetListId: string;
-  raw: { title: string; note?: string; url?: string; address?: string };
-  coords?: { lat: number; lng: number };
-  candidates?: OsmCandidate[];          // scored, when geocoding ran
-  status: "placed" | "review" | "skipped";
-  placeId?: PlaceId;                    // set once materialized
-}
-```
 
 ## Export
 
-Every list exports to the formats the ecosystem ingests. Fidelity varies and is stated in the UI:
+Every list exports as two artefact kinds: a **custom POI map** and **deep links**.
 
-| Format | Carries | Consumed by | Notes |
-|---|---|---|---|
-| **KML / KMZ** | names, coords, descriptions (notes), list as document, marker colours as styles | Google My Maps, Organic Maps, Google Earth, OsmAnd | My Maps limits: 2,000 features/layer, 5 MB KML — we warn and split |
-| **CSV** (Takeout-shaped) | Title, Note, URL, Address | spreadsheets; round-trips into our own importer | URL column: retained Google external ref, else OSM portal URL, else a `lat,lng` maps search URL |
-| **GeoJSON** | everything portable: coords, names, notes, tags, external refs as properties | web GIS tools, other apps | the interchange format; our ZIP backup remains the full-fidelity archive |
-| **GPX** | waypoints: name, description | OsmAnd, Garmin, hiking watches | |
-| **Text list** (Markdown) | the list as prose: name, category, address, tags, notes, and all three deep links per place | a person — paste into a message, a doc, a blog post | the nearest honest thing to "share a Google list": Google has no write API, and My Maps gives a map layer, not a list |
+| Target | Custom POI map | Deep links |
+|---|---|---|
+| Google Maps | KML/KMZ download + guided My Maps import (2,000 features/layer, 5 MB — warn and split) | per-place: retained `googleUrl`, else coordinate/name search URL |
+| Apple Maps | **none exists** — Apple Maps has no custom-map import, so per-place deep links are deliberately the whole Apple answer ([Vision & Scope](./vision.md)) | per-place `maps.apple.com` URL |
+| OSM | GeoJSON (or KML) into **uMap** (umap.openstreetmap.fr) — guided | per-place OSM element URL when `osmRef`, else an osm.org `?mlat&mlon` map link |
 
-- **"Send to Google My Maps"** is a KML download plus a short guided instruction ("My Maps →
-  Import → choose this file") — there is no write API, and pretending otherwise would mean
-  scraping. Within its limits this gives users their editorialised list *inside* Google's
-  ecosystem.
-- **Attribution travels with exports.** Any export containing OSM-derived facts carries
-  ODbL attribution metadata ([licensing](./data-sources.md#licensing-and-attribution)).
-  User-authored notes and user-imported facts are the user's own data. *(2026-07-19: the CSV
-  gained a fifth `Attribution` column for this — the four Takeout columns stay first, so
-  Takeout-shaped parsers, ours included, still round-trip it. CSV cells are formula-escaped.)*
+- **Marker styling travels.** KML `Style` elements and GeoJSON simplestyle properties carry each
+  list's marker colour, and the shape name rides as a property where the format allows.
+- **GPX waypoints** serve the OSM target's navigation apps: OsmAnd and Organic Maps both ingest
+  GPX, so a list rides along on the devices that navigate with OSM data.
+- **The deep-link text list** (Markdown) renders the list as prose — name, address, and all
+  three deep links per place — the artefact to paste into a message.
 
-### Implementation decisions (2026-07-19, recorded with the Phase 3 hardening round)
+One module builds and parses all deep links, so the place card, the exports, and the public
+viewer hand out the same URLs ([architecture](./architecture.md)).
 
-- **KML folders become separate lists**, keeping their `Style` marker colours; a folderless
-  document stays one list.
-- **Coordinate-bearing rows opportunistically OSM-link** through a tight nearby search judged by
-  the conservative identity ladder — one unique high-confidence candidate links, anything else
-  imports unlinked. Auto-linking via the geocoder additionally requires a non-contradicting
-  address, and a failed exact-resolve never places a row at bare geocoder coordinates (it stays
-  in review — OSM-derived coordinates without evidence would dodge attribution).
-- **Source-list identity survives renames**: the first import binds the source name to the local
-  list; re-imports follow the binding, so "Google favourites" keeps flowing into the list the
-  user renamed "My edited Lisbon list".
-- **GeoJSON is the full-fidelity interchange**: it carries phone, hours, tags, notes, OSM refs
-  (which re-imports resolve exactly — never geocoded, never mislabeled as Google provenance),
-  and external URLs.
+### The library archive
 
-## Navigation handoff — deep links
+The library archive is the backup and migration format — and the answer to IndexedDB eviction,
+if exported beforehand ([local storage](./storage.md)). It is one JSON file of the whole
+library — places, lists, entries, posts, and publication records (slugs included; they are
+public anyway) — **preserving all entity ids**, so `place:`/`post:` links and post targets
+survive restore.
 
-Placemarks curates; navigation happens wherever the user prefers. The place card offers:
+- Editor tokens are excluded unless the user explicitly opts in at export ("include publish
+  credentials", off by default); the file then contains secrets and its name says so.
+- Restore into an empty library is the supported path. Restoring into a non-empty library
+  merges by id — same id = same entity, newer `updatedAt` wins. The id-less dedup ladder
+  applies only to foreign imports. The merge re-establishes the repository invariants: an
+  incoming list whose marker pair is already worn by a different live list is reassigned to the
+  first free pair (badged variant beyond 64), and two entries for the same `(listId, placeId)`
+  collapse to the one that sorts first by `(rank, id)`.
+- A restore without credentials sees its publications but cannot update or revoke them
+  ([sharing & publishing](./sharing.md)).
 
-- **Open in Google Maps** — the retained external-ref URL when the place was imported (it
-  reopens the *exact* Google listing), otherwise a universal maps search URL built from
-  coordinates and name.
-- **Open in Apple Maps** — the equivalent `maps.apple.com` link.
-- **View on OpenStreetMap** — the existing portal link, when OSM-linked.
+### Licensing
 
-Turn-by-turn routing stays a non-goal; deep links *are* the navigation story.
+Two one-way valves, stated bluntly because getting either wrong poisons an upstream:
 
-*(2026-07-26.)* One module builds these URLs and parses incoming ones, so the place card, the
-public share page and the text export hand out the same links. The share document deliberately
-carries no Google URL — it holds only OSM evidence and owner-authored facts — so a shared page's
-Google link is a coordinate/name search. A stored URL is only opened as a Google link when it is
-genuinely an https Google host.
-
-## List curation returns (edit mode)
-
-Imported lists arrive with 30–200 places; curating them one place-card at a time does not scale.
-The 2026-07-18 interop decision brings list editing back as a **deliberate Edit mode on the list
-page** — reorder, remove, rename, remark — while the default list view stays read-only for
-reading and navigation. This supersedes the earlier "no edit functionality on the Lists tab"
-ruling *for the edit mode only*. Narrative prose never lands on the list: it belongs to
-[posts](./posts.md), whose block editor reuses this same interaction (2026-07-19).
-
-## Licensing hygiene
-
-Two one-way valves, stated bluntly because getting them wrong poisons either upstream:
-
-1. **Google-derived facts never flow into OSM.** Imported names/addresses/coordinates must not
-   pre-fill any "Add it on OpenStreetMap" handoff or OSM edit. The existing rule ("never copy
-   data from a proprietary places service" — [data sources](./data-sources.md)) applies with
-   extra force now that Google-sourced fields live in the database. Users contribute to OSM from
-   their own knowledge, not from our stored Google data.
-2. **OSM-derived facts carry ODbL attribution out.** Exports state which fields are OSM
-   observations; user-authored and user-imported content is technically distinguishable
-   ([data model](./data-model.md)) so this split is mechanical, not archaeological.
+1. **Google-derived facts never flow into OSM.** Imported names, addresses, and coordinates
+   never pre-fill anything sent to OSM. The place card links out to the OSM element page when
+   `osmRef` exists; corrections happen there, from the user's own knowledge.
+2. **OSM-derived facts carry ODbL attribution out.** Exports attribute OSM (ODbL) exactly when
+   `osmRef` is present: KML and GeoJSON embed the attribution in metadata; the text list
+   carries it as a footer line.
 
 ## Testing
 
-- **Parser fixtures**: real-shaped Takeout archives (CSV quoting edge cases, Unicode list names,
-  dropped-pin URLs vs place URLs, the `[0, 0]` GeoJSON bug), KML with folders/styles, GPX
-  waypoints. Property tests for the CSV/KML/GPX parsers.
-- **Matching**: MSW geocoder fixtures driving each ladder rung — auto-place, ambiguous → review,
-  no-match → manual placement; idempotent re-import converging on the same library.
-- **e2e**: import a fixture Takeout ZIP → resolve the review queue → lists on the map wearing
-  their markers → export KML → re-import converges. Export files are asserted against golden
-  snapshots.
+Parser fixtures use real-shaped Takeout archives — CSV quoting edge cases, Unicode list names,
+dropped-pin URLs beside place URLs, the `[0, 0]` GeoJSON bug — plus KML with folders and styles.
+The hand-written KML/GeoJSON/GPX/text writers are asserted against golden snapshots. MSW geocoder
+fixtures drive each ladder rung: auto-place, ambiguous → review, no result → manual placement.
+An end-to-end test imports a fixture archive, resolves the review queue, then re-imports the same
+archive and asserts convergence — the idempotence contract.

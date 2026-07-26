@@ -1,100 +1,94 @@
-# Posts — the Editorial Layer
+# Posts
 
-**A post is an editorialised list.** A post is an article about exactly one list — a
-titled, ordered sequence of Markdown prose sections and **place embeds** drawn from that list's
-members. It reads like a blog post; because every embed is anchored to a physical location, the
-article renders beside a synchronized map. A list may have several posts (a shortlist and a full
-write-up, say); the list page links to its posts and every post links back to its list.
+A **post** is a Markdown article about exactly one list or one place. The target is set at
+creation and is immutable; the writing can change forever, but what it is *about* cannot. A list
+may have several posts (a shortlist and a full write-up, say), and a place may have several too.
 
-## Model
+Posts are the app's only long-form writing. What other apps call a "note" on a place is here a
+**place post** — a place write-up *is* a post whose target is that place, with the same body
+format, the same editor, and the same reading view as everything else. A **list post** targets a
+list and reads as the article about that list. The entity shape lives in the
+[data model](./data-model.md); this chapter covers creation, the body, authoring, reading, and
+teardown.
 
-Entity definitions live in the [data model](./data-model.md#post-an-editorialised-list); the shape
-in brief:
+## Creating a post
 
-```text
-Post ──1:*── PostBlock ── section ──▶ Note (target: post)
-                │
-                └─ place ──▶ PlaceId  ─ * BlockNoteAttachment ──▶ shareable place Note
-```
+Each target kind has its own entry point:
 
-- A **section** block is a post-targeted Markdown note — a narrative passage between embeds.
-- A **place** block embeds a member of the post's list: the card shows the place's display facts,
-  attached shareable place notes, and the navigation deep links. Tags stay private.
-- Blocks order by `(rank, id)` with the same fractional-rank rebalancing as list blocks.
-- `listId` names the one list the post editorialises. The post wears that list's marker on its
-  map, the list page lists its posts, and the post page links back to its list — locally and in
-  the shared document ([Publishing](#publishing)).
+- **New post**, in the list page's posts sidebar, creates a list post about that list and opens
+  the editor.
+- **Write a post**, on the place card, creates a place post about that place and opens the
+  editor.
 
-## Where embeds come from
+Takeout import creates place posts too: a CSV Note column is the user's own writing, and it
+materialises as a place post titled with the place's name ([Import & export](./interop.md)).
 
-A post embeds **members of its list** — the post is that list's editorial layer, not a scrapbook
-over the whole library. Embedding a place that is not yet in the list goes through the one door
-that exists: the editor offers to **add it to the list first** (`addToList` — membership is
-existence), then embeds it. This is also how a post is written from the map: tap a pin, add it to
-the list, embed it.
+## The body
 
-**Bottom-up teardown.**
-Deletion never cascades through authored content; it is **refused until the owner has explicitly
-dismantled what hangs off the target**:
+The body is CommonMark plus GFM Markdown. The pipeline: remark-parse + remark-gfm →
+rehype-sanitize with an allowlist schema; raw HTML disabled; the local app allowlists
+`http:`/`https:`/`place:`/`post:` link protocols; external links get
+`rel="noopener noreferrer nofollow"`. Published bodies contain no custom protocols (rewritten at
+publish — see [Sharing & publishing](./sharing.md)); the viewer allowlists only `http:`/`https:`
+and `#` fragments. Same parser and sanitizer everywhere.
 
-- Removing a place from a list is refused while a live post about that list embeds it — remove
-  the embed from the post first. The embed-references-a-member invariant holds by prerequisite,
-  not by a tombstone cascade that would leave gaps in an article.
-- Removing a place from its **last** list — the removal that deletes the place
-  ([membership is existence](./data-model.md#membership-is-existence-no-saves)) — is refused
-  while the place carries live notes: the owner deletes their own notes first. Tag assignments
-  and other pure edges cascade; written content never does.
-- Deleting a list is refused until it is **empty** and no live posts editorialise it — remove
-  the places (or bulk **Remove all places** in Edit mode, which names any blockers: places with
-  notes, places embedded in posts) and delete the posts first.
-- Deleting a post is itself the explicit act: its blocks, its own section notes, attachments,
-  and selections go with it; the list, its places, and place notes are untouched.
+### Link forms
 
-Every refusal is actionable: the dialog names the blockers and links to them. Already-published
-revisions are unaffected by any of this until the author republishes — the public document
-carries its own copied evidence.
+Post body link forms: `[text](place:<placeId>)` — a mention; the map focuses that place.
+`[text](post:<postId>)` — a cross-post link; this is how a list post links to place posts. Both
+are soft: a dangling target renders as plain text.
+
+Soft means soft everywhere: deleting a place or a post never hunts down the links pointing at
+it. The article keeps reading as prose; only the link behaviour is lost.
+
+### Projection
+
+**Post projection** (one rule, all surfaces): a post projects its target's places — a list post
+its list's members, a place post its one place. Mentions of places outside the projection render
+as plain text (the editor only offers projected pins, so they arise only when a place later
+leaves the list).
+
+The projection is what the canvas shows beside the post, in the editor, the reading view, and
+the public page alike.
 
 ## Authoring
 
-- The post editor is a **block editor**: insert, remove, and reorder prose sections and place
-  embeds — the same rank-based interaction as list Edit mode.
-- Prose sections open the same **full-screen Markdown editor** as place notes
-  ([Notes & Rich Content](./notes.md)); the persisted format is the Markdown source.
-- The embed picker sources from two directions: browse a list and pick places, or pick from the
-  map — tapping a library pin offers **Embed in post** alongside the place card's other actions.
-- Nothing in a draft post leaves the device; publishing is the explicit, previewed step it is for
-  every public projection.
+The post editor (`/post/:id/edit`) is the split view of the one layout grammar
+([The notebook & the map](./map-view.md)): a Markdown editor in the notebook beside the canvas
+projecting the post's places — a list post shows all the places on its list, a place post its
+one place. The map is not decoration; it is the palette the article is written from:
+
+- **Pin to mention.** Tapping a pin inserts a mention of that place at the cursor.
+- **Insert post link** opens a picker — for a list post it lists the place posts of the list's
+  members first, then other posts — inserting a `post:` link. This is the authoring path for a
+  list post that links out to its places' write-ups.
+- **Preview** toggles the editor into the rendered, sanitised article in place — the same
+  pipeline as the reading view, so what previews is exactly what renders.
+
+Drafts are local like everything else; nothing a post says leaves the device until the owner
+explicitly publishes it.
 
 ## Reading
 
-The post page renders in the app's one layout grammar
-([Views](./map-view.md#the-grammar)): the article in the content pane, the post's embeds on the
-persistent map canvas wearing its list's marker. **The map follows the article** — scrolling to
-a section or embed flies the camera to its places (instant recenter under
-`prefers-reduced-motion`), and selection links text ↔ pin in both directions. Expanding the pane
-gives distraction-free reading — the hidden canvas [idles](./map-view.md#the-grammar), the
-follow coalescing until reveal — and collapsing it gives the post's map. The public viewer
-([Sharing](./sharing.md#public-viewer)) is the read-only rendering of the same page in the same
-shell.
+The reading view (`/post/:id`) is the same split: the article in the notebook, the canvas
+projecting the post's places. Selection links text and pins in both directions — selecting a
+mention flies the camera to its place (instant under `prefers-reduced-motion`), and selecting a
+pin scrolls the article to its mention. Cross-post links navigate to the target post's own
+reading view.
 
-## Publishing
+The list page is the way in for list posts: its posts sidebar lists them, and selecting one
+opens this view. A place's posts are reached the same way from its place card.
 
-A post publishes through the existing machinery — the versioned block-document schema was designed
-for exactly this shape:
+## Teardown
 
-- **Snapshot link** — the post document compressed into a URL fragment; no backend involved.
-- **Hosted named link** — a public slug whose content only the holder of the private editor
-  bearer token can update or revoke.
-
-`Publication.target` gains `kind: "post"`. A shared **list** is the same document schema
-restricted to place blocks; see
-[one block document, two projections](./sharing.md#one-block-document-two-projections).
-
-**A shared post stays associated with its list** (2026-07-19). The published post document names
-its list and, when that list has its own hosted public link, carries the list's slug — the public
-post page shows *"From the list: 〈name〉"* linking to the list's page, where a reader can grab the
-raw list (read it, import it, export it). The publish preflight offers to publish the list
-alongside the post when it isn't published yet; declining publishes the post with the list named
-but unlinked. Revoking the list's page removes the link target — the next successful post publish
-drops the dangling slug, and until then viewers see the list name without a working link (the
-tombstoned slug is never reassigned, so the stale link can only 404, never point elsewhere).
+- Deleting a post is itself the explicit act, and it touches nothing else: the target list or
+  place, its entries, and every other post are untouched. Inbound `post:` links elsewhere
+  degrade to plain text — soft links never block anything.
+- A post blocks its target's deletion the other way around: removing a place's last list entry —
+  the removal that would delete the place — is refused while posts target it, and deleting a
+  list is refused until it is empty and its posts are deleted. The owner deletes the writing
+  first, deliberately; deletion never cascades through authored content.
+- A post's publishing state — the shareable read-only page, unpublished-changes tracking, the
+  refusal to delete a published post until it is unpublished, and the publish-time rewrite of
+  `place:`/`post:` links into fragments and public URLs — lives in
+  [Sharing & publishing](./sharing.md).
