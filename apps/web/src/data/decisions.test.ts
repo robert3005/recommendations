@@ -20,10 +20,12 @@ import {
 } from "./decisions";
 
 const NOW = "2026-07-20T10:00:00.000Z";
-const NODE_1 = { type: "node" as const, id: "1" };
-const WAY_9 = { type: "way" as const, id: "9" };
 
-function evidence(ref: { type: "node" | "way" | "relation"; id: string }): OsmEvidence {
+type Ref = { type: "node" | "way" | "relation"; id: string };
+const NODE_1: Ref = { type: "node", id: "1" };
+const WAY_9: Ref = { type: "way", id: "9" };
+
+function evidence(ref: Ref): OsmEvidence {
   return {
     ref,
     source: "OpenStreetMap",
@@ -37,7 +39,7 @@ function evidence(ref: { type: "node" | "way" | "relation"; id: string }): OsmEv
   };
 }
 
-function linked(ref = NODE_1, past: (typeof NODE_1)[] = []): Place {
+function linked(ref: Ref = NODE_1, past: Ref[] = []): Place {
   return {
     id: "p1",
     origin: "osm",
@@ -52,7 +54,7 @@ function linked(ref = NODE_1, past: (typeof NODE_1)[] = []): Place {
   };
 }
 
-function unlinked(past: (typeof NODE_1)[] = []): Place {
+function unlinked(past: Ref[] = []): Place {
   return {
     id: "p1",
     origin: "manual",
@@ -78,7 +80,7 @@ describe("decidePlaceIdentity", () => {
   });
 
   it("refuses forged extra history riding on a real transition", () => {
-    const forged = { type: "relation" as const, id: "666" };
+    const forged: Ref = { type: "relation", id: "666" };
     const decision = decidePlaceIdentity(linked(NODE_1), linked(WAY_9, [NODE_1, forged]));
     expect(decision.acceptRef).toBe(false);
     expect(decision.pastOsmRefs).toEqual([]);
