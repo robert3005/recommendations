@@ -94,9 +94,9 @@ backup. It never bulk-prefetches map tiles unless the selected provider explicit
 
 ## OSM freshness and identity repair
 
-> **Deferred for now (2026-07-18):** the freshness UI (TTL refresh, Check for OSM updates,
-> stale/review states) is out of the v1 surface — see [The Map View](./map-view.md). The rules
-> below describe the design of record for when it returns.
+the freshness UI (TTL refresh, Check for OSM updates,
+stale/review states) is out of the v1 surface — see [The Map View](./map-view.md). The rules
+below describe the design of record for when it returns.
 
 OSM refresh is independent of private-data sync:
 
@@ -157,7 +157,8 @@ Schema migrations obey the same graph invariants. When the standalone save model
 membership-is-existence, every formerly saved place must either retain an existing list membership
 or be placed in an explicit migration-created list; it may never become a hidden live orphan.
 
-Editor bearer tokens are excluded by default. A separate explicitly encrypted recovery bundle may
+Editor bearer tokens are excluded, and there is no recovery bundle: a page can only be updated from
+the device that published it, and the app says so. A separate explicitly encrypted recovery bundle may
 include them; exporting a list, a post, or ordinary JSON must never leak write access to public pages.
 
 ## Publication while offline
@@ -175,12 +176,12 @@ durable mechanism and an idempotent delete job.
 
 ## Multi-device sync
 
-> **Promoted into v1 (2026-07-19; previously "optional, add later").** The initial version is
-> local storage **with remote sync**: a personal library that exists on one browser's IndexedDB
-> only is too fragile to be the system of record for years of curation and writing. Sync stays
-> exactly what the architecture always reserved room for — a background transport draining the
-> mutation outbox — and does not change local read/write semantics. An account exists **only**
-> to name the sync scope; solo, account-free use remains fully supported.
+**Multi-device sync is in v1.** The initial version is
+local storage **with remote sync**: a personal library that exists on one browser's IndexedDB
+only is too fragile to be the system of record for years of curation and writing. Sync stays
+exactly what the architecture always reserved room for — a background transport draining the
+mutation outbox — and does not change local read/write semantics. An account exists **only**
+to name the sync scope; solo, account-free use remains fully supported.
 
 - Every mutation has a globally unique id, actor id, entity id, and deterministic revision stamp
   such as a hybrid logical clock. Client `updatedAt` is display metadata, not the conflict order.
@@ -207,6 +208,6 @@ editing, but are not a substitute for explicit identity and publication semantic
 | Place identity and OSM evidence | IndexedDB; included in backup | Exact resolve and conservative relink |
 | List membership, tags, notes, lists, posts | IndexedDB | Local edits; background multi-device sync |
 | Media bytes | IndexedDB media store | Local import; explicit hosted upload |
-| Publication editor token | Private local credential store | Created once; optional encrypted recovery |
+| Publication editor token | Private local credential store | Created once; device-held, never synced |
 | Hosted public list/post/note | Share-service storage | Last successful Bearer-authorized publish |
 | OSM source facts | OSM-derived production resolver | TTL refresh; user edits occur upstream in OSM |

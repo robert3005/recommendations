@@ -40,3 +40,8 @@ Read [Vision & Scope](./vision.md) for what we are (and aren't) building, then
 [Architecture Overview](./architecture.md) for the shape of the system. The remaining chapters
 drill into data sources, the lists-home and map views, durable identity, the data model, notes,
 posts, import/export, sharing, storage/sync, the concrete tech stack, and a phased roadmap.
+
+**Each chapter describes only the current design.** How and why it changed lives in
+[Decisions](./decisions.md), which is non-normative: where the two disagree, the chapter is right.
+That separation is deliberate — this book was previously append-only, and the code grew to be the
+union of every design it had ever described.

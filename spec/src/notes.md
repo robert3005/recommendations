@@ -1,11 +1,12 @@
 # Notes & Rich Content
 
-Notes are rich Markdown pages anchored to either a place or a [post](./posts.md) (2026-07-19: the
-pivot retargeted list notes to posts). A place note is a write-up about a durable `PlaceId`; a
-post note is a narrative section of the post's article. A note is private by default, may be
-selected for a read-only shared list or post, and may optionally be published as its own
-read-only page at `/n/<slug>` (a surface [under question](./posts.md#standalone-note-pages-questioned)
-since posts landed).
+Notes are rich Markdown pages anchored to either a place or a [post](./posts.md). A place note is a
+write-up about a durable `PlaceId`; a post note is a narrative section of the post's article.
+
+**A note's target is immutable.** Prose that belongs to another place or post is created there.
+
+A place note is private by default and may be selected for a read-only shared list or post. A post
+note is part of its post's article and publishes with it.
 
 ## Markdown as the source of truth
 
@@ -47,9 +48,9 @@ Markdown → CommonMark/GFM parser → HTML → sanitizer → safe rendered cont
 
 ## Images and media
 
-> **Implementation decision (2026-07-19).** Image import REQUIRES the canvas re-encode (WebP,
-> EXIF/location stripped). Where no re-encode path exists or decoding fails, the import is
-> rejected — the original bytes (and their embedded location) are never retained.
+Image import REQUIRES the canvas re-encode (WebP,
+EXIF/location stripped). Where no re-encode path exists or decoding fails, the import is
+rejected — the original bytes (and their embedded location) are never retained.
 
 Markdown references images through stable asset ids:
 
@@ -60,7 +61,7 @@ Markdown references images through stable asset ids:
 | Context | Resolution |
 |---|---|
 | Authoring/offline | Local object URL backed by the IndexedDB media blob |
-| Hosted list/post/note | Server-issued media id on the trusted media origin |
+| Hosted list/post | Not yet supported — hosted views carry a text placeholder |
 | Snapshot link | Text placeholder; no media is included in a no-backend snapshot |
 
 On import, the client checks type and size and downscales large images. Before hosting, the media
@@ -69,99 +70,42 @@ the image, and strips EXIF/location metadata. Hosted media is served from a cook
 a restrictive CSP; shared documents never supply arbitrary image URLs.
 
 Media upload/deletion requires the same publication editor bearer token, and the service verifies
-that every hosted media id is bound to that publication. References are counted across hosted
 publications. Revoking the final public reference schedules deletion after a documented recovery
 window and purges CDN entries within the service target; the private local asset remains until the
 owner deletes it. Already-downloaded copies cannot be remotely erased.
 
 ## Share eligibility versus publication
 
-`Note.shareable = true` only makes a note eligible for selection. Actual post attachment is stored
-in `BlockNoteAttachment`; standalone publishing is stored in the private `Publication` entity.
+`Note.shareable = true` makes a **place** note eligible for selection into a public projection; it
+does not mean the note is currently public. Actual attachment to a post embed is stored in
+`BlockNoteAttachment`.
 
-Changing `shareable` to false:
+Turning `shareable` off:
 
-1. Prevents the note from entering new public projections.
-2. Marks every hosted publication containing it dirty.
-3. Queues an updated list/post or note-page revocation.
-4. Leaves the previous public revision visible until that network operation succeeds.
+1. prevents the note from entering new public projections;
+2. marks every hosted publication containing it dirty;
+3. leaves the previous public revision visible until the update succeeds.
 
-This makes delayed/offline revocation explicit instead of pretending a local boolean instantly
+This makes delayed or offline revocation explicit, rather than pretending a local boolean instantly
 removes bytes already published elsewhere.
 
-## Publishing a note page
+The flag does not apply to post notes: a post's prose publishes because the post publishes.
 
-The page URL is public and read-only. A separate private editor bearer token lets only the creator
-update or unpublish it; the token never appears in the URL or `SharedNote`.
+## No standalone note page
 
-```ts
-type SharedNoteContext =
-  | { kind: "place"; place: SharedPlaceAnchor }
-  | { kind: "post"; postTitle: string };   // pre-pivot documents carry { kind: "list"; listTitle }
+A note has no public page of its own. It reaches the world inside the list or post that carries it,
+and a note worth publishing alone is a one-embed post — a strictly richer page for the reader.
 
-interface SharedNote {
-  v: 1;
-  slug: string;
-  title?: string;
-  context: SharedNoteContext;
-  body: string;
-  media: Array<{ hostedMediaId: string }>;
-  contentHash: string;
-  publishedAt: string;
-}
-```
-
-Place context uses [`SharedPlaceAnchor`](./sharing.md#shared-document-schema): the current OSM
-reference plus copied recovery evidence. The viewer follows
-[Durable Place Identity](./place-identity.md) and falls back to timestamped evidence when OSM or the
-provider is unavailable.
-
-The share service uses the same bearer-token and revision protocol as lists:
-
-```text
-POST   /s/notes
-       Authorization: Bearer <editor-token>
-       Idempotency-Key: <publication-job-id>
-       { desiredSlug, document }
-       → { slug, revision }
-GET    /s/notes/:slug              → public read-only SharedNote + ETag
-PUT    /s/notes/:slug              → Bearer + If-Match + Idempotency-Key required
-DELETE /s/notes/:slug              → Bearer + If-Match + Idempotency-Key required
-```
-
-The client generates and persists the editor token before enqueueing `POST`; the server stores only
-its hash. The creator's app references it through `Publication.credentialId`, queues updates in the
-publication outbox, and shows the last successfully published revision. Public pages default to
-`noindex` and disclose only the selected note, bounded place/list context, and approved media.
-
-> **Implementation decisions (2026-07-19, Phase 5).**
->
-> - **Hosted media is deferred.** Until the media service exists, `media` stays empty and the
->   share service rejects (`422`) any document claiming a `hostedMediaId` — ids must be issued
->   server-side, bound to a publication and token. Note bodies keep image placeholders.
-> - **The document's slug is its URL.** `POST /s/notes` rejects a `SharedNote` whose `slug`
->   disagrees with `desiredSlug`; when the client walks slug collisions it rewrites the embedded
->   slug per candidate, so the stored document always names its own public address.
-> - **Failed updates never hide the page.** The last published revision stays public and the
->   creator UI keeps the page link with explicit *Update* (retry) and *Unpublish* actions
->   alongside the surfaced error.
-> - **Viewer honesty about the place context.** Copied evidence renders with its observation date;
->   a confirmed-missing OSM element says so explicitly ("no longer found on OpenStreetMap —
->   showing saved facts"); a manual anchor is labelled owner-added/unlinked and carries no OSM
->   attribution claim.
-> - **Guides and pages update together.** Editing a shareable note (or making it private) queues
->   every hosted guide containing it as well as the standalone page — one edit, every affected
->   public projection marked, none auto-published.
-> - **Deletion and privacy precedence.** Deleting a note (directly or through a list/place
->   cascade) queues revocation of its standalone page, and making a note private deletes its
->   pending publish jobs — the revocation supersedes every unsent page update.
+The `/n/<slug>` surface and the `/s/notes` collection existed and were removed on 2026-07-26: this
+book had already declined to promote them, and they were the only publication kind whose document
+embedded its own slug, which cost the share service two special cases and the client a slug rewrite
+inside its collision walk. See [Sharing](./sharing.md) for the two collections that remain.
 
 ## How notes build a post
 
 - A post note appears as a `section` block between place embeds.
 - A place note attaches through a `BlockNoteAttachment` and renders inside that embed's card.
-- Short place notes may render inline; longer ones can collapse behind “read more.” If the note has
-  its own page publication, that action may link to `/n/<slug>`.
+- Short place notes may render inline; longer ones can collapse behind “read more.”
 
 Post publishing includes a live section block's matching shareable post note and live
 `BlockNoteAttachment` place notes. Other notes on the same place or post never leave the device.

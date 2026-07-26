@@ -58,7 +58,7 @@ interface Place {
   origin: "osm" | "manual" | "import";
   currentOsmRef?: OsmElementRef;      // absent while a manual/import place is unlinked
   currentOsmLinkedAt?: string;
-  osmRefHistory: OsmLinkHistoryEntry[];
+  pastOsmRefs: OsmLinkHistoryEntry[];
   firstSeen?: OsmEvidence;    // immutable recovery evidence, set when first OSM-linked
   lastVerified?: OsmEvidence; // last successfully resolved observation
   manual?: { name: string; lat: number; lng: number; category?: string; address?: string };
@@ -120,10 +120,10 @@ attribution.
 
 ## Refresh and re-resolution
 
-> **Deferred for now (2026-07-18):** the user-facing freshness surface — automatic TTL refresh,
-> the Check-for-OSM-updates action, evidence timestamps, and the stale/review badges — is removed
-> from the v1 UI. The rules below remain the design of record for when it returns; the domain
-> state machine is implemented and tested.
+the user-facing freshness surface — automatic TTL refresh,
+the Check-for-OSM-updates action, evidence timestamps, and the stale/review badges — is removed
+from the v1 UI. The rules below remain the design of record for when it returns; the domain
+state machine is implemented and tested.
 
 Resolution is conservative because attaching a person's notes to the wrong business is worse than
 showing stale data.
@@ -163,7 +163,7 @@ Distance alone can never establish identity. A replacement may be a node, way, o
 - One unique, high-confidence candidate may be relinked automatically.
 - Ambiguous candidates set `needs-review` and ask the owner to choose.
 - No plausible candidate sets `missing` and continues to display `lastVerified` as explicitly stale.
-- A confirmed relink appends one immutable completed interval to `osmRefHistory`, using
+- A confirmed relink appends one immutable completed interval to `pastOsmRefs`, using
   `currentOsmLinkedAt` as its start, then sets the new current reference/link time. It never rewrites
   an existing history entry.
 

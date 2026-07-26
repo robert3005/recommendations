@@ -4,31 +4,25 @@ Each phase ends with a usable, testable increment. V1 spans **Phases 0–8** (ex
 because the product thesis includes **interop with the tools people already use** (2026-07-18:
 import is the front door — see [Import & Export](./interop.md)), the **lists-first shell with
 posts as the editorial layer** (2026-07-19 pivot — see [Posts](./posts.md)), a persistent
-read-only link that its creator can update safely, and **multi-device sync**. Phases 2–5 below
-were specified and implemented before the pivot; where they say "guide" they describe what is now
-a published list or post, and Phases 6–7 carry the pivot's migration.
+read-only link that its creator can update safely, and **multi-device sync**. Phases 2–5 were specified before the lists-and-posts pivot; Phases 6–7 carry it.
 
-## Current implementation audit (2026-07-20; supersedes 2026-07-18)
+## Implementation status
 
-- **Phase 0 — complete.** The 2026-07-18 leftovers have landed: the full provider contract set
-  exists (`MapStyleProvider` and `SharePublisher` in `packages/domain/src/providers.ts` with
-  wired adapters, `SyncTransport` in `packages/domain/src/sync.ts`), Storybook stories run
-  continuous axe checks (serious/critical violations fail the suite), production provider
-  configuration fails closed at build time (malformed URLs and demo hosts included), the
-  two-second budget has a repeatable throttled acceptance check against the production build
-  (`e2e/performance-budget.offline.spec.ts`: 4× CPU + emulated 4G), and the basemap failure
-  state is designed and recovery-gated.
-- **Phase 1 — complete on the development/test path.** Production readiness is a provider
-  selection/contracting task, not a code gap.
-- **Phase 2 — complete.** The 2026-07-18 leftovers were closed by the hardening waves: local
-  `asset:` images render, pre-membership libraries migrate losslessly (Dexie v4),
-  coordinate/id/size/graph validation guards backup writes, binary media is checksummed,
-  export fails closed on unreadable media, backup merge is identity-aware and never forks one
-  exact OSM reference into two `PlaceId`s, cleared optional note titles are removed, and the
-  offline stored-data flow is an e2e acceptance test.
+| Phase | Status |
+|---|---|
+| 0 — Foundations, provider contracts | Complete |
+| 1 — Find, inspect, improve OSM places | Complete on the development/test path; production readiness is a provider-contracting task, not a code gap |
+| 2 — Durable local-first library and lists | Complete |
+| 3 — Interop: Google Maps import/export | Complete |
+| 4 — Snapshot sharing | Complete |
+| 5 — Hosted publications | Complete; hosted media deferred |
+| 6–7 — Lists-and-posts pivot, pane-and-canvas shell | Complete |
+| 8 — Multi-device sync | Complete |
+| 9 — Hardening | Not started |
 
-This status records implementation evidence; it does not relax the requirements below. Update it
-only when the corresponding automated acceptance checks pass.
+This records implementation evidence; it does not relax the requirements below. Update it only when
+the corresponding automated acceptance checks pass. The 2026-07-26 simplification pass
+([Decisions](./decisions.md)) removed machinery from every completed phase without reopening one.
 
 ## Phase 0 — Foundations and provider contracts
 
@@ -78,10 +72,10 @@ off to OpenStreetMap without creating a second public correction record.
   matching; ambiguous candidates require owner review.
 - Library-place and clustered map layers; membership is existence; tags through `TagAssignment`
   edges.
-- Markdown place notes with local media. List-section notes arrive with the later guide layer.
+- Markdown place notes with local media. Post sections arrive with the editorial layer in Phase 6.
 - **Lists first**: named, coloured, ordered place groupings built from ranked `ListBlock` entities.
   Descriptions, section blocks, `BlockNoteAttachment`, and a narrative reading view belong to the
-  later guide layer, not to the Phase 2 list.
+  later editorial layer, not to the Phase 2 list.
 - Offline views/edits from IndexedDB; live search, uncached tiles, OSM refresh, and OSM-backed place
   creation show clear online requirements.
 - Versioned ZIP backup/restore with manifest, checksums, binary media, and attributed OSM evidence.
@@ -122,22 +116,22 @@ open a place in Google Maps from its card, and export a list as KML that Google 
 
 ## Phase 4 — Snapshot sharing
 
-- Public read-only guide viewer using the versioned `SharedGuide` schema.
+- Public read-only document viewer using the versioned shared-document schema.
 - Fragment-encoded snapshot links with compressed/inflated size limits, schema validation, and
   decompression protection.
 - Share preview listing exactly which notes, tags, and OSM evidence leave the device, plus which
   media are omitted from the snapshot.
 - Exact OSM resolution plus evidence-based temporary recovery; fallback states remain visible.
-- **Add this guide to my library** using reference/history/evidence deduplication; unresolved new
+- **Add this list to my library** using reference/history/evidence deduplication; unresolved new
   places remain pending previews until an exact or unique high-confidence OSM match succeeds.
   Shared manual pins import as unlinked places.
 
-**Done when:** I can send a read-only guide without a backend, the recipient cannot modify it, and
+**Done when:** I can send a read-only list without a backend, the recipient cannot modify it, and
 the link still renders timestamped evidence when its old OSM element no longer resolves.
 
 ## Phase 5 — Persistent creator-updatable links and note pages
 
-- Hosted named guide and note URLs: public, guessable, and strictly read-only.
+- Hosted named list and post URLs: public, guessable, and strictly read-only.
 - Before atomic slug creation, the client generates and persists a high-entropy editor bearer token;
   the request sends it over TLS and the server stores only its hash.
 - Bearer-authorized `PUT`/`DELETE`, ETags/`If-Match`, idempotency keys, rate/payload limits,
@@ -151,14 +145,8 @@ the link still renders timestamped evidence when its old OSM element no longer r
 - Standalone read-only Markdown note pages with the same bearer-token/revision model.
 - Public pages default to `noindex` and show current OSM attribution/resolution status.
 
-**Done when:** a creator can update or revoke a persistent read-only guide while any visitor with
+**Done when:** a creator can update or revoke a persistent read-only page while any visitor with
 only the public link can read—but never modify—its latest successfully published revision.
-
-> **Status (2026-07-19): implemented in code**, except the media service, which is deferred — the
-> share service rejects hosted-media claims until it exists ([notes](./notes.md#publishing-a-note-page)).
-> The service is the Hono app in `services/share` behind a `ShareStorage` port (in-memory for
-> tests/dev via MSW, D1 adapter + `schema.sql`/`wrangler.toml` for deployment). Deployment,
-> domain, and CDN wiring are operational tasks outside the codebase.
 
 ## Phase 6 — The canvas shell: lists-first pane & the persistent map (pivot, part 1)
 
@@ -181,7 +169,7 @@ canvas ([Views](./map-view.md#the-grammar)) — opening on the curation.
 - **Unique per-list markers (icon + colour)**: assignment and uniqueness rules, migration of
   colour-only lists, KML style mapping on import/export, the multi-list stacked/badged variant,
   and the unlinked dot replacing the distinct orange manual-pin marker.
-- **List toggles** as the canvas's primary filter; category chips demoted to live-POI discovery.
+- **List toggles** as the canvas's primary filter; nearby places behind an explicit request.
 - **Add to a list from the map** polished as the core curation gesture — the canvas stays
   interactive beside a list's Edit mode.
 - **Bottom-up teardown, list/place half** (2026-07-19 late): deleting a list requires it to be
@@ -197,21 +185,11 @@ tile or discovery traffic — until it is revealed again; I can grow a list from
 leaving it; and deleting a noted place or a non-empty list is refused with the blockers named
 rather than cascading.
 
-> **Status (2026-07-20): implemented in code.** The shell is the pane beside the singleton
-> canvas (`src/router.tsx` + `src/map/MapCanvas.tsx`; detents in `src/state/pane.ts`, route
-> projections in `src/state/projection.ts`); idling is pinned by
-> `src/map/phase6-canvas-idle.audit.test.tsx` (no discovery traffic while occluded; deferred
-> projections coalesce into one camera move on reveal). Markers are unique (colour, icon)
-> pairs with a Latin-square auto-assignment (`packages/domain/src/markers.ts`), sprite-rendered
-> on the canvas, migrated from colour-only lists (Dexie v7), and round-tripped through KML
-> style ids (`placemarks-<icon>`). Bottom-up teardown (list/place half) is enforced in the
-> repository with actionable blocker reports surfaced on the list page and place card.
-
 ## Phase 7 — Posts: the editorial layer (pivot, part 2)
 
-The pivot's data half: **the post is the guide — an editorialised list** ([Posts](./posts.md)).
+The pivot's data half: **the post is the post — an editorialised list** ([Posts](./posts.md)).
 
-- `Post`/`PostBlock` entities; migrate the list-borne guide layer (section blocks, note
+- `Post`/`PostBlock` entities; migrate the list-borne editorial layer (section blocks, note
   attachments, tag selections, list-targeted notes) onto posts; `Publication.target` gains
   `kind: "post"`; lists keep membership only.
 - Post **block editor**: prose sections in the full-screen Markdown editor, embeds picked from
@@ -230,16 +208,6 @@ The pivot's data half: **the post is the guide — an editorialised list** ([Pos
 read it beside the map, publish it, and a reader can open the associated list's public page from
 the post; documents published before the pivot keep serving unchanged under their slugs.
 
-> **Status (2026-07-20): implemented in code.** `Post`/`PostBlock`/`BlockTagSelection` with the
-> full cross-entity invariant set live in the repository; the Dexie v7 upgrade (shared with
-> pre-pivot backup restores via `src/data/pivot.ts`, DERIVED ids so re-running converges)
-> migrates the list-borne guide layer onto same-titled posts and retargets their publications,
-> which keep serving from `/s/lists` under their slugs (`Publication.channel`). The block
-> editor (`/post/:id/edit`, embed picker + "Embed in post" on the place card), the reading page
-> with the article-following canvas, and post publishing (snapshot + hosted `/s/posts`, the
-> "From the list" association, and the publish-the-list-alongside preflight) are in place;
-> teardown's post half is enforced with the rest.
-
 ## Phase 8 — Accounts & multi-device sync (promoted into v1, 2026-07-19)
 
 Local storage with remote sync is the initial version, not an optional future
@@ -257,18 +225,6 @@ Local storage with remote sync is the initial version, not an optional future
 **Done when:** two devices signed into one account converge — lists, posts, notes, tags, places —
 after concurrent offline edits without silent loss; a conflicting note edit yields a recoverable
 conflict copy; and with sync off the app behaves exactly as the local-first Phases 0–7 build.
-
-> **Status (2026-07-20): implemented in code**, exercised end-to-end by
-> `src/features/sync/sync.test.ts` against the real service app. Every repository write logs a
-> durable HLC-stamped mutation in the same transaction (Dexie v8 `mutationOutbox`); the engine
-> pushes idempotently, pulls the server-monotonic cursor, and applies changes through the
-> domain merge policy (`packages/domain/src/sync.ts`): per-row LWW, conflict copies for
-> concurrent Markdown edits, conservative append-only place-history merging with
-> `needs-review` on conflicting relinks, and teardown-race rescue into a conflict surface.
-> Accounts are email-code logins minting per-device bearers (hash-stored); the service is the
-> Hono app in `services/sync` behind a `SyncStorage` port (in-memory for tests/dev via MSW,
-> Postgres adapter + `schema.sql`/OPERATIONS.md for deployment). The sync status surface lives
-> in Settings. Deployment and mailer wiring are operational tasks outside the codebase.
 
 ## Phase 9 — Hardening & operations (post-v1; formerly Phase 6)
 
@@ -291,12 +247,6 @@ Deliberately after the v1 line: operational rigor scaled to real usage, not a la
 
 **Done when:** the installed app and public reader are fast, accessible, observable, recoverable,
 and good citizens of the OSM ecosystem.
-
-> **Status (2026-07-19): client-side slices implemented ahead of schedule** — continuous axe
-> checks over every story (serious/critical violations fail the suite), client error reporting
-> with privacy redaction (URL fragments, bearer/labelled/long-base64url tokens, precise
-> coordinates), 30-day backup reminders, and backup archive resource caps. Dashboards, alarms,
-> CDN/service metrics, and usage measurement remain operational work for a deployed service.
 
 ## Phase 10+ — Optional futures
 

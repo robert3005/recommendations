@@ -1,12 +1,9 @@
 # Views — the Content Pane & the Map Canvas
 
-> **One layout grammar (2026-07-19, late — supersedes both the original "map is the home screen"
-> and the same-day two-view Lists/Map framing).** After the pivot, almost every screen is the
-> same scene: *content about places next to a map showing them* — the lists home, a list, a
-> post being read or written, the import review queue, the public viewers. So the map stops
-> being a page. The app is a **content pane** (where routes render) beside a **single persistent
-> map canvas** (which never navigates — it re-projects whatever the pane shows). Lists remain
-> the home: the pane opens on them.
+Almost every screen is the same scene: content about places beside a map showing them. So the map
+is not a page. The app is a **content pane** (where routes render) beside a **single persistent map
+canvas** (which never navigates — it re-projects whatever the pane shows). Lists are the home: the
+pane opens on them.
 
 ## The grammar
 
@@ -40,27 +37,18 @@ DESKTOP — every route renders pane + canvas          MOBILE — sheet over can
 - **Selection is bidirectional.** Tap a pin → its card rises in the pane/sheet; select in the
   pane → the canvas highlights and flies (respecting `prefers-reduced-motion`). The pane is
   also the map's synchronized non-map equivalent for accessibility.
-- **One map instance.** The canvas is a singleton in the app shell, outside the route outlet:
-  no re-mount on navigation, the viewport survives route changes, and the typed routes carry
-  slug + viewport state ([tech stack](./tech-stack.md)).
-- **The canvas idles when fully hidden** (2026-07-19, late). At pane **expanded** / sheet
-  **full** — the full-scale reading or writing surface — the canvas stops working: the render
-  loop pauses, viewport-driven discovery stops and in-flight viewport requests are cancelled,
-  and projection changes (a route change, a post's scroll-following) are **deferred and
-  coalesced** instead of executed invisibly. Leaving full occlusion paints the retained scene
-  immediately and applies the one coalesced projection — a single camera move, fresh fetches
-  only then. A hidden map spends no GPU, battery, or tile quota.
+- **One map instance.** The canvas is a singleton in the app shell, outside the route outlet: no
+  re-mount on navigation, and the viewport survives route changes. The camera is *not* carried in
+  the URL — that duplicated the persisted last viewport and forced a hand-ranked arbitration against
+  fly-to and fit-to.
+- **The canvas idles when fully hidden.** At pane **expanded** / sheet **full**, every projection
+  effect returns early, so nothing is applied and no request is issued; on reveal each one runs
+  against current values, producing one camera move. There is no buffer to coalesce: if nothing
+  applies while hidden, only the last projection can ever apply. The provider style is not activated
+  until first reveal, so a launch on the Lists home fetches no tiles at all.
+
 - Settings (backup/restore, sync, import, provider/privacy information, publication status) is
   a pane route like any other.
-
-```text
- pane    collapsed ⇄ split ⇄ expanded          (mobile: peek ⇄ half ⇄ full)
- canvas  ACTIVE      ACTIVE   IDLE
-         full-bleed  beside   render paused · discovery stopped, in-flight
-         map         pane     cancelled · projections defer + coalesce
-                                └─ reveal ⇒ retained scene paints, one
-                                   coalesced camera move, fetches resume
-```
 
 ## The Lists home (pane route `/`)
 
@@ -86,11 +74,14 @@ carries the entry points that feed lists: **New list** and **Import** ([Interop]
 
 ## The canvas
 
-Floating on the canvas: search, the **list toggles** row — the primary filter; each list's
-marker toggles its points on/off, all shown by default — and the locate control. The category
-chips ([Eat] [Drink] [Shop] …, mapping the OSM taxonomy into the small top-level groups adopted
-from [prior art](./prior-art-step.md)) sit behind the search affordance and filter **live-POI
-discovery**, which is secondary to the library.
+Floating on the canvas: search, the **list toggles** row — the primary filter; each list's marker
+toggles its points on/off, all shown by default — the locate control, and **Show nearby places**.
+
+Nearby places is an explicit, off-by-default request: one bounded fetch, cleared on pan, disabled
+below the discovery zoom with the reason stated. Ambient discovery on every pan, and the category
+taxonomy that filtered it, were removed on 2026-07-26 — that was the pre-pivot front door this book
+rejects, and it was the only thing giving the canvas a standing network appetite. Tapping a
+discovered POI to add it to a list is unchanged.
 
 ## Core interactions
 
@@ -203,7 +194,8 @@ managed or self-hosted adapters described in [Open Data Sources](./data-sources.
 - Library pins, list and post views, notes, tags, and last-verified POI evidence remain usable.
 - Uncached tiles, live search, live POIs, OSM refresh, and OSM editing require a network.
 - A basemap style/tile failure leaves navigation, search, and list access usable and exposes an
-  accessible **Map unavailable** state; a blank or silently broken canvas is not a designed state.
+  accessible **Map unavailable** banner — top-anchored, not a full-bleed overlay, because a failed
+  tile or glyph can happen over a map that is otherwise drawn and usable; a blank or silently broken canvas is not a designed state.
   This covers failures after the style loaded too: a tile-provider outage surfaces the same state,
   and a subsequent successful render clears it — the overlay recovers with the connection
   (2026-07-19).
@@ -217,18 +209,6 @@ managed or self-hosted adapters described in [Open Data Sources](./data-sources.
 - A confirmed deleted element shows its last-known card plus retry, candidate review, and OSM links.
 - Geolocation denied/unavailable starts from the last viewport or the timezone approximation and leaves
   search fully usable.
-
-> **Implementation decisions (2026-07-19).**
->
-> - The category chips ([Eat] [Drink] [Shop] [Stay] [Culture] [Health]) are keyboard-operable
->   toggles over a fixed OSM-taxonomy mapping (`features/map/categories.ts`); no active chip means
->   everything shows.
-> - The synchronized non-map equivalent is a "Nearby places (list view)" panel: every discovered
->   POI is a focusable button naming the place and its category, selecting it like a pin tap.
-> - The persisted next-launch viewport is coarsened to a ~1 km grid before storage, so a
->   Locate-driven recenter never persists a precise position.
-> - Below the discovery zoom the map says "Zoom in to see nearby places"; the nearby-candidate
->   picker offers an in-place Retry after a resolver failure.
 
 ## Accessibility and responsiveness
 

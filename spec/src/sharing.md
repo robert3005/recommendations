@@ -2,8 +2,7 @@
 
 Two things publish (2026-07-19, the lists-and-posts pivot): a **list** — the curation itself,
 name plus ordered places — and a **[post](./posts.md)** — the editorialised article about a list.
-Both share the same machinery and differ only in projection; the word "guide" in dated rulings
-below is the pre-pivot name for this published document. Three requirements drive the design:
+Both share the same machinery and differ only in projection. Three requirements drive the design:
 
 1. **Private by default** — only explicitly selected content leaves the device.
 2. **Durable place context** — each place carries its current OSM link plus bounded copied evidence
@@ -24,8 +23,7 @@ The versioned block document below serves both public pages:
   ([Posts](./posts.md#publishing)).
 
 One schema, one viewer component, one share service; a list page is simply the degenerate,
-sections-free case. Documents published before the pivot (guides) parse as posts whose sections
-happen to live on a list — the wire schema is unchanged.
+sections-free case.
 
 “Latest successfully published” is deliberate. A local edit made offline, or a failed publish,
 cannot change an already-public document. The owner UI always distinguishes local draft, queued,
@@ -153,7 +151,7 @@ type SharedBlock =
       type: "place";
       place: SharedPlaceAnchor;
       notes?: SharedNoteBody[];
-      tags?: string[];         // only explicit BlockTagSelection values
+      tags?: string[];         // reserved; nothing populates it today
     };
 
 interface SharedDocument {
@@ -178,19 +176,15 @@ carries `list` — its list's title, plus the list's public slug when the list i
 the client drops a slug whose list page was revoked at the next successful publish
 ([Posts](./posts.md#publishing)).
 
-A live section block includes its own post note only when that note is shareable. A place note is
+A live section block always includes its own prose: the unit of privacy is the **post**, so a
+section travels because the post travels. (`shareable` governs *place* notes — private write-ups
+the author opts into sharing — and gating sections on it published articles with no article at all.) A place note is
 included only through a live `BlockNoteAttachment`, and a personal tag only through a live
-`BlockTagSelection`. `Note.shareable` is a prerequisite, not sufficient publication state.
+an explicit attachment edge. `Note.shareable` is a prerequisite, not sufficient publication state.
 
-> **First-release simplifications (2026-07-19, implemented with Phase 4).** Until the guide
-> editorial surface ships the attachment/selection UI: a place block carries **every shareable
-> note of its place** directly (`shareable` acts as the attachment), and **no tags are shared at
-> all** — more private than the eventual explicit `BlockTagSelection` model, never less. The
-> schema keeps both fields so documents stay forward-compatible. On import, unresolved OSM
-> anchors become **pending items in the interop review queue** (spec/src/interop.md) rather than
-> a bespoke pending surface; the snapshot viewer route is `/l` inside the app shell.
-Disabling sharing or detaching content queues a new hosted revision; the previous public revision
-remains visible until that update succeeds.
+A shared list carries **every shareable note of each place** directly, and **no tags at all** — more
+private than a per-embed selection model, never less. A shared post carries its own prose plus the
+notes explicitly attached to its embeds.
 
 The publish preview lists the exact title, prose, tags, copied OSM evidence, and media that will
 leave the device. Public pages default to `noindex`; discoverability can be a later explicit option.
@@ -248,9 +242,9 @@ not include them.
 >   the projection (title, places with coordinates, shareable note prose); nothing leaves the
 >   device until the creator confirms. The unpublish controls carry the standing honesty note
 >   that downloaded copies and third-party caches cannot be remotely erased.
-> - **Deletion queues revocation.** Deleting a published list or note (directly or through a
+> - **Deletion queues revocation.** Deleting a published list or post (directly or through a
 >   place-deletion cascade) marks its publication `revoking` with a durable DELETE job — never an
->   orphaned public page; removing content from guides queues their re-projection the same way.
+>   orphaned public page; removing content from a published document makes it out of date the same way.
 > - **Revoked means a fresh claim.** Publishing again after revocation creates a new publication
 >   and claims a new slug; the tombstone is never updated. A failed revocation retries its
 >   pending DELETE job — the Retry control never turns an unpublish into a publish.
@@ -265,7 +259,7 @@ not include them.
 >   when the other epoch does not contradict it — it names the same winner, lists it among its
 >   plausible candidates, or its own observation is still plausibly the same real-world place.
 >   An epoch that actively points elsewhere (moved + renamed) makes the recovery ambiguous. The
->   same rule governs offline local-evidence reuse when importing a shared guide.
+>   same rule governs offline local-evidence reuse when importing a shared list.
 > - **Retry knows its meaning first.** A failed publication's Retry control stays disabled until
 >   the outbox has answered whether an unpublish is pending — the unknown window can never default
 >   to a publish. First-publishing a NOTE page also stops for the exact-prose preflight.
@@ -300,10 +294,9 @@ reference.
 ## Share service
 
 The service is separate from account sync. Reads are public; mutations use a bearer token from the
-first hosted release. Three kinds publish under the same protocol — `/s/lists` (implemented;
-pre-pivot guide documents live here and keep their slugs), `/s/posts` (the post projection), and
-`/s/notes` ([note pages](./notes.md#publishing-a-note-page)); the `/s/lists` contract below is
-normative for all three:
+first hosted release. Two collections publish under one protocol and one document schema —
+`/s/lists` (the list projection) and `/s/posts` (the post projection) — so "one schema, one viewer,
+one service" is literal. The `/s/lists` contract below is normative for both:
 
 ```text
 POST   /s/lists
@@ -339,34 +332,32 @@ DELETE /s/lists/:slug
 - Documents are schema-validated and subject to request, document, note, and media limits.
 - Slugs are normalized; reserved names are rejected. Creation has stricter quotas/challenges than
   reading, plus abuse reporting/takedown and per-publication media budgets.
-- Mutations and reads are rate-limited and audited; revoked slugs retain a non-readable tombstone.
+- Mutations and reads are rate-limited; revoked slugs retain a non-readable tombstone. There is no
+  audit log: nothing read it, and auditing every public read turned a CDN-cacheable page into a
+  database write per view.
 - Replaying an already-completed `DELETE` with the same idempotency key returns success.
 - Idempotency keys are scoped to `(kind, operation, slug, token)` — a key can neither complete a
   different operation nor replay one slug's result as another's, and never leaks across tokens.
-- Update atomicity: the audit entry, a non-replayable key reservation, the conditional document
-  write, and the replayable success record commit together, and the write is **guarded inside
-  the unit** — a lost revision race (a conditional write that changed nothing) aborts the whole
-  unit rather than letting bookkeeping or a replayable success land for a write that did not
-  apply. An interrupted update re-executes — it never phantom-replays success.
-- Create atomicity mirrors it: the key reservation and audit precede the atomic slug claim, and
-  the success record lands last — an interrupted `POST` leaves no public document and the same
-  token + key completes the original create on retry.
+- Each verb is ONE statement. Create is an atomic slug claim (`INSERT`); update is a conditional
+  revision write (`UPDATE … WHERE revision = ?`); revoke is a conditional tombstone. The replayable
+  success record is written **after** the mutation it acknowledges.
+- An interrupted write therefore re-executes, and recovery runs through content rather than
+  bookkeeping. A stale `If-Match` whose stored document is byte-identical to the request, owned by
+  the requesting token, at exactly the revision this write would have produced, is acknowledged:
+  the requested end state holds and nothing was written since. A tombstone under the requesting
+  token likewise proves a revoke applied. A stale `If-Match` with *different* content is a 412.
+- An update's acknowledgement is its own committed transition — `expectedRevision + 1` with the
+  body it wrote — never re-read from storage after the commit, where a later writer's revision
+  could masquerade as this update's result.
 - Public `GET`/`304` responses carry a stable per-publication `Surrogate-Key` so an update or
   revoke can purge every cached representation deterministically.
-- Each create and update commits as ONE transactional storage unit (a D1 batch): audit entry,
-  idempotency-key reservation, the document write, and — last, as the commit acknowledgement —
-  the replayable success record. An interrupted commit leaves nothing durable and re-executes.
-- The batch API is a hard requirement, not an optimization: when the storage binding offers no
-  transactional batch, a commit fails closed **before any write** — there is no sequential
-  fallback, because ordered individual statements cannot make the bookkeeping and the document
-  write stand or fall together.
 - An update's acknowledgement (response body and replay record) is its own committed transition —
   `expectedRevision + 1` with the body it wrote. It is never re-read from storage after the
   commit, where a later writer's already-landed revision could masquerade as this update's
   result.
-- The schema keeps an append-only `document_revisions` store (trigger-populated) as internal
-  version backups. Internal audit entries and version backups are retained for **90 days**, then
-  purged (services/share/OPERATIONS.md); they are never publicly addressable.
+- The schema is three tables: `documents`, `idempotency` (replay handles, purged after **90 days**
+  — services/share/OPERATIONS.md), and `rate`. There are no version backups: an append-only
+  per-revision body store was written by triggers and read by nothing.
 - `DELETE` counts against the same per-token mutation quota as create and update.
 - Every `/s/*` response (not just the preflight) carries the CORS grant for the separately hosted
   web client.
@@ -376,14 +367,14 @@ DELETE /s/lists/:slug
 
 Public `GET` responses use bounded cache lifetimes and purgeable surrogate keys. On update, old
 revisions become non-public; on revoke, document and media CDN entries are purged within the stated
-service window. Internal audit/version backups have a documented retention period and are never
+service window. Replay handles have a documented retention period and are never
 publicly addressable. The UI explains that already-downloaded copies and third-party caches cannot
 be remotely erased.
 
 ## Relationship to sync
 
-Publishing and multi-device sync solve different problems. The publication outbox sends only
-explicit public projections; the sync transport (in v1 since 2026-07-19 —
+Publishing and multi-device sync solve different problems. Publication jobs send only explicit
+public projections; the sync transport (in v1 since 2026-07-19 —
 [Storage & Sync](./storage-sync.md#multi-device-sync)) moves private owned entities between the
 owner's devices. A sync account may allow editor-token recovery and private readership later, but
 public named links and their URL shape do not depend on accounts.

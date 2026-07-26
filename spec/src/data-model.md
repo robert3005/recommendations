@@ -1,24 +1,5 @@
 # Places, Lists & Posts — Data Model
 
-> **Lists-and-posts pivot (2026-07-19).** The editorial layer moves off `List` into a standalone
-> [`Post`](./posts.md) entity. A list is pure curation — name, unique marker, ordered place
-> membership. Section blocks, note attachments, and tag selections become **post** structure;
-> list-targeted notes become post-targeted notes. The implemented list-block machinery is the
-> storage substrate this pivot relocates ([migration](./posts.md#migration-from-the-guide-layer));
-> rulings below that predate the pivot and say "guide" describe what is now a published list or a
-> post.
-
-> **Repository-boundary rulings (2026-07-19).** `updatePlace` treats durable identity as
-> immutable: origin and first-seen never change, completed link history only grows, and an update
-> that would fork an exact OSM element held by another live place is refused. Name+proximity
-> dedup never folds an unlinked anchor onto an OSM-linked place. A current-ref observation that is
-> no longer plausibly the same real-world place marks `needs-review` without touching the copied
-> evidence. Notes attach only to live targets, only shareable notes attach to guide blocks, and
-> retargeting a note tombstones its stale attachments in the same transaction.
-> Follow-ups (same day): link history is verbatim-append-only — an update keeps its history only
-> when the existing entries survive unchanged as its prefix; the fork guard and write run in one
-> transaction so concurrent upgrades serialize; and a retarget must land on a live aggregate.
-
 The model separates two kinds of data:
 
 1. **OSM observations** — source facts that Placemarks copies for display, offline fallback, and
@@ -85,18 +66,19 @@ interface Place {
   // absent on an unlinked manual/imported place until one is linked.
   currentOsmRef?: OsmElementRef;
   currentOsmLinkedAt?: string;
-  osmRefHistory: Array<{
-    ref: OsmElementRef;
-    linkedAt: string;
-    unlinkedAt?: string;
-    reason?: "replaced" | "merged" | "owner-confirmed" | "resolver-match";
-  }>;
+  /**
+   * Every OSM element this place has been linked to, current one excluded — a
+   * SET, not a log. Its readers are the dedup key set and export attribution;
+   * neither needs when or why a link ended, and recording that cost an
+   * append-only-prefix guard on every write. Link provenance, if ever wanted,
+   * belongs in an audit surface rather than on the aggregate.
+   */
+  pastOsmRefs: OsmElementRef[];
   firstSeen?: OsmEvidence;     // set when first OSM-linked
   lastVerified?: OsmEvidence;  // set after the first successful resolution
   manual?: ManualFacts;        // owner- or import-provided facts; required while unlinked
   externalRefs?: ExternalRef[]; // e.g. the Google Maps URL an import arrived with
   resolutionState: "resolved" | "stale" | "unavailable" | "missing" | "needs-review" | "unlinked";
-  lastResolutionAttemptAt?: string;
   createdAt: string;
   updatedAt: string;
   deleted?: boolean;
@@ -175,26 +157,29 @@ type NoteTarget =
 
 interface Note {
   id: string;
+  /** Immutable: prose belonging elsewhere is created there. */
   target: NoteTarget;
   title?: string;
   body: string;                // CommonMark + GFM source of truth
-  mediaIds: string[];
-  shareable: boolean;          // eligibility only; default false
+  /** PLACE notes only: eligibility to appear publicly. A post's prose publishes with its post. */
+  shareable: boolean;
   createdAt: string;
   updatedAt: string;
   deleted?: boolean;
 }
 ```
 
-`shareable` permits a note to be selected for a post, shared-list, or note-page publication; it
-does not mean the note is currently public. Publication and revocation state live in `Publication`. Turning it
-off prevents new publication and queues removal from existing hosted publications.
+`shareable` permits a *place* note to be selected into a public projection; it does not mean the
+note is currently public. Publication and revocation state live in `Publication`. Turning it off
+prevents new publication and queues removal from existing hosted publications. A post note ignores
+the flag: its post's prose publishes with the post.
 
 ## MediaAsset
 
 The entity stores portable metadata. Binary bytes live in the IndexedDB media store under
-`localBlobKey`, outside the domain object; hosted views reference a server-issued media id rather
-than an arbitrary client URL.
+`localBlobKey`, outside the domain object. Media is **device-local**: the bytes do not sync, so the
+metadata row does not either — replicating it would hand another device a `localBlobKey` pointing at
+nothing. Hosted views carry a text placeholder until a media service exists.
 
 ```ts
 interface MediaAsset {
@@ -203,7 +188,6 @@ interface MediaAsset {
   width?: number;
   height?: number;
   localBlobKey: string;
-  hostedMediaId?: string;
   createdAt: string;
   updatedAt: string;
   deleted?: boolean;
@@ -283,7 +267,7 @@ rebalancing when ranks become dense or collide. A place may appear at most once 
 
 ## Post (an editorialised list)
 
-A [post](./posts.md) is the editorial layer — **the post is the guide: an editorialised list**.
+A [post](./posts.md) is the editorial layer — **an editorialised list**.
 Each post editorialises exactly one list, interleaving narrative sections with embeds of that
 list's places; a list may have several posts.
 
@@ -292,7 +276,6 @@ interface Post {
   id: string;
   title: string;
   listId: string;              // the list this post editorialises
-  coverMediaId?: string;
   createdAt: string;
   updatedAt: string;
   deleted?: boolean;
@@ -321,19 +304,12 @@ interface BlockNoteAttachment {
   updatedAt: string;
   deleted?: boolean;
 }
-
-interface BlockTagSelection {
-  id: string;
-  blockId: string;             // must identify a post place block
-  tagId: string;               // tag assigned to that block's place
-  createdAt: string;
-  updatedAt: string;
-  deleted?: boolean;
-}
 ```
 
-Post blocks order like list blocks. Attached notes and public tag selections are explicit,
-durable edges rather than ephemeral publish-UI choices. A place embed **references** a member of
+Post blocks order like list blocks. An attached note is an explicit, durable edge rather than an
+ephemeral publish-UI choice. Tags are **not** published: per-embed tag selection existed as its own
+entity and was removed on 2026-07-26 — the shipped list projection already shared no tags, and the
+wire field remains optional so the capability can return additively. A place embed **references** a member of
 the post's list; it never sustains the place's existence — instead a live embed **blocks** the
 place's removal from that list until the author removes the embed
 ([bottom-up teardown](./posts.md#where-embeds-come-from)).
@@ -343,8 +319,7 @@ Repository transactions enforce these cross-entity invariants:
 - a section note targets the same post as its section block;
 - a live place embed's place is a live member of the post's list;
 - an attached place note targets the same `PlaceId` as the embed's place;
-- a selected tag is actually assigned to the embed's place;
-- live `(blockId, noteId)` and `(blockId, tagId)` edges are unique.
+- live `(blockId, noteId)` edges are unique.
 
 ## Publication state
 
@@ -355,14 +330,16 @@ cannot be confused.
 ```ts
 interface Publication {
   id: string;
-  target: { kind: "list" | "post" | "note"; id: string };
-  mode: "snapshot" | "hosted";
-  slug?: string;               // hosted mode; public and guessable
+  target: { kind: "list" | "post"; id: string };
+  slug?: string;               // public and guessable; the path segment follows target.kind
   credentialId?: string;       // points to a private local editor bearer token
-  status: "draft" | "queued" | "publishing" | "published" | "failed" | "revoking" | "revoked";
-  localRevision: string;
-  lastPublishedLocalRevision?: string;
-  publishedRevision?: string;  // server revision / ETag
+  status: "queued" | "publishing" | "published" | "failed" | "revoking" | "revoked";
+  publishedRevision?: number;  // server revision / ETag
+  /**
+   * The projection hash of the last successful publish. "Changes pending" is
+   * this compared with the target's CURRENT projection hash — one source of
+   * truth, rather than a dirty bit maintained on every write path.
+   */
   lastPublishedHash?: string;
   publishedAt?: string;
   lastError?: string;
@@ -372,8 +349,9 @@ interface Publication {
 }
 ```
 
-Snapshot mode records what was exported but has no server credential. Hosted mode requires a
-high-entropy editor bearer token from creation onward. The token is never included in a public URL
+A hosted publication requires a high-entropy editor bearer token from creation onward. Snapshot
+links carry no publication record at all — they are a document in a URL fragment, with nothing to
+update or revoke. The token is never included in a public URL
 or shared document. See [Lists & Sharing](./sharing.md).
 
 ## What the UI displays
@@ -401,7 +379,6 @@ List ──1:*── ListBlock ──place──▶ PlaceId ──▶ Place
   └───┤        │                │       └─* Note  │
       │        ├─section──▶ Note│                 ├─▶ current OSM ref + evidence
       │        ├─* BlockNoteAttachment ──▶ Note   └─▶ external refs (imports)
-      │        └─* BlockTagSelection ────▶ Tag
       │
       └──────────────── Publication (list | post | note)
 ```
@@ -410,19 +387,19 @@ List ──1:*── ListBlock ──place──▶ PlaceId ──▶ Place
   (bottom-up teardown, 2026-07-19 late — [Posts](./posts.md#where-embeds-come-from)): places
   leave first (Edit mode offers a bulk **Remove all places** that names any blockers), posts are
   deleted first, and only then does the empty list delete. Nothing cascades through it.
-- Deleting a post tombstones its blocks, its own section notes, attachments, and selections; it
-  never touches the list, its places, or place notes.
+- Deleting a post tombstones its blocks, its own section notes and attachments; it never touches
+  the list, its places, or place notes.
 - Removing a place from a list is refused while a post about that list embeds it; the removal
   that would delete the place outright is additionally refused while the place has live notes.
   Once clear, removal tombstones its tag assignments and place blocks; it never changes OSM.
-- Removing or disabling already-published content marks the relevant publication dirty. The old
-  public revision remains visible until the revocation/update succeeds.
-- Mutating a list name/marker/order, post title/prose/cover/section/order, attached place
-  note/media, selected tag, or place OSM binding increments every affected publication's
-  `localRevision` and queues/coalesces an immutable revision-bearing job in the same transaction.
-  A shared post projects its own blocks, not the list's, so list membership/order changes touch
-  a post's publications only through the post's own embeds.
-- Place-link history is preserved as immutable completed intervals when an OSM element is replaced;
+- Deleting a published target queues **revocation** — a deleted aggregate never orphans its public
+  page. The old public revision remains visible until the revocation succeeds.
+- Every other edit simply makes the publication out of date; nothing is queued and nothing
+  auto-publishes. There is no dirty bit: "changes pending" is the target's current projection hash
+  compared with `lastPublishedHash`, computed on read. A shared post projects its own blocks, not
+  the list's, so list membership changes reach a post's publication only through its own embeds.
+- A replaced OSM element joins `pastOsmRefs`, so evidence-based recovery and dedup can still find
+  the place by its former ref;
   notes, list membership, and post embeds stay attached to the same `PlaceId`.
 
 ## Why this separation matters

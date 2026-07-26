@@ -1,17 +1,6 @@
 # Posts — the Editorial Layer
 
-> **Decision (2026-07-19, the lists-and-posts pivot).** The editorial layer detaches from `List`
-> into a standalone **`Post`** entity. The 2026-07-18 design ("a guide is an editorialised list")
-> folded prose into the list itself, which mixes two lifecycles into one entity: a list is
-> **working curation** — membership, order, a marker — that keeps changing as places come and go,
-> while an editorial piece is a **document about** places, written, revised, and published on its
-> own schedule. Placemarks is a blog platform with a heavy geolocation focus: **lists curate,
-> posts editorialise.** The block machinery designed for the guide layer (ranked blocks, note
-> attachments, tag selections) is exactly the post structure; the pivot relocates it, it does not
-> reinvent it. The word **guide** is retired: dated rulings elsewhere in this spec that say
-> "guide" describe what is now a published list or a post.
-
-**The post is the guide: an editorialised list.** A post is an article about exactly one list — a
+**A post is an editorialised list.** A post is an article about exactly one list — a
 titled, ordered sequence of Markdown prose sections and **place embeds** drawn from that list's
 members. It reads like a blog post; because every embed is anchored to a physical location, the
 article renders beside a synchronized map. A list may have several posts (a shortlist and a full
@@ -26,12 +15,11 @@ in brief:
 Post ──1:*── PostBlock ── section ──▶ Note (target: post)
                 │
                 └─ place ──▶ PlaceId  ─ * BlockNoteAttachment ──▶ shareable place Note
-                                      └ * BlockTagSelection  ──▶ Tag
 ```
 
 - A **section** block is a post-targeted Markdown note — a narrative passage between embeds.
 - A **place** block embeds a member of the post's list: the card shows the place's display facts,
-  attached shareable place notes, explicitly selected tags, and the navigation deep links.
+  attached shareable place notes, and the navigation deep links. Tags stay private.
 - Blocks order by `(rank, id)` with the same fractional-rank rebalancing as list blocks.
 - `listId` names the one list the post editorialises. The post wears that list's marker on its
   map, the list page lists its posts, and the post page links back to its list — locally and in
@@ -45,8 +33,7 @@ that exists: the editor offers to **add it to the list first** (`addToList` — 
 existence), then embeds it. This is also how a post is written from the map: tap a pin, add it to
 the list, embed it.
 
-**Bottom-up teardown** (ruling, 2026-07-19, late — supersedes the same-day embed-tombstone and
-detached-post rulings, and retires the implemented pre-pivot deletion cascades at Phases 6–7).
+**Bottom-up teardown.**
 Deletion never cascades through authored content; it is **refused until the owner has explicitly
 dismantled what hangs off the target**:
 
@@ -111,23 +98,3 @@ alongside the post when it isn't published yet; declining publishes the post wit
 but unlinked. Revoking the list's page removes the link target — the next successful post publish
 drops the dangling slug, and until then viewers see the list name without a working link (the
 tombstoned slug is never reassigned, so the stale link can only 404, never point elsewhere).
-
-## Standalone note pages, questioned
-
-A published place-note page (`/n/<slug>`, Phase 5) is a micro-post: one prose body plus one place
-context. The mechanism is implemented and remains valid, but posts are the editorial surface this
-product is about. Ruling (2026-07-19): note pages are **not promoted in the UI**, gain no new
-capabilities, and are a candidate for folding into posts (a one-place post) in a later
-consolidation. The share-service protocol they use is unchanged.
-
-## Migration from the guide layer
-
-The implemented list-block machinery is the storage substrate the pivot renames:
-
-- A list carrying section blocks, note attachments, or tag selections gets a same-titled **post**
-  created from that editorial content, with `listId` pointing at that list; the list keeps only
-  its place blocks. Lists with no editorial content — the overwhelming case — are untouched.
-- List-targeted notes retarget to the created post (`NoteTarget` kind `"post"`); the retarget
-  tombstones stale attachments per the existing repository rulings.
-- A `Publication` targeting such a list follows the editorial content to the post. The hosted slug
-  keeps serving the same document: the wire schema is unchanged, so no public link breaks.

@@ -25,7 +25,8 @@
 └──────────────────┼───────────────────────────┼───────────────────┘
                    │                           │
               sync API           managed/self-hosted OSM services
-                                share service · media service
+                                share service (Hono/D1) · sync service (Hono/Postgres)
+                                shared: packages/service-kit
 ```
 
 ## Layers and boundaries
@@ -57,8 +58,9 @@ handles and rendering stay in adapters, preserving reuse in a future native clie
 ### 3. Local repository
 
 `LocalRepository` is the only repository used for application reads and writes. IndexedDB is its web
-implementation. Transactions keep aggregate changes consistent, and durable outboxes record
-network work after the local commit.
+implementation. Transactions keep aggregate changes consistent; a durable mutation outbox records
+sync work after the local commit, and one keyed row per publication holds its pending publish or
+revoke.
 
 `SyncTransport` (v1 scope since 2026-07-19) is not a network-flavored replacement repository. It
 pushes and pulls mutations in the background while the app continues to read and write locally.

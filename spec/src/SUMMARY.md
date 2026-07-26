@@ -3,7 +3,6 @@
 [Introduction](./introduction.md)
 
 - [Vision & Scope](./vision.md)
-- [Prior Art — Step: Your World](./prior-art-step.md)
 - [Architecture Overview](./architecture.md)
 - [Open Data Sources](./data-sources.md)
 - [Views — the Content Pane & the Map Canvas](./map-view.md)
@@ -16,3 +15,4 @@
 - [Storage & Sync](./storage-sync.md)
 - [Tech Stack](./tech-stack.md)
 - [Roadmap](./roadmap.md)
+- [Decisions](./decisions.md)
