@@ -58,9 +58,10 @@ DESKTOP — every route renders notebook + canvas      MOBILE — sheet over can
   never dimmed, stacked above its neighbours, and wearing the ink selection ring. The notebook
   is the map's synchronised non-map equivalent for accessibility.
 
-Pins are solid accent-coloured shapes wearing their list's marker; a place on several lists wears
-a deterministic stacked/badged variant naming its lists on tap ([Visual Design](./design.md)).
-Library pins cluster at low zoom so large lists stay responsive.
+Pins are anchored drops in the list's accent, tail tip on the exact spot, the list's shape
+stamped inside the head; a place on several lists wears a deterministic stacked/badged variant
+naming its lists on tap ([Visual Design](./design.md)). Library pins cluster at low zoom so
+large lists stay responsive.
 
 ## Home (`/`)
 

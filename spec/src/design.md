@@ -64,8 +64,11 @@ well-set field notebook: ruled, calm, and precise.
 ## Markers
 
 A marker is a shape–colour pair: one of eight named shapes — circle, diamond, triangle, square,
-hexagon, star, semicircle, chevron — in one of the eight accents, a pair space of 64. Pins are
-solid accent-coloured shapes (no glyph cutouts), so they stay legible at map sizes.
+hexagon, star, semicircle, chevron — in one of the eight accents, a pair space of 64. On the map
+a pin is an **anchored drop**: an accent-coloured teardrop whose tail tip points at the exact
+spot, with the list's shape stamped paper-on-accent inside the head — the drop says *here*, the
+colour and stamped shape say *which list*. In the notebook (rows, chips, swatches) the marker
+stays the flat solid shape.
 
 Assignment follows the model rules (see [Data Model](./data-model.md) for the invariant):
 auto-assign the first free pair on list creation; imports take the nearest colour to the source
@@ -75,7 +78,8 @@ badge as the deterministic variant and the UI says so.
 
 A place on multiple visible lists wears a deterministic stacked/badged variant of its markers;
 tapping it names the lists it belongs to. The selected place is the loudest pin on the plate:
-half again as large, never dimmed, above its neighbours, ringed in plate ink.
+half again as large, never dimmed, above its neighbours, with an ink ground ring at the drop's
+tip — the coordinate itself.
 
 ## Map styling
 

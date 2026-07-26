@@ -100,56 +100,78 @@ function markerImageId(pin: PlacePinFeature): string {
 }
 
 /**
- * Paint a marker sprite: one solid accent-coloured shape from
- * MARKER_SHAPE_PATHS (shared with list rows, so the two renderings can never
- * diverge), the stacked second-list shape peeking out behind, and a numeral
- * badge for 3+ lists — the deterministic multi-list variant.
+ * Paint a marker sprite as an anchored DROP (spec/src/design.md §Markers):
+ * an accent-coloured teardrop whose tip points at the exact spot, with the
+ * list's marker shape stamped paper-on-accent inside the head — colour and
+ * shape identity both survive the container. A stacked second-list drop
+ * peeks out behind, and 3+ lists add a numeral badge. The layer anchors the
+ * icon at the bottom, so the tip IS the coordinate.
  */
 function paintMarkerImage(id: string): ImageData | undefined {
   const [, shape = "circle", color = PLATE_INK, shape2 = "-", color2 = "-", countRaw = "1"] =
     id.split("|");
   const count = Number.parseInt(countRaw, 10) || 1;
   if (typeof document === "undefined" || typeof Path2D === "undefined") return undefined;
-  const size = 64; // 2× for retina; icon-size 0.5 in the layer
+  const W = 64; // 2× for retina; icon-size 0.5 in the layer
+  const H = 80;
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = W;
+  canvas.height = H;
   const ctx = canvas.getContext("2d");
   if (!ctx) return undefined;
 
-  // Path data is authored on a 30×30 viewBox.
-  const drawShape = (shapeName: string, fill: string, scale: number, dx: number, dy: number) => {
-    const d = MARKER_SHAPE_PATHS[shapeName as MarkerShape] ?? (MARKER_SHAPE_PATHS.circle as string);
-    const path = new Path2D(d);
-    const px = (size * scale) / 30;
-    ctx.save();
-    ctx.translate(size / 2 - 15 * px + dx, size / 2 - 15 * px + dy);
-    ctx.scale(px, px);
+  /** One drop: head circle radius r centred (cx, cy), tail tapering to (cx, tipY). */
+  const drawDrop = (fill: string, cx: number, cy: number, r: number, tipY: number) => {
+    const path = new Path2D(
+      [
+        `M ${cx} ${tipY}`,
+        `C ${cx - r * 0.42} ${tipY - (tipY - cy) * 0.45}, ${cx - r} ${cy + r * 0.72}, ${cx - r} ${cy}`,
+        `A ${r} ${r} 0 1 1 ${cx + r} ${cy}`,
+        `C ${cx + r} ${cy + r * 0.72}, ${cx + r * 0.42} ${tipY - (tipY - cy) * 0.45}, ${cx} ${tipY}`,
+        "Z",
+      ].join(" "),
+    );
     ctx.fillStyle = fill;
     ctx.fill(path);
-    ctx.lineWidth = 2.5 / px;
+    ctx.lineWidth = 2.5;
     ctx.strokeStyle = PLATE;
     ctx.stroke(path);
+  };
+
+  /** The list's shape, paper-on-accent, centred in the drop head (30×30 paths). */
+  const stampShape = (shapeName: string, cx: number, cy: number, sizePx: number) => {
+    const d = MARKER_SHAPE_PATHS[shapeName as MarkerShape] ?? (MARKER_SHAPE_PATHS.circle as string);
+    const px = sizePx / 30;
+    ctx.save();
+    ctx.translate(cx - 15 * px, cy - 15 * px);
+    ctx.scale(px, px);
+    ctx.fillStyle = PLATE;
+    ctx.fill(new Path2D(d));
     ctx.restore();
   };
 
-  if (shape2 !== "-" && color2 !== "-") drawShape(shape2, color2, 0.66, 9, -9);
-  drawShape(shape, color, 0.78, 0, shape2 === "-" ? 0 : 3);
+  // Stacked second-list drop peeks out behind the head.
+  if (shape2 !== "-" && color2 !== "-") {
+    drawDrop(color2, 46, 22, 15, 56);
+    stampShape(shape2, 46, 22, 16);
+  }
+  drawDrop(color, 30, 28, 21, 76);
+  stampShape(shape, 30, 28, 24);
   if (count > 2) {
     ctx.beginPath();
-    ctx.arc(size * 0.82, size * 0.82, size * 0.16, 0, Math.PI * 2);
+    ctx.arc(52, 12, 11, 0, Math.PI * 2);
     ctx.fillStyle = PLATE_INK;
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = PLATE;
     ctx.stroke();
     ctx.fillStyle = PLATE;
-    ctx.font = `bold ${(size * 0.22).toString()}px sans-serif`;
+    ctx.font = "bold 14px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(count), size * 0.82, size * 0.83);
+    ctx.fillText(String(count), 52, 13);
   }
-  return ctx.getImageData(0, 0, size, size);
+  return ctx.getImageData(0, 0, W, H);
 }
 
 function placesToGeoJSON(
@@ -336,6 +358,8 @@ export function MapView({
           // The selected pin is unmistakable next to its list-mates: half
           // again as large, never dimmed, stacked above (source order).
           "icon-size": ["case", ["==", ["get", "selected"], 1], 0.78, 0.5],
+          // Drops anchor at the tail tip: the tip IS the coordinate.
+          "icon-anchor": "bottom",
           "icon-allow-overlap": true,
           "symbol-z-order": "source",
         },
@@ -390,20 +414,24 @@ export function MapView({
             : [],
         },
       });
-      map.addLayer({
-        id: "selection-ring",
-        type: "circle",
-        source: "selection",
-        paint: {
-          // Sized around the enlarged selected pin, with a paper halo under
-          // the ink ring so it separates from any basemap detail beneath.
-          "circle-radius": 19,
-          "circle-color": "#000000",
-          "circle-opacity": 0,
-          "circle-stroke-width": 3.5,
-          "circle-stroke-color": PLATE_INK,
+      map.addLayer(
+        {
+          id: "selection-ring",
+          type: "circle",
+          source: "selection",
+          paint: {
+            // A ground ring at the drop's tip — the coordinate itself — under
+            // the enlarged selected drop.
+            "circle-radius": 10,
+            "circle-color": PLATE,
+            "circle-opacity": 0.55,
+            "circle-stroke-width": 3.5,
+            "circle-stroke-color": PLATE_INK,
+          },
         },
-      });
+        // Under the pins: the ring marks the ground the drop stands on.
+        "saved-pins",
+      );
       if (container) {
         container.dataset.pins = String(placePinsRef.current.length);
         container.dataset.marks = String(markPinsRef.current.length);
