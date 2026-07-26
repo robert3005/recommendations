@@ -22,8 +22,7 @@ describe("Phase 5 failed-revocation retry", () => {
       slug: "public-guide",
       credentialId: "credential-1",
       status: "failed",
-      localRevision: "local-v1",
-      lastPublishedLocalRevision: "local-v1",
+      lastPublishedHash: "local-v1",
       publishedRevision: 1,
       lastError: "revoke failed (503)",
       createdAt: NOW,
@@ -57,14 +56,14 @@ describe("Phase 5 failed-revocation retry", () => {
         updatedAt: NOW,
       });
       await repo.db.publications.put(publication);
-      await repo.db.publicationOutbox.put({
-        id: "original-revoke-job",
+      await repo.db.publicationJobs.put({
         publicationId: publication.id,
-        action: "revoke",
-        localRevision: publication.localRevision,
-        createdAt: NOW,
-        attempts: 1,
-        lastError: publication.lastError,
+        revoke: {
+          key: "original-revoke-job",
+          createdAt: NOW,
+          attempts: 1,
+          lastError: publication.lastError,
+        },
       });
 
       // Hold the component's first outbox lookup open. Publication state is
@@ -72,7 +71,7 @@ describe("Phase 5 failed-revocation retry", () => {
       // still unknown. The spec requires that this window never defaults to a
       // publish: Retry must be disabled until the pending DELETE is known, or
       // otherwise resolve the operation before acting.
-      const realToArray = repo.db.publicationOutbox.toArray.bind(repo.db.publicationOutbox);
+      const realGet = repo.db.publicationJobs.get.bind(repo.db.publicationJobs);
       let releaseLookup!: () => void;
       let markLookupStarted!: () => void;
       const lookupStarted = new Promise<void>((resolve) => {
@@ -81,14 +80,14 @@ describe("Phase 5 failed-revocation retry", () => {
       const lookupGate = new Promise<void>((resolve) => {
         releaseLookup = resolve;
       });
-      const delayedToArray = (async () => {
+      const delayedGet = (async (key: string) => {
         markLookupStarted();
         await lookupGate;
-        return realToArray();
-      }) as unknown as typeof repo.db.publicationOutbox.toArray;
-      vi.spyOn(repo.db.publicationOutbox, "toArray")
-        .mockImplementationOnce(delayedToArray)
-        .mockImplementation(realToArray);
+        return realGet(key);
+      }) as unknown as typeof repo.db.publicationJobs.get;
+      vi.spyOn(repo.db.publicationJobs, "get")
+        .mockImplementationOnce(delayedGet)
+        .mockImplementation(realGet);
 
       const view = render(
         createElement(RepoProvider, { repo }, createElement(PublishControls, { listId: "list-1" })),
@@ -113,7 +112,7 @@ describe("Phase 5 failed-revocation retry", () => {
       // erroneous path can momentarily mark the DELETE successful and only
       // issue its forbidden PUT on the next microtask.
       await waitFor(async () => {
-        await expect(repo.db.publicationOutbox.count()).resolves.toBe(0);
+        await expect(repo.db.publicationJobs.count()).resolves.toBe(0);
       });
       // A retry may perform a harmless public read, but it must not turn the
       // failed revoke into a POST/PUT. The only mutation is the original

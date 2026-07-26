@@ -6,6 +6,7 @@ import { createElement } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
 import { DexieRepository } from "../../data/repo";
+import { projectList } from "../share/project";
 import { PublishControls } from "./PublishControls";
 import {
   publicationForList,
@@ -141,13 +142,13 @@ describe("Phase 5 durable publication jobs", () => {
     try {
       await seededList(repo);
       await publishList(repo, "list-1", NOW, fetcher);
-      const failedJob = await repo.db.publicationOutbox.toCollection().first();
+      const failedJob = await repo.db.publicationJobs.toCollection().first();
       expect(failedJob).toBeDefined();
 
       // This is the path used by the visible Retry button.
       await publishList(repo, "list-1", LATER, fetcher);
 
-      expect(new Set(seenKeys)).toEqual(new Set([failedJob?.id]));
+      expect(new Set(seenKeys)).toEqual(new Set([failedJob?.publish?.key]));
       expect((await publicationForList(repo, "list-1"))?.publishedRevision).toBe(1);
     } finally {
       repo.db.close();
@@ -212,14 +213,9 @@ describe("Phase 5 durable publication jobs", () => {
       expect(newer.body).not.toBe(first.body);
 
       // Model a delayed/offline job resurfacing after the newer revision won.
-      await repo.db.publicationOutbox.put({
-        id: "delayed-old-job",
+      await repo.db.publicationJobs.put({
         publicationId: publication.id,
-        action: "publish",
-        localRevision: (JSON.parse(first.body) as { contentHash: string }).contentHash,
-        payload: first.body,
-        createdAt: LATEST,
-        attempts: 1,
+        publish: { key: "delayed-old-job", payload: first.body, createdAt: LATEST, attempts: 1 },
       });
       await runPublicationOutbox(repo, service.fetcher);
 
@@ -231,7 +227,7 @@ describe("Phase 5 durable publication jobs", () => {
     }
   });
 
-  it("does not clear a newer queued edit when an older in-flight publish completes", async () => {
+  it("records what it actually sent when an edit lands mid-flight", async () => {
     const repo = new DexieRepository(`phase5-inflight-edit-${crypto.randomUUID()}`);
     const service = serviceFetcher();
     let signalStarted: (() => void) | undefined;
@@ -262,16 +258,20 @@ describe("Phase 5 durable publication jobs", () => {
       await firstPublish;
 
       const publication = await publicationForList(repo, "list-1");
-      expect(publication?.status).toBe("queued");
-      expect(publication?.localRevision).not.toBe(publication?.lastPublishedLocalRevision);
-      await expect(repo.db.publicationOutbox.count()).resolves.toBe(1);
+      // The public page holds the revision that was sent; the mid-flight edit
+      // is newer local content, visible because the list's current projection
+      // no longer hashes to lastPublishedHash. Nothing auto-republishes.
+      expect(publication?.status).toBe("published");
+      const projection = await projectList(repo, "list-1");
+      expect(projection?.guide.contentHash).not.toBe(publication?.lastPublishedHash);
+      await expect(repo.db.publicationJobs.count()).resolves.toBe(0);
     } finally {
       releaseRequest?.();
       repo.db.close();
     }
   });
 
-  it("queues the next revision when an already-published list changes", async () => {
+  it("leaves a published list published when it changes, with no queued job", async () => {
     const repo = new DexieRepository(`phase5-local-edit-${crypto.randomUUID()}`);
     const service = serviceFetcher();
     try {
@@ -286,15 +286,18 @@ describe("Phase 5 durable publication jobs", () => {
       );
 
       const after = await publicationForList(repo, "list-1");
-      expect(after?.status).toBe("queued");
-      expect(after?.localRevision).not.toBe(before?.lastPublishedLocalRevision);
-      await expect(repo.db.publicationOutbox.count()).resolves.toBe(1);
+      expect(after?.status).toBe("published");
+      expect(after?.lastPublishedHash).toBe(before?.lastPublishedHash);
+      const projection = await projectList(repo, "list-1");
+      expect(projection?.guide.contentHash).not.toBe(after?.lastPublishedHash);
+      // An edit enqueues nothing: publishing is always an explicit act.
+      await expect(repo.db.publicationJobs.count()).resolves.toBe(0);
     } finally {
       repo.db.close();
     }
   });
 
-  it("shows changes pending while a locally edited publication is queued", async () => {
+  it("shows changes pending after a local edit to a published list", async () => {
     const repo = new DexieRepository(`phase5-queued-pending-ui-${crypto.randomUUID()}`);
     const service = serviceFetcher();
     let view: ReturnType<typeof render> | undefined;
@@ -307,16 +310,17 @@ describe("Phase 5 durable publication jobs", () => {
         LATER,
       );
       const publication = await publicationForList(repo, "list-1");
-      expect(publication?.status).toBe("queued");
-      expect(publication?.localRevision).not.toBe(publication?.lastPublishedLocalRevision);
+      expect(publication?.status).toBe("published");
 
       view = render(
         createElement(RepoProvider, { repo }, createElement(PublishControls, { listId: "list-1" })),
       );
 
+      // The page is still published — what changed is that there is newer
+      // local content, which the badge says outright.
       expect(await screen.findByTestId("publication-status")).toHaveAttribute(
         "data-status",
-        "queued",
+        "published",
       );
       expect(
         await screen.findByText(/changes pending|local changes.*not yet published/i),
@@ -325,36 +329,6 @@ describe("Phase 5 durable publication jobs", () => {
       expect(screen.getByTestId("unpublish")).toBeInTheDocument();
     } finally {
       view?.unmount();
-      repo.db.close();
-    }
-  });
-
-  it("atomically commits a list edit with its publication-state and outbox changes", async () => {
-    const repo = new DexieRepository(`phase5-edit-atomicity-${crypto.randomUUID()}`);
-    const service = serviceFetcher();
-    let restoreOutboxPut: (() => void) | undefined;
-    try {
-      await seededList(repo);
-      await publishList(repo, "list-1", NOW, service.fetcher);
-      const before = await publicationForList(repo, "list-1");
-
-      const outboxPut = vi
-        .spyOn(repo.db.publicationOutbox, "put")
-        .mockRejectedValueOnce(new Error("simulated IndexedDB quota failure"));
-      restoreOutboxPut = () => outboxPut.mockRestore();
-      await expect(
-        repo.addToList(
-          "list-1",
-          { kind: "manual", facts: { name: "Must roll back", lat: 38.72, lng: -9.15 } },
-          LATER,
-        ),
-      ).rejects.toThrow(/quota/i);
-
-      await expect(repo.getListBlocks("list-1")).resolves.toHaveLength(1);
-      expect(await publicationForList(repo, "list-1")).toEqual(before);
-      await expect(repo.db.publicationOutbox.count()).resolves.toBe(0);
-    } finally {
-      restoreOutboxPut?.();
       repo.db.close();
     }
   });
@@ -368,18 +342,17 @@ describe("Phase 5 durable publication jobs", () => {
         slug: "lost-key-guide",
         credentialId: "missing-credential",
         status: "queued",
-        localRevision: "local-revision-1",
         createdAt: NOW,
         updatedAt: NOW,
       });
-      await repo.db.publicationOutbox.put({
-        id: "publish-job-1",
+      await repo.db.publicationJobs.put({
         publicationId: "publication-1",
-        action: "publish",
-        localRevision: "local-revision-1",
-        payload: JSON.stringify({ v: 1, title: "Lost key", blocks: [], contentHash: "hash" }),
-        createdAt: NOW,
-        attempts: 0,
+        publish: {
+          key: "publish-job-1",
+          payload: JSON.stringify({ v: 1, title: "Lost key", blocks: [], contentHash: "hash" }),
+          createdAt: NOW,
+          attempts: 0,
+        },
       });
 
       await runPublicationOutbox(repo, async () => {
@@ -391,7 +364,7 @@ describe("Phase 5 durable publication jobs", () => {
         status: "failed",
         lastError: expect.stringMatching(/credential|token|key/i),
       });
-      await expect(repo.db.publicationOutbox.count()).resolves.toBe(1);
+      await expect(repo.db.publicationJobs.count()).resolves.toBe(1);
     } finally {
       repo.db.close();
     }
@@ -407,18 +380,17 @@ describe("Phase 5 durable publication jobs", () => {
         slug: "broken-guide",
         credentialId: "missing-credential",
         status: "queued",
-        localRevision: "broken-local-revision",
         createdAt: NOW,
         updatedAt: NOW,
       });
-      await repo.db.publicationOutbox.put({
-        id: "broken-job",
+      await repo.db.publicationJobs.put({
         publicationId: "broken-publication",
-        action: "publish",
-        localRevision: "broken-local-revision",
-        payload: JSON.stringify({ v: 1, title: "Broken", blocks: [], contentHash: "broken" }),
-        createdAt: NOW,
-        attempts: 0,
+        publish: {
+          key: "broken-job",
+          payload: JSON.stringify({ v: 1, title: "Broken", blocks: [], contentHash: "broken" }),
+          createdAt: NOW,
+          attempts: 0,
+        },
       });
       await repo.createList({
         id: "healthy-list",
@@ -463,15 +435,15 @@ describe("Phase 5 durable publication jobs", () => {
       if (!publication) throw new Error("publication fixture missing");
 
       await revokePublication(repo, publication.id, LATER, fetcher);
-      const failedJob = await repo.db.publicationOutbox.toCollection().first();
+      const failedJob = await repo.db.publicationJobs.toCollection().first();
       if (!failedJob) throw new Error("failed revoke job missing");
       expect.soft((await publicationForList(repo, "list-1"))?.status).toBe("failed");
 
       await revokePublication(repo, publication.id, LATEST, fetcher);
 
-      expect(new Set(seenDeleteKeys)).toEqual(new Set([failedJob.id]));
+      expect(new Set(seenDeleteKeys)).toEqual(new Set([failedJob.revoke?.key]));
       expect((await publicationForList(repo, "list-1"))?.status).toBe("revoked");
-      await expect(repo.db.publicationOutbox.count()).resolves.toBe(0);
+      await expect(repo.db.publicationJobs.count()).resolves.toBe(0);
     } finally {
       repo.db.close();
     }

@@ -3,8 +3,8 @@
  * the client generates a ≥256-bit editor token and persists it before the
  * first request; jobs are durable, idempotent (job id = Idempotency-Key), and
  * conditional (If-Match on the server revision). A failed or offline publish
- * never rolls back the public document; the UI derives "changes pending" from
- * localRevision vs lastPublishedLocalRevision.
+ * never rolls back the public document; the UI derives "changes pending" by
+ * comparing the target's current projection hash with lastPublishedHash.
  */
 import type { Publication } from "@placemarks/domain";
 import { normalizeSlug, RESERVED_SLUGS } from "@placemarks/schemas";
@@ -114,7 +114,6 @@ export async function publishList(
       slug: slugFor(list.name),
       credentialId,
       status: "queued",
-      localRevision: document.revision,
       createdAt: now,
       updatedAt: now,
     };
@@ -122,13 +121,12 @@ export async function publishList(
     publication = {
       ...publication,
       status: publication.status === "published" ? "queued" : publication.status,
-      localRevision: document.revision,
       updatedAt: now,
     };
   }
   await repo.db.transaction(
     "rw",
-    [repo.db.credentials, repo.db.publications, repo.db.publicationOutbox],
+    [repo.db.credentials, repo.db.publications, repo.db.publicationJobs],
     async () => {
       if (newCredential) await repo.db.credentials.put(newCredential);
       await repo.db.publications.put(publication);
@@ -179,7 +177,6 @@ export async function publishPost(
       slug: slugFor(post.title),
       credentialId,
       status: "queued",
-      localRevision: document.revision,
       createdAt: now,
       updatedAt: now,
     };
@@ -187,13 +184,12 @@ export async function publishPost(
     publication = {
       ...publication,
       status: publication.status === "published" ? "queued" : publication.status,
-      localRevision: document.revision,
       updatedAt: now,
     };
   }
   await repo.db.transaction(
     "rw",
-    [repo.db.credentials, repo.db.publications, repo.db.publicationOutbox],
+    [repo.db.credentials, repo.db.publications, repo.db.publicationJobs],
     async () => {
       if (newCredential) await repo.db.credentials.put(newCredential);
       await repo.db.publications.put(publication);
@@ -210,38 +206,32 @@ export function publicationChannel(publication: Publication): "lists" | "posts" 
 }
 
 /**
- * One durable publish job per publication: a retry reuses the failed job (and
- * its Idempotency-Key); a newer revision replaces the pending payload.
+ * One pending publish per publication. A retry reuses the failed job's key; a
+ * newer revision replaces the pending payload — unless the key has already been
+ * attempted, in which case it may have committed server-side and the new
+ * revision must go out under a fresh key.
  */
 async function enqueuePublish(
   repo: DexieRepository,
   publicationId: string,
-  localRevision: string,
+  hash: string,
   payload: string | undefined,
   now: string,
 ): Promise<void> {
-  const pending = (await repo.db.publicationOutbox.toArray()).find(
-    (job) => job.publicationId === publicationId && job.action === "publish",
-  );
-  if (pending && (pending.attempts === 0 || pending.localRevision === localRevision)) {
-    await repo.db.publicationOutbox.put({
-      ...pending,
-      localRevision,
-      ...(payload !== undefined ? { payload } : {}),
-    });
-    return;
-  }
-  // An attempted key may already have committed server-side — never attach a
-  // different payload to it; the new revision goes out under a fresh key.
-  if (pending) await repo.db.publicationOutbox.delete(pending.id);
-  await repo.db.publicationOutbox.put({
-    id: newId(),
-    publicationId,
-    action: "publish",
-    localRevision,
-    ...(payload !== undefined ? { payload } : {}),
-    createdAt: now,
-    attempts: 0,
+  const row = (await repo.db.publicationJobs.get(publicationId)) ?? { publicationId };
+  const pending = row.publish;
+  const reusable = pending && (pending.attempts === 0 || pending.hash === hash);
+  await repo.db.publicationJobs.put({
+    ...row,
+    publish: reusable
+      ? { ...pending, hash, ...(payload !== undefined ? { payload } : {}) }
+      : {
+          key: newId(),
+          hash,
+          ...(payload !== undefined ? { payload } : {}),
+          createdAt: now,
+          attempts: 0,
+        },
   });
 }
 
@@ -256,32 +246,19 @@ export async function revokePublication(
   // either the complete old state or the complete revocation transition.
   const scheduled = await repo.db.transaction(
     "rw",
-    [repo.db.publications, repo.db.publicationOutbox],
+    [repo.db.publications, repo.db.publicationJobs],
     async () => {
       const prior = await repo.db.publications.get(publicationId);
       if (!prior) return false;
-      const priorJobs = await repo.db.publicationOutbox
-        .where("publicationId")
-        .equals(publicationId)
-        .toArray();
-
-      // An explicit revocation supersedes any unsent update — a failed draft
-      // publish must never strand the unpublish.
-      for (const job of priorJobs) {
-        if (job.action === "publish") await repo.db.publicationOutbox.delete(job.id);
-      }
+      const row = await repo.db.publicationJobs.get(publicationId);
       await repo.db.publications.put({ ...prior, status: "revoking", updatedAt: now });
-      // A failed earlier revocation retries under its original idempotency key.
-      if (!priorJobs.some((job) => job.action === "revoke")) {
-        await repo.db.publicationOutbox.put({
-          id: newId(),
-          publicationId,
-          action: "revoke",
-          localRevision: prior.localRevision,
-          createdAt: now,
-          attempts: 0,
-        });
-      }
+      // Dropping `publish` is how an explicit revocation supersedes an unsent
+      // update; a failed earlier revocation keeps its original key so the retry
+      // is idempotent.
+      await repo.db.publicationJobs.put({
+        publicationId,
+        revoke: row?.revoke ?? { key: newId(), createdAt: now, attempts: 0 },
+      });
       return true;
     },
   );
@@ -310,17 +287,33 @@ function insecureShareTransport(): boolean {
  * Drain the durable outbox. Jobs process in order per publication; a completed
  * older job can never roll back a newer one (If-Match + captured payloads).
  */
+/** The hash the publication's target projects to right now, if it still exists. */
+async function currentProjectionHash(
+  repo: DexieRepository,
+  target: { kind: "list" | "post"; id: string },
+): Promise<string | undefined> {
+  try {
+    if (target.kind === "list") return (await projectList(repo, target.id))?.guide.contentHash;
+    // A post's document names its list's public slug, so the hash must be
+    // computed the same way publishPost computes it or every job looks stale.
+    const post = await repo.getPost(target.id);
+    if (!post) return undefined;
+    const listSlug = await publicListSlug(repo, post.listId);
+    return (await projectPost(repo, target.id, listSlug))?.guide.contentHash;
+  } catch {
+    return undefined; // database closing, or a target mid-teardown
+  }
+}
+
 export async function runPublicationOutbox(
   repo: DexieRepository,
   fetcher: typeof fetch = fetch,
 ): Promise<void> {
-  const jobs = (await repo.db.publicationOutbox.toArray()).sort((a, b) =>
-    a.createdAt < b.createdAt ? -1 : 1,
-  );
-  if (jobs.length > 0 && insecureShareTransport()) {
+  const rows = await repo.db.publicationJobs.toArray();
+  if (rows.length > 0 && insecureShareTransport()) {
     const nowIso = new Date().toISOString();
-    for (const publicationId of new Set(jobs.map((job) => job.publicationId))) {
-      const publication = await repo.db.publications.get(publicationId);
+    for (const row of rows) {
+      const publication = await repo.db.publications.get(row.publicationId);
       if (!publication) continue;
       await repo.db.publications.put({
         ...publication,
@@ -331,56 +324,56 @@ export async function runPublicationOutbox(
     }
     return;
   }
-  // A failing page never starves another: order holds per publication only.
-  const stalled = new Set<string>();
-  for (const job of jobs) {
-    if (stalled.has(job.publicationId)) continue;
-    const publication = await repo.db.publications.get(job.publicationId);
+  // One row per publication, so a failing page cannot starve another: each
+  // iteration is an independent publication.
+  for (const row of rows) {
+    const publication = await repo.db.publications.get(row.publicationId);
     if (!publication?.slug || !publication.credentialId) {
-      await repo.db.publicationOutbox.delete(job.id);
+      await repo.db.publicationJobs.delete(row.publicationId);
       continue;
     }
     const credential = await repo.db.credentials.get(publication.credentialId);
     if (!credential) {
-      // Losing the device-held token makes the page uneditable — the failure
-      // is explicit and recoverable (restore the encrypted secrets bundle).
+      // The editor token is device-held by design: losing the device means the
+      // page can no longer be updated or revoked from anywhere else.
       await repo.db.publications.put({
         ...publication,
         status: "failed",
         lastError:
-          "editor credential missing — restore it from an encrypted backup to update this page",
+          "editor credential missing — this page can only be updated from the device that published it",
         updatedAt: new Date().toISOString(),
       });
-      stalled.add(job.publicationId);
       continue;
     }
-    // A delayed older job must never overwrite a newer revision: a publish job
-    // with a captured payload is stale once the publication moved past it.
-    if (
-      job.action === "publish" &&
-      job.payload !== undefined &&
-      job.localRevision !== publication.localRevision
-    ) {
-      await repo.db.publicationOutbox.delete(job.id);
+    // Revocation always wins: precedence is which slot is set, not a scan.
+    const revoking = row.revoke !== undefined;
+    const job = row.revoke ?? row.publish;
+    if (!job) {
+      await repo.db.publicationJobs.delete(row.publicationId);
       continue;
     }
-    // A payload-less job is a passive dirty marker: only an explicit publish
-    // action for its publication attaches a payload and sends it. A launch
-    // retry (or a drain for another page) must never auto-publish local edits
-    // (spec/src/sharing.md: the page changes only when the creator publishes).
-    if (job.action === "publish" && job.payload === undefined) continue;
+    // A publish job carries the hash it was created for. If the library has
+    // moved on — a delayed or offline job resurfacing after a newer revision
+    // won — it must never overwrite the newer public document; the owner
+    // republishes instead. Revocations carry no revision and always apply.
+    if (!revoking) {
+      const currentHash = await currentProjectionHash(repo, publication.target);
+      if (job.hash === undefined || (currentHash !== undefined && job.hash !== currentHash)) {
+        await repo.db.publicationJobs.delete(row.publicationId);
+        continue;
+      }
+    }
     const payload = job.payload;
-    const localRevision = job.localRevision;
     const headers: Record<string, string> = {
       authorization: `Bearer ${credential.token}`,
-      "idempotency-key": job.id,
+      "idempotency-key": job.key,
       "content-type": "application/json",
     };
     const base = `${SHARE_API_URL}/s/${publicationChannel(publication)}`;
     const nowIso = new Date().toISOString();
 
     try {
-      if (job.action === "revoke") {
+      if (revoking) {
         const response = await fetcher(`${base}/${publication.slug}`, {
           method: "DELETE",
           headers: {
@@ -394,7 +387,7 @@ export async function runPublicationOutbox(
             status: "revoked",
             updatedAt: nowIso,
           });
-          await repo.db.publicationOutbox.delete(job.id);
+          await repo.db.publicationJobs.delete(row.publicationId);
           continue;
         }
         throw new Error(`revoke failed (${response.status.toString()})`);
@@ -453,59 +446,67 @@ export async function runPublicationOutbox(
         outcome = (await response.json()) as { slug: string; revision: number };
       }
 
-      const fresh = (await repo.db.publications.get(job.publicationId)) ?? publication;
-      // An edit that landed while this revision was in flight stays queued —
-      // the completed older publish must not clear it.
-      const superseded = fresh.localRevision !== publication.localRevision;
+      const fresh = (await repo.db.publications.get(row.publicationId)) ?? publication;
+      const current = await repo.db.publicationJobs.get(row.publicationId);
+      // An edit that landed while this revision was in flight left a newer
+      // pending publish; the completed older one must not clear it. Its key has
+      // now been sent for THIS payload, so the survivor gets a fresh one.
+      const superseded = current?.publish !== undefined && current.publish.hash !== job.hash;
       await repo.db.publications.put({
         ...fresh,
         slug: outcome.slug,
         status: superseded ? "queued" : "published",
         publishedRevision: outcome.revision,
-        ...(superseded ? {} : { localRevision }),
-        lastPublishedLocalRevision: localRevision,
-        lastPublishedHash: localRevision,
+        ...(job.hash !== undefined ? { lastPublishedHash: job.hash } : {}),
         publishedAt: nowIso,
         updatedAt: nowIso,
       });
-      if (!superseded) {
-        await repo.db.publicationOutbox.delete(job.id);
+      if (superseded && current?.publish) {
+        await repo.db.publicationJobs.put({
+          ...current,
+          publish: { ...current.publish, key: newId(), attempts: 0 },
+        });
       } else {
-        // The job's key has now been sent for THIS payload — the surviving
-        // dirty marker must go out under a fresh key, never a reused one.
-        const current = await repo.db.publicationOutbox.get(job.id);
-        if (current) {
-          await repo.db.publicationOutbox.delete(current.id);
-          await repo.db.publicationOutbox.put({ ...current, id: newId() });
-        }
+        await repo.db.publicationJobs.delete(row.publicationId);
       }
       count("publish.success");
     } catch (err) {
       reportError("publish", err);
-      const fresh = (await repo.db.publications.get(job.publicationId)) ?? publication;
+      const fresh = (await repo.db.publications.get(row.publicationId)) ?? publication;
       const transient =
         err instanceof TypeError || // network failure
         (err instanceof Error && RETRYABLE.has(Number(err.message.match(/\((\d+)\)/)?.[1])));
+      const message = err instanceof Error ? err.message : String(err);
       await repo.db.publications.put({
         ...fresh,
         status: "failed",
-        lastError: err instanceof Error ? err.message : String(err),
+        lastError: message,
         updatedAt: nowIso,
       });
-      await repo.db.publicationOutbox.put({
-        ...job,
-        attempts: job.attempts + 1,
-        lastError: err instanceof Error ? err.message : String(err),
-      });
+      const attempted = { ...job, attempts: job.attempts + 1, lastError: message };
       // Exhausted PUBLISH drafts are dropped — but a revocation is never
       // abandoned: the pending DELETE (under its original idempotency key) is
-      // what keeps Retry an unpublish and can never turn it back into a
-      // publish (spec/src/sharing.md §Failure isolation and revocation
-      // precedence).
-      if (!transient && job.attempts >= 5 && job.action === "publish") {
-        await repo.db.publicationOutbox.delete(job.id);
+      // what keeps Retry an unpublish and can never turn it back into a publish
+      // (spec/src/sharing.md §Failure isolation and revocation precedence).
+      if (!revoking && !transient && attempted.attempts >= 5) {
+        const remaining = await repo.db.publicationJobs.get(row.publicationId);
+        if (remaining?.revoke) {
+          await repo.db.publicationJobs.put({
+            publicationId: row.publicationId,
+            revoke: remaining.revoke,
+          });
+        } else {
+          await repo.db.publicationJobs.delete(row.publicationId);
+        }
+        continue;
       }
-      stalled.add(job.publicationId);
+      const stored = (await repo.db.publicationJobs.get(row.publicationId)) ?? {
+        publicationId: row.publicationId,
+      };
+      await repo.db.publicationJobs.put({
+        ...stored,
+        ...(revoking ? { revoke: attempted } : { publish: attempted }),
+      });
     }
   }
 }

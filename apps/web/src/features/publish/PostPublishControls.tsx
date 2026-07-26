@@ -7,7 +7,7 @@
  */
 import type { SharedGuide } from "@placemarks/schemas";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useDexieRepo } from "../../data/RepoContext";
 import { nowIso } from "../../lib/time";
 import { type ProjectionStats, projectPost } from "../share/project";
@@ -22,6 +22,7 @@ import {
   publishPost,
   revokePublication,
 } from "./publication";
+import { usePendingPublication } from "./usePendingPublication";
 
 export function PostPublishControls({ postId }: { postId: string }) {
   const repo = useDexieRepo();
@@ -43,43 +44,11 @@ export function PostPublishControls({ postId }: { postId: string }) {
     () => publicationForPost(repo, postId).catch(() => undefined),
     [repo, postId],
   );
-  const pendingChanges = useLiveQuery(async () => {
-    if (!publication?.lastPublishedLocalRevision) return false;
-    try {
-      const post = await repo.getPost(postId);
-      if (!post) return false;
-      const listSlug = await publicListSlug(repo, post.listId);
-      const projection = await projectPost(repo, postId, listSlug);
-      return projection
-        ? projection.guide.contentHash !== publication.lastPublishedLocalRevision
-        : false;
-    } catch {
-      return false; // database closing during teardown
-    }
-  }, [repo, postId, publication?.lastPublishedLocalRevision]);
-  // A failed revocation retries its pending DELETE — never a publish.
-  const [pendingRevoke, setPendingRevoke] = useState<boolean | undefined>(undefined);
-  useEffect(() => {
-    let cancelled = false;
-    setPendingRevoke(undefined);
-    const publicationId = publication?.id;
-    if (!publicationId) return;
-    repo.db.publicationOutbox
-      .toArray()
-      .then((jobs) => {
-        if (!cancelled) {
-          setPendingRevoke(
-            jobs.some((job) => job.publicationId === publicationId && job.action === "revoke"),
-          );
-        }
-      })
-      .catch(() => {
-        // database closing during teardown — stay unknown
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [repo, publication]);
+  const { pendingChanges, pendingRevoke } = usePendingPublication(
+    repo,
+    { kind: "post", id: postId },
+    publication,
+  );
 
   const act = (action: () => Promise<unknown>) => {
     setBusy(true);
@@ -305,8 +274,7 @@ export function PostPublishControls({ postId }: { postId: string }) {
               : ""}
           </span>
           {publicUrl &&
-          (status === "published" ||
-            (status === "queued" && publication.lastPublishedLocalRevision)) ? (
+          (status === "published" || (status === "queued" && publication.lastPublishedHash)) ? (
             <a
               href={publicUrl}
               target="_blank"

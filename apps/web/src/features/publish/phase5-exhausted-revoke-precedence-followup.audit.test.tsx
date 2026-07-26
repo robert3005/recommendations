@@ -22,21 +22,20 @@ describe("Phase 5 exhausted revocation precedence", () => {
       slug: "public-guide",
       credentialId: "credential-1",
       status: "failed",
-      localRevision: "guide-v1",
-      lastPublishedLocalRevision: "guide-v1",
+      lastPublishedHash: "guide-v1",
       publishedRevision: 1,
       lastError: "revoke failed (403)",
       createdAt: NOW,
       updatedAt: LATER,
     };
     const originalJob = {
-      id: "original-revoke-job",
       publicationId: publication.id,
-      action: "revoke" as const,
-      localRevision: publication.localRevision,
-      createdAt: NOW,
-      attempts: 5,
-      lastError: publication.lastError,
+      revoke: {
+        key: "original-revoke-job",
+        createdAt: NOW,
+        attempts: 5,
+        lastError: publication.lastError,
+      },
     };
 
     try {
@@ -54,16 +53,17 @@ describe("Phase 5 exhausted revocation precedence", () => {
         updatedAt: NOW,
       });
       await repo.db.publications.put(publication);
-      await repo.db.publicationOutbox.put(originalJob);
+      await repo.db.publicationJobs.put(originalJob);
 
       await runPublicationOutbox(
         repo,
         vi.fn<typeof fetch>(async () => new Response("forbidden", { status: 403 })),
       );
 
-      expect.soft(await repo.db.publicationOutbox.get(originalJob.id)).toMatchObject({
-        id: originalJob.id,
-        action: "revoke",
+      // An exhausted REVOKE is never abandoned — unlike a publish draft, it
+      // keeps its original key so Retry can only ever mean DELETE.
+      expect.soft((await repo.db.publicationJobs.get(publication.id))?.revoke).toMatchObject({
+        key: "original-revoke-job",
         attempts: 6,
       });
 
@@ -92,7 +92,7 @@ describe("Phase 5 exhausted revocation precedence", () => {
       await userEvent.click(retry);
       await waitFor(() => expect(retryRequests).toHaveLength(1));
 
-      expect(retryRequests).toEqual([{ method: "DELETE", idempotencyKey: originalJob.id }]);
+      expect(retryRequests).toEqual([{ method: "DELETE", idempotencyKey: originalJob.revoke.key }]);
     } finally {
       repo.db.close();
     }

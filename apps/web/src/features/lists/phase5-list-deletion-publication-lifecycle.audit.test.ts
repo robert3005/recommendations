@@ -35,8 +35,7 @@ describe("Phase 5 list-deletion publication lifecycle", () => {
         slug: "public-guide",
         credentialId: "credential-1",
         status: "published",
-        localRevision: "revision-1",
-        lastPublishedLocalRevision: "revision-1",
+        lastPublishedHash: "revision-1",
         publishedRevision: 1,
         createdAt: NOW,
         updatedAt: NOW,
@@ -71,8 +70,8 @@ describe("Phase 5 list-deletion publication lifecycle", () => {
       await expect(repo.db.publications.get(hosted.id)).resolves.toMatchObject({
         status: "revoking",
       });
-      await expect(repo.db.publicationOutbox.toArray()).resolves.toContainEqual(
-        expect.objectContaining({ publicationId: hosted.id, action: "revoke" }),
+      await expect(repo.db.publicationJobs.toArray()).resolves.toContainEqual(
+        expect.objectContaining({ publicationId: hosted.id, revoke: expect.anything() }),
       );
     } finally {
       repo.db.close();

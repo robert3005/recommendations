@@ -1152,7 +1152,7 @@ export async function importBackup(
       db.mutationOutbox,
       db.syncRevs,
       db.publications,
-      db.publicationOutbox,
+      db.publicationJobs,
     ],
     async () => {
       if (mode === "replace") {
@@ -1162,28 +1162,18 @@ export async function importBackup(
         // durable DELETE; never leave the previous public guide/note serving
         // stale content after "Replace everything".
         for (const publication of await db.publications.toArray()) {
-          const jobs = await db.publicationOutbox
-            .where("publicationId")
-            .equals(publication.id)
-            .toArray();
-          for (const job of jobs) {
-            if (job.action === "publish") await db.publicationOutbox.delete(job.id);
-          }
+          const row = await db.publicationJobs.get(publication.id);
           if (publication.status === "revoked") {
-            for (const job of jobs) await db.publicationOutbox.delete(job.id);
+            await db.publicationJobs.delete(publication.id);
             continue;
           }
           await db.publications.put({ ...publication, status: "revoking", updatedAt: now });
-          if (!jobs.some((job) => job.action === "revoke")) {
-            await db.publicationOutbox.put({
-              id: newId(),
-              publicationId: publication.id,
-              action: "revoke",
-              localRevision: publication.localRevision,
-              createdAt: now,
-              attempts: 0,
-            });
-          }
+          // Setting `revoke` drops any pending publish; an existing revoke keeps
+          // its key so the retry is the same request.
+          await db.publicationJobs.put({
+            publicationId: publication.id,
+            revoke: row?.revoke ?? { key: newId(), createdAt: now, attempts: 0 },
+          });
         }
         // Capture the old graph before clearing it.  Rows omitted by the
         // replacement are removals, not absence: synced peers need a durable

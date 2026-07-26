@@ -226,8 +226,7 @@ describe("sync causal protocol regressions", () => {
         slug: "list-1",
         credentialId: "credential-1",
         status: "published",
-        localRevision: "published-v1",
-        lastPublishedLocalRevision: "published-v1",
+        lastPublishedHash: "published-v1",
         publishedRevision: 1,
         createdAt: NOW,
         updatedAt: NOW,
@@ -250,16 +249,13 @@ describe("sync causal protocol regressions", () => {
         },
       };
       expect(await repo.applyRemoteChanges([update])).toBe(true);
-      const dirty = await repo.db.publications.get(publication.id);
-      expect(dirty?.status).toBe("queued");
-      expect((await repo.db.publicationOutbox.toArray()).map((job) => job.action)).toEqual([
-        "publish",
-      ]);
+      // A remote content edit changes what a republish WOULD send; it never
+      // schedules one. Only a target that no longer exists forces a transition.
+      expect((await repo.db.publications.get(publication.id))?.status).toBe("published");
+      expect(await repo.db.publicationJobs.count()).toBe(0);
 
-      const dirtyRevision = dirty?.localRevision;
       expect(await repo.applyRemoteChanges([update])).toBe(false);
-      expect((await repo.db.publications.get(publication.id))?.localRevision).toBe(dirtyRevision);
-      expect(await repo.db.publicationOutbox.count()).toBe(1);
+      expect(await repo.db.publicationJobs.count()).toBe(0);
 
       expect(
         await repo.applyRemoteChanges([
@@ -274,9 +270,7 @@ describe("sync causal protocol regressions", () => {
       expect(await repo.db.publications.get(publication.id)).toMatchObject({
         status: "revoking",
       });
-      expect((await repo.db.publicationOutbox.toArray()).map((job) => job.action)).toEqual([
-        "revoke",
-      ]);
+      expect((await repo.db.publicationJobs.get(publication.id))?.revoke).toBeDefined();
     } finally {
       repo.db.close();
     }

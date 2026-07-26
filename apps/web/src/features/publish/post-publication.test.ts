@@ -107,7 +107,7 @@ describe("hosted post publication", () => {
       });
       if (!publication) throw new Error("post publication missing");
       expect(publicationChannel(publication)).toBe("posts");
-      expect(await repo.db.publicationOutbox.count()).toBe(0);
+      expect(await repo.db.publicationJobs.count()).toBe(0);
     } finally {
       repo.db.close();
     }
@@ -124,7 +124,6 @@ describe("hosted post publication", () => {
         slug: "lisbon-weekend",
         credentialId: "credential-list",
         status: "queued" as const,
-        localRevision: "list-v1",
         createdAt: NOW,
         updatedAt: NOW,
       };
@@ -143,7 +142,7 @@ describe("hosted post publication", () => {
         ...listPublication,
         status: "published",
         publishedRevision: 1,
-        lastPublishedLocalRevision: "list-v1",
+        lastPublishedHash: "list-v1",
       });
       expect(await publicListSlug(repo, "list-1")).toBe("lisbon-weekend");
 

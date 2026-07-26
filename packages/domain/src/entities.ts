@@ -125,9 +125,12 @@ export interface Publication extends BaseEntity {
   slug?: string; // public and guessable; the path segment follows target.kind
   credentialId?: string;
   status: PublicationStatus;
-  localRevision: string;
-  lastPublishedLocalRevision?: string;
   publishedRevision?: number; // server revision / ETag value
+  /**
+   * The projection hash of the last successful publish. "Changes pending" is
+   * this compared with the target's current projection hash — one source of
+   * truth, rather than a dirty bit maintained on every write path.
+   */
   lastPublishedHash?: string;
   publishedAt?: string;
   lastError?: string;

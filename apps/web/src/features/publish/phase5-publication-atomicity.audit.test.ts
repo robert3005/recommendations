@@ -26,8 +26,6 @@ function hostedPublication(
     slug,
     credentialId,
     status: "published",
-    localRevision: `${id}-revision-1`,
-    lastPublishedLocalRevision: `${id}-revision-1`,
     publishedRevision: 1,
     lastPublishedHash: `${id}-revision-1`,
     publishedAt: NOW,
@@ -80,7 +78,7 @@ describe("Phase 5 aggregate publication transactions", () => {
 
       await expect(repo.getList("list-1")).resolves.toMatchObject({ name: "Original title" });
       await expect(repo.db.publications.get(publication.id)).resolves.toEqual(publication);
-      await expect(repo.db.publicationOutbox.count()).resolves.toBe(0);
+      await expect(repo.db.publicationJobs.count()).resolves.toBe(0);
     } finally {
       vi.restoreAllMocks();
       repo.db.close();
@@ -100,7 +98,7 @@ describe("Phase 5 per-publication outbox draining", () => {
       ),
       status: "queued" as const,
       publishedRevision: undefined,
-      lastPublishedLocalRevision: undefined,
+      lastPublishedHash: undefined,
     };
     const healthy = {
       ...hostedPublication(
@@ -111,7 +109,7 @@ describe("Phase 5 per-publication outbox draining", () => {
       ),
       status: "queued" as const,
       publishedRevision: undefined,
-      lastPublishedLocalRevision: undefined,
+      lastPublishedHash: undefined,
     };
     try {
       await repo.db.credentials.bulkPut([
@@ -129,36 +127,38 @@ describe("Phase 5 per-publication outbox draining", () => {
         },
       ]);
       await repo.db.publications.bulkPut([blocked, healthy]);
-      await repo.db.publicationOutbox.bulkPut([
+      await repo.db.publicationJobs.bulkPut([
         {
-          id: "job-blocked",
           publicationId: blocked.id,
-          action: "publish",
-          localRevision: blocked.localRevision,
-          payload: JSON.stringify({
-            v: 1,
-            kind: "list",
-            title: "Blocked guide",
-            blocks: [],
-            contentHash: blocked.localRevision,
-          }),
-          createdAt: NOW,
-          attempts: 0,
+          publish: {
+            key: "job-blocked",
+            hash: "blocked-hash",
+            payload: JSON.stringify({
+              v: 1,
+              kind: "list",
+              title: "Blocked guide",
+              blocks: [],
+              contentHash: "blocked-hash",
+            }),
+            createdAt: NOW,
+            attempts: 0,
+          },
         },
         {
-          id: "job-healthy",
           publicationId: healthy.id,
-          action: "publish",
-          localRevision: healthy.localRevision,
-          payload: JSON.stringify({
-            v: 1,
-            kind: "list",
-            title: "Healthy guide",
-            blocks: [],
-            contentHash: healthy.localRevision,
-          }),
-          createdAt: LATER,
-          attempts: 0,
+          publish: {
+            key: "job-healthy",
+            hash: "healthy-hash",
+            payload: JSON.stringify({
+              v: 1,
+              kind: "list",
+              title: "Healthy guide",
+              blocks: [],
+              contentHash: "healthy-hash",
+            }),
+            createdAt: LATER,
+            attempts: 0,
+          },
         },
       ]);
 
@@ -180,10 +180,11 @@ describe("Phase 5 per-publication outbox draining", () => {
       });
       await expect(repo.db.publications.get(healthy.id)).resolves.toMatchObject({
         status: "published",
-        lastPublishedLocalRevision: healthy.localRevision,
+        lastPublishedHash: "healthy-hash",
       });
-      expect((await repo.db.publicationOutbox.toArray()).map((job) => job.id)).toEqual([
-        "job-blocked",
+      // The retryable failure keeps only the blocked publication's job.
+      expect((await repo.db.publicationJobs.toArray()).map((row) => row.publicationId)).toEqual([
+        blocked.id,
       ]);
     } finally {
       repo.db.close();
@@ -233,11 +234,7 @@ describe("Phase 5 publish/revoke sequencing", () => {
       await expect(repo.db.publications.get(publication.id)).resolves.toMatchObject({
         status: "revoked",
       });
-      expect(
-        (await repo.db.publicationOutbox.toArray()).filter(
-          (job) => job.publicationId === publication.id && job.action === "revoke",
-        ),
-      ).toHaveLength(0);
+      expect((await repo.db.publicationJobs.get(publication.id))?.revoke).toBeUndefined();
     } finally {
       repo.db.close();
     }

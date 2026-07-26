@@ -121,17 +121,32 @@ export interface SyncConflictRow {
 }
 
 /** One durable publish/revoke job (spec/src/sharing.md §Local publication record). */
-export interface PublicationJobRow {
-  id: string; // doubles as the Idempotency-Key
-  publicationId: string;
-  action: "publish" | "revoke";
-  /** The local revision this job projects — completing an older job never rolls forward state back. */
-  localRevision: string;
+export interface PublicationJob {
+  /** Doubles as the Idempotency-Key; a retry reuses it. */
+  key: string;
   /** The exact serialized document this job publishes (captured at enqueue). */
   payload?: string;
+  /** The content hash this job projects — completing an older job never rolls state back. */
+  hash?: string;
   createdAt: string;
   attempts: number;
   lastError?: string;
+}
+
+/**
+ * One row per publication, keyed by it. At most one pending publish and one
+ * pending revoke, which makes precedence STRUCTURAL rather than a scan:
+ * scheduling a revoke drops the pending publish, scheduling a publish never
+ * drops a pending revoke, and the drain always takes the revoke first. A failed
+ * draft publish therefore cannot strand an unpublish
+ * (spec/src/sharing.md §Failure isolation and revocation precedence).
+ *
+ * Local-only: publication state and its credential never leave the device.
+ */
+export interface PublicationJobsRow {
+  publicationId: string;
+  publish?: PublicationJob;
+  revoke?: PublicationJob;
 }
 
 export interface ImportItemRow {
@@ -188,7 +203,7 @@ export class PlacemarksDb extends Dexie {
   importSources!: EntityTable<ImportSourceRow, "sourceKey">;
   publications!: EntityTable<Publication, "id">;
   credentials!: EntityTable<EditorCredential, "id">;
-  publicationOutbox!: EntityTable<PublicationJobRow, "id">;
+  publicationJobs!: EntityTable<PublicationJobsRow, "publicationId">;
   mutationOutbox!: EntityTable<MutationRow, "id">;
   syncState!: EntityTable<SyncStateRow, "id">;
   syncRevs!: EntityTable<SyncRevRow, "key">;
@@ -213,7 +228,7 @@ export class PlacemarksDb extends Dexie {
       importSources: "sourceKey",
       publications: "id, status, updatedAt",
       credentials: "id",
-      publicationOutbox: "id, publicationId, createdAt",
+      publicationJobs: "publicationId",
       mutationOutbox: "id, table, entityId, createdAt",
       syncState: "id",
       syncRevs: "key",

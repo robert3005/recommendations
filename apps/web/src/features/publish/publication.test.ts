@@ -9,6 +9,7 @@ import { markerAt, type ResolvedPoi } from "@placemarks/domain";
 import { createShareApp, MemoryStorage } from "@placemarks/share-service";
 import { describe, expect, it } from "vitest";
 import { DexieRepository } from "../../data/repo";
+import { projectList } from "../share/project";
 import {
   publicationForList,
   publishList,
@@ -63,7 +64,7 @@ describe("hosted publication", () => {
         slug: "lisbon-weekend",
         publishedRevision: 1,
       });
-      expect(publication?.lastPublishedLocalRevision).toBe(publication?.localRevision);
+      expect(publication?.lastPublishedHash).toBe(publication?.lastPublishedHash);
 
       const credential = publication?.credentialId
         ? await repo.db.credentials.get(publication.credentialId)
@@ -72,7 +73,7 @@ describe("hosted publication", () => {
       // The server holds only a hash of it.
       const stored = await storage.get("list", "lisbon-weekend");
       expect(stored?.tokenHash).not.toContain(credential?.token);
-      expect(await repo.db.publicationOutbox.count()).toBe(0);
+      expect(await repo.db.publicationJobs.count()).toBe(0);
     } finally {
       repo.db.close();
     }
@@ -135,14 +136,17 @@ describe("hosted publication", () => {
       let publication = await publicationForList(repo, "list-1");
       expect(publication?.status).toBe("failed");
       // Still exactly one durable job; the published revision is untouched.
-      expect(await repo.db.publicationOutbox.count()).toBe(1);
+      expect(await repo.db.publicationJobs.count()).toBe(1);
       expect(publication?.publishedRevision).toBe(1);
-      expect(publication?.lastPublishedLocalRevision).not.toBe(publication?.localRevision);
+      // Unpublished changes are visible as a projection-hash divergence.
+      const stale = await projectList(repo, "list-1");
+      expect(stale?.guide.contentHash).not.toBe(publication?.lastPublishedHash);
 
       await runPublicationOutbox(repo, fetcher);
       publication = await publicationForList(repo, "list-1");
       expect(publication).toMatchObject({ status: "published", publishedRevision: 2 });
-      expect(publication?.lastPublishedLocalRevision).toBe(publication?.localRevision);
+      const fresh = await projectList(repo, "list-1");
+      expect(fresh?.guide.contentHash).toBe(publication?.lastPublishedHash);
     } finally {
       repo.db.close();
     }

@@ -70,8 +70,7 @@ function hostedPublication(id: string, target: Publication["target"]): Publicati
     slug: id,
     credentialId: `${id}-credential`,
     status: "published",
-    localRevision: `${id}-revision-1`,
-    lastPublishedLocalRevision: `${id}-revision-1`,
+    lastPublishedHash: `${id}-revision-1`,
     publishedRevision: 1,
     createdAt: NOW,
     updatedAt: NOW,
@@ -285,9 +284,9 @@ describe("bottom-up teardown", () => {
     await expect(repo.db.publications.get(listPub.id)).resolves.toMatchObject({
       status: "revoking",
     });
-    expect(await repo.db.publicationOutbox.toArray()).toEqual(
+    expect(await repo.db.publicationJobs.toArray()).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ publicationId: listPub.id, action: "revoke" }),
+        expect.objectContaining({ publicationId: listPub.id, revoke: expect.anything() }),
       ]),
     );
   });
@@ -353,10 +352,9 @@ describe("bottom-up teardown", () => {
     });
     await expect(repo.db.publications.get(listPub.id)).resolves.toMatchObject({
       status: "published",
-      localRevision: listPub.localRevision,
     });
-    expect(await repo.db.publicationOutbox.toArray()).toEqual([
-      expect.objectContaining({ publicationId: postPub.id, action: "revoke" }),
+    expect(await repo.db.publicationJobs.toArray()).toEqual([
+      expect.objectContaining({ publicationId: postPub.id, revoke: expect.anything() }),
     ]);
   });
 });

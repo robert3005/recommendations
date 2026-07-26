@@ -483,18 +483,17 @@ describe("replace restore sync convergence", () => {
         target: { kind: "list", id: "old-list" },
         slug: "old-list",
         status: "published",
-        localRevision: "old-revision",
         createdAt: NOW,
         updatedAt: NOW,
       });
-      await replacingDevice.db.publicationOutbox.put({
-        id: "stale-publish-job",
+      await replacingDevice.db.publicationJobs.put({
         publicationId: "old-publication",
-        action: "publish",
-        localRevision: "old-revision",
-        payload: "stale public document",
-        createdAt: NOW,
-        attempts: 0,
+        publish: {
+          key: "stale-publish-job",
+          payload: "stale public document",
+          createdAt: NOW,
+          attempts: 0,
+        },
       });
       const staleMutationIds = new Set(
         (await replacingDevice.db.mutationOutbox.toArray()).map((m) => m.id),
@@ -532,9 +531,9 @@ describe("replace restore sync convergence", () => {
       await expect(replacingDevice.db.publications.get("old-publication")).resolves.toMatchObject({
         status: "revoking",
       });
-      const publicationJobs = await replacingDevice.db.publicationOutbox.toArray();
+      const publicationJobs = await replacingDevice.db.publicationJobs.toArray();
       expect(publicationJobs).toEqual([
-        expect.objectContaining({ publicationId: "old-publication", action: "revoke" }),
+        expect.objectContaining({ publicationId: "old-publication", revoke: expect.anything() }),
       ]);
 
       await peer.applyRemoteChanges(
