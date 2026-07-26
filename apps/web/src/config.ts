@@ -27,10 +27,11 @@ export const OSM_ATTRIBUTION = "© OpenStreetMap contributors" as const;
 export const OSM_ATTRIBUTION_HTML =
   '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>' as const;
 
-/** Viewport POI discovery budgets (spec/src/data-sources.md §Viewport discovery). */
+/** Nearby-places budgets (spec/src/data-sources.md §Viewport discovery). */
 export const DISCOVER_MIN_ZOOM = 15;
 export const DISCOVER_LIMIT = 60;
-export const DISCOVER_DEBOUNCE_MS = 400;
+/** Debounce for reporting the viewport — camera persistence, not discovery. */
+export const VIEWPORT_DEBOUNCE_MS = 400;
 
 /**
  * Share-service base URL (spec/src/sharing.md). Empty = same origin, which the

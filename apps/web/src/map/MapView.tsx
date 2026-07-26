@@ -9,7 +9,7 @@ import type { BBox, OsmElementRef } from "@placemarks/domain";
 import type { FeatureCollection } from "geojson";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import { DISCOVER_DEBOUNCE_MS, OSM_ATTRIBUTION } from "../config";
+import { OSM_ATTRIBUTION, VIEWPORT_DEBOUNCE_MS } from "../config";
 import { MARKER_ICON_PATHS, MULTI_LIST_PIN_COLOR } from "../lib/markers";
 
 export interface PlacePinFeature {
@@ -537,7 +537,7 @@ export function MapView({
           zoom: map.getZoom(),
           center: { lat: center.lat, lng: center.lng },
         });
-      }, DISCOVER_DEBOUNCE_MS);
+      }, VIEWPORT_DEBOUNCE_MS);
     });
 
     return () => {

@@ -2,12 +2,10 @@
  * The persistent map canvas (spec/src/map-view.md §The grammar): a singleton
  * in the app shell, outside the route outlet — it never navigates; it
  * re-projects whatever the pane shows. Owns the floating canvas chrome
- * (search, the list-toggles row — the primary filter, category chips behind
- * the search affordance for live-POI discovery, hints, the accessible
- * nearby list) and the map-borne dialogs (place sheet, candidate picker,
- * manual pin). While the pane fully occludes it, the canvas idles: rendering
- * input freezes, viewport discovery stops, and projection changes coalesce
- * into one camera move on reveal.
+ * (search, the list-toggles row — the primary filter, an explicit "Show
+ * nearby" request, hints, the accessible nearby list) and the map-borne
+ * dialogs (place sheet, candidate picker, manual pin). While the pane fully
+ * occludes it the canvas idles, applying nothing until reveal.
  */
 import type { BBox, ResolvedPoi } from "@placemarks/domain";
 import { displayFacts, refKey } from "@placemarks/domain";
@@ -19,7 +17,6 @@ import { useLibraryPlaces, useListMembership, useLists, usePostBlocks } from "..
 import { useDexieRepo, useRepo } from "../data/RepoContext";
 import { resolveReviewItem } from "../features/interop/importer";
 import { MarkerGlyph } from "../features/lists/MarkerGlyph";
-import { TOP_CATEGORIES, type TopCategory, topCategoryOf } from "../features/map/categories";
 import { CandidatePicker } from "../features/picker/CandidatePicker";
 import { ManualPinDialog } from "../features/picker/ManualPinDialog";
 import { SearchBar } from "../features/search/SearchBar";
@@ -118,11 +115,19 @@ export function MapCanvas({
   );
   const [manualAt, setManualAt] = useState<{ lat: number; lng: number } | null>(null);
   const [viewport, setViewport] = useState<Viewport | null>(null);
-  // Active top-level category chips; none active shows everything. The chips
-  // filter live-POI discovery only — demoted behind the search affordance
-  // (spec/src/map-view.md §The canvas).
-  const [activeFilters, setActiveFilters] = useState<ReadonlySet<TopCategory>>(new Set());
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  /**
+   * Nearby places is an explicit, one-shot request — OFF by default.
+   *
+   * Ambient discovery (fetch on every pan, filter with a category taxonomy) is
+   * the pre-pivot front door: "find every place again through our own map",
+   * which the interop pivot rejected because OSM search quality trails Google's
+   * in many regions. It was also the only thing giving the canvas a standing
+   * network appetite, and therefore the only reason a hidden map needed to be
+   * forcibly quietened. Asking is cheap; asking on every pan was not.
+   *
+   * Cleared on pan, so the answer never silently belongs to a different place.
+   */
+  const [showNearby, setShowNearby] = useState(false);
   // The starting camera: last viewport, else a timezone-derived approximation
   // (spec/src/map-view.md — no permission prompt, nothing leaves the device).
   const routeCamera =
@@ -148,8 +153,9 @@ export function MapCanvas({
   const privateMapProjection =
     projection.kind === "all" || projection.kind === "list" || projection.kind === "post";
   const interactiveChrome = privateMapProjection && !readOnly && !idle;
-  const discoverEnabled =
+  const nearbyEligible =
     interactiveChrome && viewport !== null && viewport.zoom >= DISCOVER_MIN_ZOOM;
+  const discoverEnabled = nearbyEligible && showNearby;
 
   // `enabled: false` does not cancel a request which was already running.
   // Full occlusion explicitly aborts the query's signal; unmounting search
@@ -159,6 +165,16 @@ export function MapCanvas({
       void queryClient.cancelQueries({ queryKey: ["discover"] });
     }
   }, [idle, privateMapProjection, queryClient, readOnly]);
+
+  // A pan makes the previous answer stale by definition: drop it rather than
+  // keep pins for somewhere the user is no longer looking.
+  const nearbyBboxKey = viewport ? roundBbox(viewport.bbox) : "";
+  const nearbyAskedFor = useRef(nearbyBboxKey);
+  useEffect(() => {
+    if (nearbyAskedFor.current === nearbyBboxKey) return;
+    nearbyAskedFor.current = nearbyBboxKey;
+    setShowNearby(false);
+  }, [nearbyBboxKey]);
 
   // Bounded, debounced viewport POI discovery (spec/src/data-sources.md
   // budgets). An idle canvas issues NO requests at all.
@@ -172,22 +188,16 @@ export function MapCanvas({
     staleTime: 5 * 60_000,
   });
 
-  const poiPins: PoiPinFeature[] = (
-    discoverEnabled
-      ? (discoverQuery.data?.pois ?? []).map((poi: ResolvedPoi) => ({
-          refKey: refKey(poi.osmRef),
-          ref: poi.osmRef,
-          name: poi.name ?? "Unnamed",
-          category: poi.category,
-          lat: poi.lat,
-          lng: poi.lng,
-        }))
-      : []
-  ).filter((pin) => {
-    if (activeFilters.size === 0) return true;
-    const top = topCategoryOf(pin.category);
-    return top !== undefined && activeFilters.has(top);
-  });
+  const poiPins: PoiPinFeature[] = discoverEnabled
+    ? (discoverQuery.data?.pois ?? []).map((poi: ResolvedPoi) => ({
+        refKey: refKey(poi.osmRef),
+        ref: poi.osmRef,
+        name: poi.name ?? "Unnamed",
+        category: poi.category,
+        lat: poi.lat,
+        lng: poi.lng,
+      }))
+    : [];
 
   // ---- The projection: which library places show, and which are dimmed ----
   const listsById = new Map((lists ?? []).map((l) => [l.id, l]));
@@ -545,38 +555,6 @@ export function MapCanvas({
           })}
         </fieldset>
       ) : null}
-      {/* Category chips (spec/src/map-view.md): demoted behind the search
-          affordance; they filter live-POI discovery only. */}
-      {interactiveChrome && filtersOpen ? (
-        <fieldset
-          className="absolute top-28 left-1/2 z-10 flex w-[calc(100%-1.5rem)] min-w-0 max-w-md -translate-x-1/2 flex-wrap gap-1.5"
-          aria-label="Filter nearby places by category"
-        >
-          {TOP_CATEGORIES.map(({ key, label }) => {
-            const active = activeFilters.has(key);
-            return (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={active}
-                onClick={() =>
-                  setActiveFilters((current) => {
-                    const next = new Set(current);
-                    if (next.has(key)) next.delete(key);
-                    else next.add(key);
-                    return next;
-                  })
-                }
-                className={`rounded-full px-2.5 py-0.5 text-xs font-medium shadow ${
-                  active ? "bg-stone-800 text-white" : "bg-white/95 text-stone-700"
-                }`}
-              >
-                {label}
-              </button>
-            );
-          })}
-        </fieldset>
-      ) : null}
       {/* The synchronized non-map equivalent of canvas results
           (spec/src/map-view.md §Accessibility): every discovered POI is
           reachable by keyboard and screen reader. */}
@@ -625,21 +603,19 @@ export function MapCanvas({
           </div>
           <button
             type="button"
-            aria-pressed={filtersOpen}
-            aria-label="Nearby category filters"
-            data-testid="toggle-category-chips"
-            onClick={() => setFiltersOpen((open) => !open)}
-            className={`shrink-0 rounded-full px-2.5 py-1.5 text-xs font-medium shadow ${
-              filtersOpen || activeFilters.size > 0
-                ? "bg-stone-800 text-white"
-                : "bg-white/95 text-stone-700"
+            aria-pressed={showNearby}
+            disabled={!nearbyEligible}
+            data-testid="show-nearby-places"
+            onClick={() => setShowNearby((on) => !on)}
+            className={`shrink-0 rounded-full px-2.5 py-1.5 text-xs font-medium shadow disabled:opacity-40 ${
+              showNearby ? "bg-stone-800 text-white" : "bg-white/95 text-stone-700"
             }`}
           >
-            ⚲
+            {showNearby ? "Hide nearby" : "Show nearby"}
           </button>
         </div>
       ) : null}
-      {interactiveChrome && viewport && !discoverEnabled ? (
+      {interactiveChrome && viewport && !nearbyEligible ? (
         <div className="absolute bottom-8 left-1/2 z-10 -translate-x-1/2 rounded-full bg-stone-800/85 px-3 py-1 text-xs text-white">
           Zoom in to see nearby places
         </div>

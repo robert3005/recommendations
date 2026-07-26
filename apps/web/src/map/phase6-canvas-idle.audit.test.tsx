@@ -242,8 +242,10 @@ describe("Phase 6 canvas idling at full scale", () => {
       expect(view.container.querySelector('[data-canvas-idle="1"]')).not.toBeNull();
       expect(fixture.captured?.idle).toBe(true);
 
-      // Revealing the canvas resumes discovery — fetches happen only then.
+      // Revealed and explicitly asked, the fetch happens — and only then.
       act(() => usePaneStore.setState({ pane: "split" }));
+      const ask = await screen.findByTestId("show-nearby-places");
+      act(() => ask.click());
       await waitFor(() => expect(fixture.discover).toHaveBeenCalled());
     } finally {
       view.unmount();
@@ -292,6 +294,8 @@ describe("Phase 6 canvas idling at full scale", () => {
     );
     const { queryClient, view } = renderCanvas();
     try {
+      const ask = await screen.findByTestId("show-nearby-places");
+      act(() => ask.click());
       await waitFor(() => expect(fixture.lastDiscoverSignal).toBeDefined());
       expect(fixture.lastDiscoverSignal?.aborted).toBe(false);
       act(() => usePaneStore.setState({ pane: "expanded" }));

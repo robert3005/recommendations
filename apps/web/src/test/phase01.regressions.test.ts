@@ -184,6 +184,9 @@ test("a viewport-discovery failure exposes an error state on the map surface", a
         ),
       ),
     );
+    // Nearby places is an explicit request now, so ask for it.
+    const ask = await screen.findByTestId("show-nearby-places");
+    ask.click();
     await waitFor(() => expect(phase01.discover).toHaveBeenCalledOnce());
 
     expect(

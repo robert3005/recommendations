@@ -72,8 +72,11 @@ describe("Phase 1 bounded viewport discovery", () => {
       );
 
       await waitFor(() => expect(screen.getByTestId("map-canvas")).toBeInTheDocument());
-      expect(phase01.discover).not.toHaveBeenCalled();
+      // Below the minimum zoom the request is not offered, and the control
+      // says why rather than failing silently when pressed.
+      expect(screen.getByTestId("show-nearby-places")).toBeDisabled();
       expect(screen.getByText(/zoom in.*places|places.*zoom in/i)).toBeInTheDocument();
+      expect(phase01.discover).not.toHaveBeenCalled();
     } finally {
       queryClient.clear();
       repo.db.close();
