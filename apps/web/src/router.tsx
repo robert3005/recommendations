@@ -11,9 +11,10 @@ import {
   createRouter,
   Link,
   Outlet,
+  useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useReviewingCount } from "./data/hooks";
 import { ReviewPage } from "./features/interop/ReviewPage";
 import { ListPage } from "./features/lists/ListPage";
@@ -64,6 +65,21 @@ function RootLayout() {
   const setDesktop = usePaneStore((s) => s.setDesktop);
   const collapse = usePaneStore((s) => s.collapse);
   const expand = usePaneStore((s) => s.expand);
+
+  // The settings gear toggles: open remembers where it came from and makes
+  // the notebook visible; a second press returns there.
+  const appRouter = useRouter();
+  const onSettings = pathname === "/settings";
+  const settingsReturnTo = useRef("/");
+  const toggleSettings = () => {
+    if (onSettings) {
+      appRouter.history.push(settingsReturnTo.current);
+      return;
+    }
+    settingsReturnTo.current = pathname;
+    if (desktop === "collapsed") setDesktop("split");
+    appRouter.history.push("/settings");
+  };
 
   // The shell owns the form-factor switch: pane geometry follows the same
   // breakpoint the CSS uses (md = 768px).
@@ -197,16 +213,24 @@ function RootLayout() {
       {/* Settings is hidden (2026-07-26 — search-first chrome): a floating
           deep-chip gear pinned bottom-left of the shell. The collapsed
           notebook's reopen chip sits at bottom-16 in the same corner, so the
-          two stack — gear below, reopen above — and never overlap. */}
+          two stack — gear below, reopen above — and never overlap. The gear
+          is a toggle: opening from chrome must also make the notebook visible
+          (a collapsed pane expands back to split, or the page would load
+          unseen), and pressing it on /settings returns to the page it came
+          from — the library home when settings was opened by deep link. */}
       {!readOnly ? (
-        <Link
-          to="/settings"
+        <button
+          type="button"
           aria-label="Settings"
+          aria-pressed={onSettings}
           data-testid="settings-gear"
-          className="absolute bottom-3 left-3 z-30 rounded-crisp border border-hairline bg-paper px-2.5 py-1.5 text-sm text-ink"
+          onClick={toggleSettings}
+          className={`absolute bottom-3 left-3 z-30 rounded-crisp border border-hairline px-2.5 py-1.5 text-sm ${
+            onSettings ? "bg-ink text-paper" : "bg-paper text-ink"
+          }`}
         >
           <span aria-hidden="true">⚙</span>
-        </Link>
+        </button>
       ) : null}
     </div>
   );

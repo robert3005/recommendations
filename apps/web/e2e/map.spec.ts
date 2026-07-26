@@ -195,6 +195,19 @@ test.describe("map display", () => {
     await page.getByTestId("pane-reopen").click();
     await expect(shell).toHaveAttribute("data-pane-state", "split");
 
+    // The gear is a toggle that always shows its page: pressed while the
+    // notebook is collapsed it expands the pane so Settings is actually
+    // visible; pressed again it returns to the page it came from.
+    await page.getByTestId("pane-collapse").click();
+    await expect(shell).toHaveAttribute("data-pane-state", "collapsed");
+    await page.getByTestId("settings-gear").click();
+    await expect(shell).toHaveAttribute("data-pane-state", "split");
+    await expect(page.getByTestId("settings-page")).toBeVisible();
+    await expect(page.getByTestId("settings-gear")).toHaveAttribute("aria-pressed", "true");
+    await page.getByTestId("settings-gear").click();
+    await expect(page.getByTestId("lists-page")).toBeVisible();
+    await expect(page.getByTestId("settings-gear")).toHaveAttribute("aria-pressed", "false");
+
     // Notebook routes render designed states, never blanks: Settings behind
     // the bottom-left gear chip, /review deep-linkable without a pill.
     await page.goto("/review");
@@ -202,6 +215,9 @@ test.describe("map display", () => {
     await expect(page.getByTestId("review-empty")).toBeVisible();
     await page.getByTestId("settings-gear").click();
     await expect(page.getByTestId("settings-page")).toBeVisible();
+    // Toggling off after arriving from /review returns to /review.
+    await page.getByTestId("settings-gear").click();
+    await expect(page.getByTestId("review-page")).toBeVisible();
 
     // Public viewer routes too: unknown slugs are answers, not blank pages,
     // under read-only chrome (spec/src/sharing.md §The public viewer).

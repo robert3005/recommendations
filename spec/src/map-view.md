@@ -21,7 +21,9 @@ DESKTOP — every route renders notebook + canvas      MOBILE — sheet over can
 - **The top bar is for search.** The notebook header is a small home affordance — the wordmark,
   back to `/` — with the add-a-place field filling the remaining width, beside the pane step
   buttons. There is no persistent nav: **Settings** hides behind a small floating gear chip
-  pinned bottom-left of the shell, and **Review** is exposed only while an import batch is
+  pinned bottom-left of the shell — a toggle that expands a collapsed notebook so the page is
+  actually visible, and returns to the page it came from when pressed again — and **Review**
+  is exposed only while an import batch is
   reviewing — a pill in the top bar carrying the review-queue count, gone when the queue
   closes; `/review` itself stays deep-linkable. Public pages keep the read-only chrome.
 - **Two desktop widths.** The notebook is **split** (the default) or **collapsed** (full-bleed
