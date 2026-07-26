@@ -19,9 +19,15 @@ function useDebounced<T>(value: T, delayMs: number): T {
 export interface SearchBarProps {
   onSelect: (result: SearchResult) => void;
   bias?: { lat: number; lng: number };
+  /**
+   * Offered whatever was typed or pasted. Returning true means the caller took
+   * it as a map link and the field should clear rather than start a geocoder
+   * query for a URL, which never matches anything.
+   */
+  onPasteLink?: (raw: string) => boolean;
 }
 
-export function SearchBar({ onSelect, bias }: SearchBarProps) {
+export function SearchBar({ onSelect, bias, onPasteLink }: SearchBarProps) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -77,10 +83,19 @@ export function SearchBar({ onSelect, bias }: SearchBarProps) {
         aria-controls={listboxId}
         aria-autocomplete="list"
         aria-label="Search places"
-        placeholder="Search places, addresses…"
+        placeholder="Search places, or paste a map link"
         value={query}
         onChange={(e) => {
-          setQuery(e.target.value);
+          const next = e.target.value;
+          // A URL is never a geocoder query: hand it to the link flow instead of
+          // sending it to Photon, which would only ever return nothing.
+          if (onPasteLink?.(next) === true) {
+            setQuery("");
+            setOpen(false);
+            setActiveIndex(-1);
+            return;
+          }
+          setQuery(next);
           setOpen(true);
           setActiveIndex(-1);
         }}

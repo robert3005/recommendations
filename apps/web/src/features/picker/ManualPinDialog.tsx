@@ -3,14 +3,9 @@
  * lists (spec/src/data-model.md: membership is existence), so the pin is born
  * into one: an existing list or a new one created here.
  */
-import type { List, ListMarker } from "@placemarks/domain";
+import type { List } from "@placemarks/domain";
 import { useEffect, useRef, useState } from "react";
-import { suggestMarker } from "../../lib/markers";
-import { MarkerSwatches } from "../lists/MarkerSwatches";
-
-export type ManualPinListTarget =
-  | { kind: "existing"; listId: string }
-  | { kind: "new"; name: string; marker: ListMarker };
+import { type ListTarget, ListTargetPicker } from "../lists/ListTargetPicker";
 
 export interface ManualPinDialogProps {
   lat: number;
@@ -18,7 +13,7 @@ export interface ManualPinDialogProps {
   lists: List[] | undefined;
   onSave: (
     facts: { name: string; lat: number; lng: number; category?: string },
-    listTarget: ManualPinListTarget,
+    listTarget: ListTarget,
   ) => void;
   onCancel: () => void;
 }
@@ -34,19 +29,7 @@ export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPin
 
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
-  const [listChoice, setListChoice] = useState<string>((lists ?? []).length > 0 ? "" : "__new__");
-  const [newListName, setNewListName] = useState("");
-  const [marker, setMarker] = useState<ListMarker>();
-
-  const selectedMarker = marker ?? suggestMarker(lists ?? []);
-  const listTarget: ManualPinListTarget | undefined =
-    listChoice === "__new__"
-      ? newListName.trim() !== ""
-        ? { kind: "new", name: newListName.trim(), marker: selectedMarker }
-        : undefined
-      : listChoice !== ""
-        ? { kind: "existing", listId: listChoice }
-        : undefined;
+  const [listTarget, setListTarget] = useState<ListTarget>();
   const canSave = name.trim() !== "" && listTarget !== undefined;
 
   return (
@@ -93,42 +76,7 @@ export function ManualPinDialog({ lat, lng, lists, onSave, onCancel }: ManualPin
             className="mt-1 w-full rounded border border-rule px-2 py-1.5 text-sm"
           />
         </label>
-        <label className="mt-2 block text-xs font-medium text-ink-2">
-          List
-          <select
-            value={listChoice}
-            onChange={(e) => setListChoice(e.target.value)}
-            className="mt-1 w-full rounded border border-rule px-2 py-1.5 text-sm"
-            data-testid="manual-list-choice"
-          >
-            <option value="">Choose a list…</option>
-            {(lists ?? []).map((list) => (
-              <option key={list.id} value={list.id}>
-                {list.name}
-              </option>
-            ))}
-            <option value="__new__">+ New list…</option>
-          </select>
-        </label>
-        {listChoice === "__new__" ? (
-          <div className="mt-2">
-            <input
-              type="text"
-              value={newListName}
-              onChange={(e) => setNewListName(e.target.value)}
-              placeholder="New list name"
-              aria-label="New list name"
-              className="w-full rounded border border-rule px-2 py-1.5 text-sm"
-              data-testid="manual-new-list-name"
-            />
-            <MarkerSwatches
-              radioName="manual-list-marker"
-              selected={selectedMarker}
-              used={(lists ?? []).map((l) => l.marker)}
-              onSelect={setMarker}
-            />
-          </div>
-        ) : null}
+        <ListTargetPicker lists={lists} onChange={setListTarget} idPrefix="manual" />
         <p className="mt-2 text-xs text-ink-3">
           at {lat.toFixed(5)}, {lng.toFixed(5)}
         </p>

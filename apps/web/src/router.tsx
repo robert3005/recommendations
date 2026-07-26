@@ -22,6 +22,7 @@ import { ListsPage } from "./features/lists/ListsPage";
 import { PlaceSheet } from "./features/place/PlaceSheet";
 import { PostEditorPage } from "./features/posts/PostEditorPage";
 import { PostPage } from "./features/posts/PostPage";
+import { PlaceSearch } from "./features/search/PlaceSearch";
 import { HostedPostViewerPage } from "./features/share/HostedPostViewerPage";
 import { HostedViewerPage } from "./features/share/HostedViewerPage";
 import { SnapshotViewerPage } from "./features/share/SnapshotViewerPage";
@@ -142,6 +143,14 @@ function RootLayout() {
             ⟩
           </button>
         </header>
+        {/* Search is a front door, so it sits in the pane where the app opens —
+            not in the map chrome, which is hidden at launch. Rendered once:
+            the canvas carries its own copy only while the pane is collapsed. */}
+        {!readOnly ? (
+          <div className="shrink-0 border-b border-rule px-3 py-2">
+            <PlaceSearch />
+          </div>
+        ) : null}
         <main className="min-h-0 flex-1 overflow-y-auto" data-testid="pane-outlet">
           <Outlet />
         </main>

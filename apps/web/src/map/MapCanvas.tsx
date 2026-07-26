@@ -19,7 +19,7 @@ import { resolveReviewItem } from "../features/interop/importer";
 import { MarkerGlyph } from "../features/lists/MarkerGlyph";
 import { CandidatePicker } from "../features/picker/CandidatePicker";
 import { ManualPinDialog } from "../features/picker/ManualPinDialog";
-import { SearchBar } from "../features/search/SearchBar";
+import { PlaceSearch } from "../features/search/PlaceSearch";
 import { newId } from "../lib/id";
 import { nowIso } from "../lib/time";
 import { initialViewport, persistViewport } from "../lib/viewport";
@@ -54,7 +54,6 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
   const selectPlace = useUiStore((s) => s.selectPlace);
   const openPicker = useUiStore((s) => s.openPicker);
   const closePicker = useUiStore((s) => s.closePicker);
-  const requestFlyTo = useUiStore((s) => s.requestFlyTo);
   const placingImportItemId = useUiStore((s) => s.placingImportItemId);
   const stopPlacingImportItem = useUiStore((s) => s.stopPlacingImportItem);
   const setImportReviewError = useUiStore((s) => s.setImportReviewError);
@@ -153,7 +152,6 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
     : [];
 
   // ---- The projection: which library places show, and which are dimmed ----
-  const _listsById = new Map((lists ?? []).map((l) => [l.id, l]));
   const focusPlaceIds = (() => {
     if (projection.kind === "list") {
       return new Set(
@@ -473,20 +471,15 @@ export function MapCanvas({ readOnly = false }: MapCanvasProps) {
         </section>
       ) : null}
       {interactiveChrome ? (
-        <div className="absolute top-3 left-1/2 z-10 flex w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 items-start gap-1.5">
-          <div className="min-w-0 flex-1">
-            <SearchBar
-              onSelect={(result) => {
-                selectOsm(result.ref, {
-                  name: result.name,
-                  lat: result.lat,
-                  lng: result.lng,
-                  ...(result.category ? { category: result.category } : {}),
-                });
-                requestFlyTo({ lat: result.lat, lng: result.lng, zoom: 17 });
-              }}
-            />
-          </div>
+        <div className="absolute top-3 left-1/2 z-10 flex w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 items-start justify-end gap-1.5">
+          {/* One search field on screen at a time: the pane owns it unless the
+              pane is collapsed, in which case the canvas is all there is.
+              "Show nearby" is a map action, so it stays either way. */}
+          {pane === "collapsed" ? (
+            <div className="min-w-0 flex-1">
+              <PlaceSearch />
+            </div>
+          ) : null}
           <button
             type="button"
             aria-pressed={showNearby}
