@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { DexieRepository } from "./repo";
 
 const NOW = "2026-07-20T10:00:00.000Z";
-const EARLIER = "2026-07-20T08:00:00.000Z";
+const _EARLIER = "2026-07-20T08:00:00.000Z";
 const LATER = "2026-07-20T11:00:00.000Z";
 
 function repoFor(label: string): DexieRepository {
@@ -45,31 +45,18 @@ describe("sync graph repair protocol regressions", () => {
       const currentA = { type: "node" as const, id: "2" };
       const currentB = { type: "way" as const, id: "9" };
       const currentC = { type: "relation" as const, id: "77" };
-      const sharedOld = {
-        ref: oldNode,
-        linkedAt: EARLIER,
-        unlinkedAt: "2026-07-20T09:00:00.000Z",
-        reason: "replaced" as const,
-      };
       const a = {
         ...createOsmPlace("a-place", poi(currentA, "A"), NOW),
-        osmRefHistory: [sharedOld],
+        pastOsmRefs: [oldNode],
       };
       const b = {
         ...createOsmPlace("b-place", poi(currentB, "B"), NOW),
-        osmRefHistory: [sharedOld],
+        pastOsmRefs: [oldNode],
       };
       const c = {
         ...createOsmPlace("c-place", poi(currentC, "C"), NOW),
         // C overlaps only B's current ref, making the component transitive.
-        osmRefHistory: [
-          {
-            ref: currentB,
-            linkedAt: EARLIER,
-            unlinkedAt: "2026-07-20T09:30:00.000Z",
-            reason: "replaced" as const,
-          },
-        ],
+        pastOsmRefs: [currentB],
       };
       const rows = [a, b, c];
       await repo.applyRemoteChanges([
@@ -111,7 +98,7 @@ describe("sync graph repair protocol regressions", () => {
         ...(merged.currentOsmRef
           ? [`${merged.currentOsmRef.type}/${merged.currentOsmRef.id}`]
           : []),
-        ...merged.osmRefHistory.map((entry) => `${entry.ref.type}/${entry.ref.id}`),
+        ...merged.pastOsmRefs.map((ref) => `${ref.type}/${ref.id}`),
       ]);
       expect(evidenceRefs).toEqual(new Set(["node/1", "node/2", "way/9", "relation/77"]));
       expect((await repo.listIdsForPlace("a-place")).sort()).toEqual([

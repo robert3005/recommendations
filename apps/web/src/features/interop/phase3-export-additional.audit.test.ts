@@ -20,7 +20,7 @@ function exportPayload(payload: string): Record<string, string> | undefined {
   const place: Place = {
     id: "place",
     origin: "import",
-    osmRefHistory: [],
+    pastOsmRefs: [],
     manual: { name: payload, lat: 51.5, lng: -0.12, address: payload },
     resolutionState: "unlinked",
     createdAt: NOW,
@@ -57,7 +57,7 @@ describe("Phase 3 lossless note export", () => {
     const place: Place = {
       id: "place",
       origin: "import",
-      osmRefHistory: [],
+      pastOsmRefs: [],
       manual: { name: "Code café", lat: 51.5, lng: -0.12 },
       resolutionState: "unlinked",
       createdAt: NOW,

@@ -265,12 +265,7 @@ type PlaceLike = {
   currentOsmRef?: { type: string; id: string };
   currentOsmLinkedAt?: string;
   updatedAt?: string;
-  osmRefHistory?: {
-    ref: { type: string; id: string };
-    linkedAt: string;
-    unlinkedAt?: string;
-    reason?: string;
-  }[];
+  pastOsmRefs?: { type: string; id: string }[];
   resolutionState?: string;
 };
 
@@ -307,8 +302,8 @@ function sourceTimestamp(row: Record<string, unknown>, hlc: Hlc): string {
   return new Date(decodeHlc(hlc).millis).toISOString();
 }
 
-function placeHistoryKey(entry: NonNullable<PlaceLike["osmRefHistory"]>[number]): string {
-  return `${entry.linkedAt}\0${entry.unlinkedAt ?? ""}\0${entry.ref.type}/${entry.ref.id}\0${entry.reason ?? ""}`;
+function placeRefKey(ref: { type: string; id: string }): string {
+  return `${ref.type}/${ref.id}`;
 }
 
 const sameRefLoose = (
@@ -421,36 +416,29 @@ export function mergeRemoteChange(change: RemoteChange, context: MergeContext): 
     const existing = local as PlaceLike;
     const winner = (incomingWins ? change.row : local) as PlaceLike & Record<string, unknown>;
     const loser = (incomingWins ? local : change.row) as PlaceLike;
-    const localHistory = existing.osmRefHistory ?? [];
-    const incomingHistory = incoming.osmRefHistory ?? [];
-    const historyByKey = new Map(
-      [...localHistory, ...incomingHistory].map((entry) => [placeHistoryKey(entry), entry]),
+    // Former refs union across both sides; the losing current ref joins them,
+    // so no device forgets an element this place was ever bound to.
+    const pastByKey = new Map(
+      [...(existing.pastOsmRefs ?? []), ...(incoming.pastOsmRefs ?? [])].map((ref) => [
+        placeRefKey(ref),
+        ref,
+      ]),
     );
     const conflictingRelink =
       existing.currentOsmRef !== undefined &&
       incoming.currentOsmRef !== undefined &&
       !sameRefLoose(existing.currentOsmRef, incoming.currentOsmRef);
     if (conflictingRelink && loser.currentOsmRef) {
-      const losingRev = incomingWins ? (context.localRev ?? change.hlc) : change.hlc;
-      const completed = {
-        ref: loser.currentOsmRef,
-        linkedAt:
-          loser.currentOsmLinkedAt ??
-          loser.updatedAt ??
-          sourceTimestamp(loser as Record<string, unknown>, losingRev),
-        unlinkedAt: sourceTimestamp(loser as Record<string, unknown>, losingRev),
-        reason: "merged" as const,
-      };
-      historyByKey.set(placeHistoryKey(completed), completed);
+      pastByKey.set(placeRefKey(loser.currentOsmRef), loser.currentOsmRef);
     }
-    const mergedHistory = [...historyByKey.entries()]
+    const mergedPast = [...pastByKey.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([, entry]) => entry);
+      .map(([, ref]) => ref);
     return {
       apply: true,
       row: {
         ...winner,
-        osmRefHistory: mergedHistory,
+        pastOsmRefs: mergedPast,
         ...(conflictingRelink ? { resolutionState: "needs-review" } : {}),
       },
       reconcile: true,

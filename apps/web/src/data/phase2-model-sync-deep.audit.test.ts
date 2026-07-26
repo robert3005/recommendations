@@ -54,7 +54,7 @@ describe("Phase 2 immutable durable identity at the repository boundary", () => 
       );
       await repo.updatePlace(relinked);
       const before = await repo.getPlace(created.id);
-      if (!before?.firstSeen || before.osmRefHistory.length !== 1) {
+      if (!before?.firstSeen || before.pastOsmRefs.length !== 1) {
         throw new Error("identity fixture is incomplete");
       }
 
@@ -66,7 +66,7 @@ describe("Phase 2 immutable durable identity at the repository boundary", () => 
           ...before,
           origin: "manual",
           firstSeen: { ...before.firstSeen, name: "forged first observation" },
-          osmRefHistory: [],
+          pastOsmRefs: [],
           updatedAt: "2026-07-19T12:00:00.000Z",
         })
         .catch(() => undefined);
@@ -74,7 +74,7 @@ describe("Phase 2 immutable durable identity at the repository boundary", () => 
       const after = await repo.getPlace(created.id);
       expect(after?.origin).toBe("osm");
       expect(after?.firstSeen).toEqual(before.firstSeen);
-      expect(after?.osmRefHistory).toEqual(before.osmRefHistory);
+      expect(after?.pastOsmRefs).toEqual(before.pastOsmRefs);
     } finally {
       repo.db.close();
     }

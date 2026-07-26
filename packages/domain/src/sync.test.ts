@@ -231,14 +231,15 @@ describe("mergeRemoteChange", () => {
     });
   });
 
-  it("merges place link history append-only and flags conflicting relinks needs-review", () => {
-    const localHistory = [
-      { ref: { type: "node", id: "1" }, linkedAt: "t1", unlinkedAt: "t2" },
-      { ref: { type: "node", id: "2" }, linkedAt: "t2", unlinkedAt: "t3" },
+  it("unions former OSM refs and flags conflicting relinks needs-review", () => {
+    // Overlapping sets: node/1 is on both sides and must not duplicate.
+    const localPast = [
+      { type: "node", id: "1" },
+      { type: "node", id: "2" },
     ];
-    const remoteHistory = [
-      { ref: { type: "node", id: "1" }, linkedAt: "t1", unlinkedAt: "t2" },
-      { ref: { type: "way", id: "9" }, linkedAt: "t2", unlinkedAt: "t4" },
+    const remotePast = [
+      { type: "node", id: "1" },
+      { type: "way", id: "9" },
     ];
     const decision = mergeRemoteChange(
       change({
@@ -247,7 +248,7 @@ describe("mergeRemoteChange", () => {
         row: {
           id: "place-1",
           currentOsmRef: { type: "way", id: "77" },
-          osmRefHistory: remoteHistory,
+          pastOsmRefs: remotePast,
           resolutionState: "resolved",
         },
       }),
@@ -255,7 +256,7 @@ describe("mergeRemoteChange", () => {
         local: {
           id: "place-1",
           currentOsmRef: { type: "node", id: "55" },
-          osmRefHistory: localHistory,
+          pastOsmRefs: localPast,
           resolutionState: "resolved",
         },
         localRev: "000000000004000:000000:a",
@@ -266,16 +267,15 @@ describe("mergeRemoteChange", () => {
     );
     if (!decision.apply) throw new Error("expected apply");
     const merged = decision.row as {
-      osmRefHistory: { ref: { type: string; id: string } }[];
+      pastOsmRefs: { type: string; id: string }[];
       resolutionState: string;
     };
-    // Union of both histories — nothing lost, nothing duplicated.
-    expect(
-      new Set(merged.osmRefHistory.map((entry) => `${entry.ref.type}/${entry.ref.id}`)),
-    ).toEqual(new Set(["node/1", "way/9", "node/2", "node/55"]));
-    expect(merged.osmRefHistory).toContainEqual(
-      expect.objectContaining({ ref: { type: "node", id: "55" }, reason: "merged" }),
+    // Union of both sides' former refs — nothing lost, nothing duplicated.
+    expect(new Set(merged.pastOsmRefs.map((ref) => `${ref.type}/${ref.id}`))).toEqual(
+      new Set(["node/1", "way/9", "node/2", "node/55"]),
     );
+    // The losing side's current ref is retained, so no device forgets it.
+    expect(merged.pastOsmRefs).toContainEqual({ type: "node", id: "55" });
     // Two sides chose DIFFERENT current elements: the owner reviews.
     expect(merged.resolutionState).toBe("needs-review");
   });

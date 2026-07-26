@@ -218,7 +218,7 @@ describe("backup place identity merge", () => {
     }
   });
 
-  it("unions append-only history from an older row without rolling back immutable evidence", async () => {
+  it("unions former refs from an older row without rolling back immutable evidence", async () => {
     const source = repo("history-source");
     const target = repo("history-target");
     try {
@@ -232,23 +232,14 @@ describe("backup place identity merge", () => {
         const place = data.places?.[0];
         if (!place) throw new Error("place fixture missing");
         place.firstSeen = { ...(place.firstSeen as Record<string, unknown>), name: "forged first" };
-        place.osmRefHistory = [
-          {
-            ref: { type: "way", id: "9001" },
-            linkedAt: "2026-07-19T08:00:00.000Z",
-            unlinkedAt: "2026-07-19T09:00:00.000Z",
-            reason: "replaced",
-          },
-        ];
+        place.pastOsmRefs = [{ type: "way", id: "9001" }];
       });
 
       await importBackup(target, incoming, "merge", LATER);
 
       const merged = (await target.db.places.toArray())[0];
       expect(merged?.firstSeen).toEqual(local.firstSeen);
-      expect(merged?.osmRefHistory).toEqual(
-        expect.arrayContaining([expect.objectContaining({ ref: { type: "way", id: "9001" } })]),
-      );
+      expect(merged?.pastOsmRefs).toEqual(expect.arrayContaining([{ type: "way", id: "9001" }]));
       expect(merged?.updatedAt).toBe(LATEST);
     } finally {
       source.db.close();
@@ -265,15 +256,10 @@ describe("backup place identity merge", () => {
       await importBackup(target, baseline, "replace", NOW);
       const local = (await target.db.places.toArray())[0];
       if (!local) throw new Error("place fixture missing");
-      const sharedHistory = {
-        ref: { type: "relation" as const, id: "189" },
-        linkedAt: "2026-07-18T08:00:00.000Z",
-        unlinkedAt: "2026-07-18T09:00:00.000Z",
-        reason: "replaced" as const,
-      };
+      const sharedPastRef = { type: "relation" as const, id: "189" };
       await target.db.places.put({
         ...local,
-        osmRefHistory: [sharedHistory],
+        pastOsmRefs: [sharedPastRef],
         refKeys: ["node/181", "relation/189"],
         updatedAt: LATER,
       });
@@ -282,7 +268,7 @@ describe("backup place identity merge", () => {
         if (!place) throw new Error("place fixture missing");
         place.currentOsmRef = { type: "way", id: "182" };
         place.currentOsmLinkedAt = LATEST;
-        place.osmRefHistory = [sharedHistory];
+        place.pastOsmRefs = [sharedPastRef];
         place.lastVerified = {
           ...(place.lastVerified as Record<string, unknown>),
           ref: { type: "way", id: "182" },
@@ -327,14 +313,7 @@ describe("backup place identity merge", () => {
       ).place;
       await incoming.db.places.put({
         ...bridge,
-        osmRefHistory: [
-          {
-            ref: { type: "way", id: "172" },
-            linkedAt: "2026-07-19T08:00:00.000Z",
-            unlinkedAt: "2026-07-19T09:00:00.000Z",
-            reason: "replaced",
-          },
-        ],
+        pastOsmRefs: [{ type: "way", id: "172" }],
         refKeys: ["node/171", "way/172"],
         updatedAt: LATER,
       });
@@ -356,9 +335,7 @@ describe("backup place identity merge", () => {
       expect(await local.db.places.get(endpoint.id)).toBeUndefined();
       expect((await local.listPlaces()).map(({ place }) => place.id)).toEqual([retained.placeId]);
       await expect(local.db.places.get(retained.placeId)).resolves.toMatchObject({
-        osmRefHistory: expect.arrayContaining([
-          expect.objectContaining({ ref: { type: "way", id: "172" } }),
-        ]),
+        pastOsmRefs: expect.arrayContaining([{ type: "way", id: "172" }]),
       });
       expect((await local.getListBlocks("bridge-list-a"))[0]?.place?.id).toBe(retained.placeId);
       expect((await local.getListBlocks("bridge-list-b"))[0]?.place?.id).toBe(retained.placeId);

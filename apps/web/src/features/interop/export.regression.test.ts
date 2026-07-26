@@ -28,7 +28,7 @@ function importedPlace(overrides: Partial<Place> = {}): Place {
   return {
     id: "place",
     origin: "import",
-    osmRefHistory: [],
+    pastOsmRefs: [],
     manual: { name: "Prime Meridian", lat: 38, lng: -9 },
     resolutionState: "unlinked",
     createdAt: NOW,

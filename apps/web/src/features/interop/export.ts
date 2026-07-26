@@ -59,13 +59,13 @@ const osmDerived = (place: ExportPlaceView["place"]): boolean =>
   place.lastVerified !== undefined ||
   place.firstSeen !== undefined ||
   place.currentOsmRef !== undefined ||
-  place.osmRefHistory.length > 0;
+  place.pastOsmRefs.length > 0;
 
 const hasOsmDerived = (views: ExportPlaceView[]): boolean => views.some((v) => osmDerived(v.place));
 
-/** The OSM element the place's facts descend from — current binding or history. */
+/** The OSM element the place's facts descend from — its current binding, or a former one. */
 function sourceRefOf(place: ExportPlaceView["place"]): string | undefined {
-  const ref = place.currentOsmRef ?? place.osmRefHistory[place.osmRefHistory.length - 1]?.ref;
+  const ref = place.currentOsmRef ?? place.pastOsmRefs[place.pastOsmRefs.length - 1];
   return ref ? `${ref.type}/${ref.id}` : undefined;
 }
 

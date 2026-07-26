@@ -110,7 +110,7 @@ vi.mock("../data/hooks", () => ({
       place: {
         id: "place-1",
         origin: "manual",
-        osmRefHistory: [],
+        pastOsmRefs: [],
         manual: { name: "Café A", lat: 38.71, lng: -9.14 },
         resolutionState: "unlinked",
         createdAt: "2026-07-19T10:00:00.000Z",
@@ -122,7 +122,7 @@ vi.mock("../data/hooks", () => ({
       place: {
         id: "place-2",
         origin: "manual",
-        osmRefHistory: [],
+        pastOsmRefs: [],
         manual: { name: "Café B", lat: 38.75, lng: -9.1 },
         resolutionState: "unlinked",
         createdAt: "2026-07-19T10:00:00.000Z",

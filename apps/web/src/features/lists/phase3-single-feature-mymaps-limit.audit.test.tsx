@@ -17,7 +17,7 @@ const list: List = {
 const place: Place = {
   id: "place-1",
   origin: "manual",
-  osmRefHistory: [],
+  pastOsmRefs: [],
   manual: { name: "One place", lat: 38.7, lng: -9.1 },
   resolutionState: "unlinked",
   createdAt: NOW,

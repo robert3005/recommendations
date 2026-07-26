@@ -17,7 +17,7 @@ const blocks: ListBlockView[] = Array.from({ length: 100 }, (_, index) => {
   const place: Place = {
     id: `place-${index.toString()}`,
     origin: "manual",
-    osmRefHistory: [],
+    pastOsmRefs: [],
     manual: { name: `Place ${index.toString()}`, lat: 38.7, lng: -9.1 },
     resolutionState: "unlinked",
     createdAt: NOW,

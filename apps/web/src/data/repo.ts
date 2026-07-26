@@ -114,9 +114,6 @@ function assertValidPlaceShape(place: Place): void {
     lat <= 90 &&
     lng >= -180 &&
     lng <= 180;
-  if (place.osmRefHistory.some((entry) => entry.unlinkedAt === undefined)) {
-    throw new Error("place history contains an incomplete prior OSM link");
-  }
   if (place.currentOsmRef) {
     if (!place.currentOsmLinkedAt || !place.firstSeen || !place.lastVerified) {
       throw new Error("an OSM-linked place requires link time and recovery evidence");
@@ -640,21 +637,13 @@ export class DexieRepository implements PlacemarksRepository {
             ),
           );
 
-          const historyByKey = new Map<string, Place["osmRefHistory"][number]>();
+          // Every former ref across the component, plus any current ref that
+          // lost — a set union, so order and duplicates cannot vary.
+          const pastByKey = new Map<string, OsmElementRef>();
           for (const place of component) {
-            for (const entry of place.osmRefHistory) {
-              const key = `${entry.linkedAt}\0${entry.unlinkedAt ?? ""}\0${refKey(entry.ref)}\0${entry.reason ?? ""}`;
-              historyByKey.set(key, entry);
-            }
+            for (const ref of place.pastOsmRefs) pastByKey.set(refKey(ref), ref);
             if (place.currentOsmRef && refKey(place.currentOsmRef) !== currentKey) {
-              const entry: Place["osmRefHistory"][number] = {
-                ref: place.currentOsmRef,
-                linkedAt: place.currentOsmLinkedAt ?? place.updatedAt,
-                unlinkedAt: place.updatedAt,
-                reason: "merged",
-              };
-              const key = `${entry.linkedAt}\0${entry.unlinkedAt}\0${refKey(entry.ref)}\0merged`;
-              historyByKey.set(key, entry);
+              pastByKey.set(refKey(place.currentOsmRef), place.currentOsmRef);
             }
           }
           const firstSeen = component
@@ -679,14 +668,11 @@ export class DexieRepository implements PlacemarksRepository {
                     distinctCurrentKeys.size > 1
                       ? ("needs-review" as const)
                       : currentSource.resolutionState,
-                  ...(currentSource.lastResolutionAttemptAt
-                    ? { lastResolutionAttemptAt: currentSource.lastResolutionAttemptAt }
-                    : {}),
                 }
               : {}),
-            osmRefHistory: [...historyByKey.entries()]
+            pastOsmRefs: [...pastByKey.entries()]
               .sort(([left], [right]) => left.localeCompare(right))
-              .map(([, entry]) => entry),
+              .map(([, ref]) => ref),
             ...(firstSeen ? { firstSeen } : {}),
             ...(manual ? { manual } : {}),
             ...(externalRefs.size > 0
@@ -1006,67 +992,49 @@ export class DexieRepository implements PlacemarksRepository {
         // first observation never change, and completed link history is
         // strictly append-only — an update keeps its history only when the
         // existing entries survive verbatim as its prefix.
-        const sameEntry = (
-          a: Place["osmRefHistory"][number] | undefined,
-          b: Place["osmRefHistory"][number] | undefined,
-        ): boolean =>
-          !!a &&
-          !!b &&
-          a.ref.type === b.ref.type &&
-          a.ref.id === b.ref.id &&
-          a.linkedAt === b.linkedAt &&
-          a.unlinkedAt === b.unlinkedAt &&
-          a.reason === b.reason;
-        const preservesPrefix =
-          place.osmRefHistory.length >= existing.osmRefHistory.length &&
-          existing.osmRefHistory.every((entry, index) =>
-            sameEntry(entry, place.osmRefHistory[index]),
-          );
-        // A binding transition and its history move together: changing the
-        // current ref REQUIRES appending the completed prior interval, and
-        // history may only grow with a real transition (an unlinked place may
-        // still record provenance history). Anything else preserves existing.
+        const existingPast = new Set(existing.pastOsmRefs.map(refKey));
+        const incomingPast = new Set(place.pastOsmRefs.map(refKey));
+        // Former refs only ever grow. As a set this is containment, where the
+        // interval log needed a verbatim-prefix comparison over four fields.
+        const preservesPast = [...existingPast].every((key) => incomingPast.has(key));
+        // A binding transition and its record move together: changing the
+        // current ref REQUIRES retaining the one it replaced, and the ONLY ref a
+        // transition may add is exactly that one — anything else is forged.
         const refChanged = !(
           (existing.currentOsmRef === undefined && place.currentOsmRef === undefined) ||
           (existing.currentOsmRef !== undefined &&
             place.currentOsmRef !== undefined &&
             sameRef(existing.currentOsmRef, place.currentOsmRef))
         );
-        const grown = preservesPrefix && place.osmRefHistory.length > existing.osmRefHistory.length;
-        // The ONLY valid growth alongside a binding change is the single
-        // domain-produced interval closing the prior binding — arbitrary
-        // extra entries riding an otherwise-real transition are forged
-        // history, and losing the binding outright never happens: linkage
-        // only ever gains or replaces OSM identity.
-        const tail = place.osmRefHistory.slice(existing.osmRefHistory.length);
-        const tailIsExactClosure =
-          grown &&
-          tail.length === 1 &&
-          existing.currentOsmRef !== undefined &&
-          tail[0] !== undefined &&
-          sameRef(tail[0].ref, existing.currentOsmRef) &&
-          tail[0].linkedAt === existing.currentOsmLinkedAt &&
-          tail[0].unlinkedAt !== undefined;
-        const growthValid =
-          grown &&
-          ((refChanged && place.currentOsmRef !== undefined && tailIsExactClosure) ||
-            (existing.currentOsmRef === undefined && place.currentOsmRef === undefined));
-        const nextHistory = growthValid
-          ? place.osmRefHistory
-          : preservesPrefix && !grown
-            ? place.osmRefHistory
-            : existing.osmRefHistory;
+        const added = [...incomingPast].filter((key) => !existingPast.has(key));
+        const additionValid =
+          added.length === 0 ||
+          // A transition may add exactly the ref it replaced, and nothing else.
+          (refChanged &&
+            added.length === 1 &&
+            place.currentOsmRef !== undefined &&
+            existing.currentOsmRef !== undefined &&
+            added[0] === refKey(existing.currentOsmRef)) ||
+          // An unlinked place may record provenance for an element its facts
+          // descend from without claiming a binding to it — this is how an
+          // imported OSM-derived row keeps its ODbL attribution after being
+          // placed manually (spec/src/interop.md §Licensing hygiene).
+          (existing.currentOsmRef === undefined && place.currentOsmRef === undefined);
+        const nextPast = preservesPast && additionValid ? place.pastOsmRefs : existing.pastOsmRefs;
         const acceptRef =
           !refChanged ||
           existing.currentOsmRef === undefined ||
-          (place.currentOsmRef !== undefined && growthValid);
+          (place.currentOsmRef !== undefined &&
+            preservesPast &&
+            additionValid &&
+            added.length === 1);
         await this.syncedPut(
           "places",
           toPlaceRow({
             ...place,
             origin: existing.origin,
             ...(existing.firstSeen ? { firstSeen: existing.firstSeen } : {}),
-            osmRefHistory: nextHistory,
+            pastOsmRefs: nextPast,
             ...(acceptRef
               ? {}
               : {
@@ -1904,7 +1872,6 @@ export class DexieRepository implements PlacemarksRepository {
                 place = {
                   ...found,
                   resolutionState: "needs-review",
-                  lastResolutionAttemptAt: now,
                   updatedAt: now,
                 };
               } else {
@@ -1912,7 +1879,6 @@ export class DexieRepository implements PlacemarksRepository {
                   ...found,
                   lastVerified: evidenceFromPoi(poi),
                   resolutionState: "resolved",
-                  lastResolutionAttemptAt: now,
                   updatedAt: now,
                 };
               }

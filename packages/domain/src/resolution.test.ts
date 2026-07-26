@@ -54,7 +54,7 @@ describe("place creation", () => {
     expect(linked.resolutionState).toBe("resolved");
     expect(linked.origin).toBe("manual"); // origin is provenance and never changes
     expect(linked.firstSeen?.observedAt).toBe(NOW);
-    expect(linked.osmRefHistory).toHaveLength(0); // no previous binding, no interval
+    expect(linked.pastOsmRefs).toHaveLength(0); // no previous binding to retain
   });
 });
 
@@ -115,17 +115,14 @@ describe("applyExactOutcome", () => {
 describe("applyRecovery", () => {
   const base = createOsmPlace("p1", poi(), NOW);
 
-  it("unique high-confidence replacement → automatic relink with immutable history", () => {
+  it("unique high-confidence replacement → automatic relink, retaining the old ref", () => {
     const replacement = poi({ osmRef: { type: "way", id: "42" }, resolvedAt: LATER });
     const recovered = applyRecovery(base, [replacement], LATER);
     expect(recovered.resolutionState).toBe("resolved");
     expect(recovered.currentOsmRef).toEqual({ type: "way", id: "42" });
-    expect(recovered.osmRefHistory).toHaveLength(1);
-    const interval = recovered.osmRefHistory[0];
-    expect(interval?.ref).toEqual({ type: "node", id: "1" });
-    expect(interval?.linkedAt).toBe(NOW);
-    expect(interval?.unlinkedAt).toBe(LATER);
-    expect(interval?.reason).toBe("resolver-match");
+    // The replaced element stays reachable so evidence-based recovery and
+    // dedup can still find this place by its former ref.
+    expect(recovered.pastOsmRefs).toEqual([{ type: "node", id: "1" }]);
     expect(allRefKeys(recovered).sort()).toEqual(["node/1", "way/42"]);
   });
 

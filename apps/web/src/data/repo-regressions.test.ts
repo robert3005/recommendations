@@ -13,7 +13,7 @@ describe("DexieRepository regressions", () => {
       origin: "osm" as const,
       currentOsmRef: { type: "node" as const, id: "101" },
       currentOsmLinkedAt: "2026-07-18T10:00:00.000Z",
-      osmRefHistory: [],
+      pastOsmRefs: [],
       resolutionState: "resolved" as const,
       createdAt: "2026-07-18T10:00:00.000Z",
       updatedAt: "2026-07-18T10:00:00.000Z",

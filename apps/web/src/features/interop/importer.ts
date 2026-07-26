@@ -661,10 +661,10 @@ async function recordAnchorHistory(
   now: string,
 ): Promise<void> {
   const place = await repo.getPlace(placeId);
-  if (!place || place.currentOsmRef || place.osmRefHistory.length > 0) return;
+  if (!place || place.currentOsmRef || place.pastOsmRefs.length > 0) return;
   await repo.updatePlace({
     ...place,
-    osmRefHistory: [{ ref, linkedAt: now, unlinkedAt: now, reason: "replaced" }],
+    pastOsmRefs: [ref],
     updatedAt: now,
   });
 }

@@ -70,7 +70,7 @@ export function validateGraph(
       id: string;
       deleted?: boolean;
       currentOsmRef?: RefLike;
-      osmRefHistory?: { ref?: RefLike }[];
+      pastOsmRefs?: RefLike[];
       firstSeen?: { ref?: RefLike; source?: unknown; license?: unknown; attribution?: unknown };
       lastVerified?: { ref?: RefLike; source?: unknown; license?: unknown; attribution?: unknown };
     };
@@ -78,7 +78,7 @@ export function validateGraph(
       row.currentOsmRef,
       row.firstSeen?.ref,
       row.lastVerified?.ref,
-      ...(row.osmRefHistory ?? []).map((entry) => entry.ref),
+      ...(row.pastOsmRefs ?? []),
     ];
     for (const ref of refs) {
       if (!validRef(ref)) {
@@ -88,13 +88,6 @@ export function validateGraph(
     // History entries are completed (or current) intervals: every entry
     // states when its link began. An "unlinked" moment with no beginning is
     // not a valid interval shape.
-    for (const entry of (row.osmRefHistory ?? []) as { linkedAt?: unknown }[]) {
-      if (typeof entry.linkedAt !== "string" || entry.linkedAt === "") {
-        throw new Error(
-          `place ${row.id} carries a history interval with no linkedAt — refusing to import`,
-        );
-      }
-    }
     if (row.deleted) continue;
     const origin = (place as { origin?: string }).origin;
     const resolutionState = (place as { resolutionState?: string }).resolutionState;
@@ -422,23 +415,20 @@ export function validateGraph(
 /** Canonical identity keys — derived from the domain fields, never from a (forgeable) refKeys index. */
 export function canonicalKeys(row: {
   currentOsmRef?: { type: string; id: string };
-  osmRefHistory?: { ref: { type: string; id: string } }[];
+  pastOsmRefs?: { type: string; id: string }[];
 }): string[] {
   return [
     ...(row.currentOsmRef ? [`${row.currentOsmRef.type}/${row.currentOsmRef.id}`] : []),
-    ...(row.osmRefHistory ?? []).map((entry) => `${entry.ref.type}/${entry.ref.id}`),
+    ...(row.pastOsmRefs ?? []).map((ref) => `${ref.type}/${ref.id}`),
   ];
 }
-
-const historyIdentity = (entry: Place["osmRefHistory"][number]): string =>
-  `${entry.ref.type}/${entry.ref.id}@${entry.linkedAt}`;
 
 const externalIdentity = (entry: NonNullable<Place["externalRefs"]>[number]): string =>
   entry.fid ? `${entry.provider}:fid:${entry.fid}` : `${entry.provider}:url:${entry.url}`;
 
 /**
  * Place metadata is not ordinary LWW data. `origin`, `createdAt`, and
- * `firstSeen` are immutable; link history and external provenance only grow.
+ * `firstSeen` are immutable; former refs and external provenance only grow.
  * Mutable resolver/manual state still follows the winning row.
  */
 export function mergePlaceVersions(
@@ -448,14 +438,10 @@ export function mergePlaceVersions(
   preserveBaseFirstSeen = true,
 ): Place {
   let winner = donorWins ? donor : base;
-  const history = new Map(base.osmRefHistory.map((entry) => [historyIdentity(entry), entry]));
-  for (const entry of donor.osmRefHistory) {
-    const key = historyIdentity(entry);
-    const current = history.get(key);
-    // A completed interval contains strictly more immutable history than the
-    // same open interval, so retain its end/reason when one side has it.
-    if (!current || (!current.unlinkedAt && entry.unlinkedAt)) history.set(key, entry);
-  }
+  // Former refs are a set, so the merge is a union — there is no per-entry
+  // metadata left for two sides to disagree about.
+  const past = new Map(base.pastOsmRefs.map((ref) => [`${ref.type}/${ref.id}`, ref]));
+  for (const ref of donor.pastOsmRefs) past.set(`${ref.type}/${ref.id}`, ref);
   const externalRefs = new Map(
     (base.externalRefs ?? []).map((entry) => [externalIdentity(entry), entry]),
   );
@@ -480,12 +466,8 @@ export function mergePlaceVersions(
   const donorCurrent = refKeyOf(donor.currentOsmRef);
   let conflictingRelink = false;
   if (baseCurrent && donorCurrent && baseCurrent !== donorCurrent) {
-    const donorObservedBase = donor.osmRefHistory.some(
-      (entry) => refKeyOf(entry.ref) === baseCurrent,
-    );
-    const baseObservedDonor = base.osmRefHistory.some(
-      (entry) => refKeyOf(entry.ref) === donorCurrent,
-    );
+    const donorObservedBase = donor.pastOsmRefs.some((ref) => refKeyOf(ref) === baseCurrent);
+    const baseObservedDonor = base.pastOsmRefs.some((ref) => refKeyOf(ref) === donorCurrent);
     if (donorObservedBase && !baseObservedDonor) winner = donor;
     else if (baseObservedDonor && !donorObservedBase) winner = base;
     else conflictingRelink = true;
@@ -497,7 +479,7 @@ export function mergePlaceVersions(
     createdAt: base.createdAt,
     firstSeen: earliestEvidence,
     ...(latestEvidence ? { lastVerified: latestEvidence } : {}),
-    osmRefHistory: [...history.values()],
+    pastOsmRefs: [...past.values()],
     ...(externalRefs.size > 0 ? { externalRefs: [...externalRefs.values()] } : {}),
     ...(conflictingRelink ? { resolutionState: "needs-review" } : {}),
   };
@@ -514,7 +496,7 @@ export async function validateMergeIdentities(
       deleted?: boolean;
       refKeys?: string[];
       currentOsmRef?: { type: string; id: string };
-      osmRefHistory?: { ref: { type: string; id: string } }[];
+      pastOsmRefs?: { type: string; id: string }[];
     };
     const existing = await repo.db.places.get(row.id);
     if (!existing) continue;

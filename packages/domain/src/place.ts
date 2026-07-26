@@ -35,13 +35,6 @@ export interface OsmEvidence {
 
 export type RelinkReason = "replaced" | "merged" | "owner-confirmed" | "resolver-match";
 
-export interface OsmLinkHistoryEntry {
-  ref: OsmElementRef;
-  linkedAt: string;
-  unlinkedAt?: string;
-  reason?: RelinkReason;
-}
-
 export interface ManualFacts {
   name: string;
   lat: number;
@@ -70,13 +63,23 @@ export interface Place {
   origin: "osm" | "manual" | "import";
   currentOsmRef?: OsmElementRef; // absent on an unlinked manual/imported place
   currentOsmLinkedAt?: string;
-  osmRefHistory: OsmLinkHistoryEntry[];
+  /**
+   * Every OSM element this place has ever been linked to, current one excluded.
+   *
+   * A set, not a log. The interval shape it replaced recorded *when* and *why*
+   * each link ended, which nothing read: its only two consumers are the dedup
+   * key set below and export attribution. Keeping intervals cost an
+   * append-only-prefix guard on every update, a composite sync merge key, an
+   * interval-aware backup merge, and a schema refinement — all to protect data
+   * with no reader. If link provenance is ever wanted, it belongs in an audit
+   * surface, not on the aggregate every write has to preserve.
+   */
+  pastOsmRefs: OsmElementRef[];
   firstSeen?: OsmEvidence; // immutable recovery evidence, set when first OSM-linked
   lastVerified?: OsmEvidence; // last successfully resolved observation
   manual?: ManualFacts; // owner- or import-provided facts; required while unlinked
   externalRefs?: ExternalRef[];
   resolutionState: ResolutionState;
-  lastResolutionAttemptAt?: string;
   createdAt: string;
   updatedAt: string;
   deleted?: boolean;
@@ -110,11 +113,10 @@ export function createOsmPlace(id: PlaceId, poi: ResolvedPoi, now: string): Plac
     origin: "osm",
     currentOsmRef: poi.osmRef,
     currentOsmLinkedAt: now,
-    osmRefHistory: [],
+    pastOsmRefs: [],
     firstSeen: evidence,
     lastVerified: evidence,
     resolutionState: "resolved",
-    lastResolutionAttemptAt: now,
     createdAt: now,
     updatedAt: now,
   };
@@ -125,7 +127,7 @@ export function createManualPlace(id: PlaceId, facts: ManualFacts, now: string):
   return {
     id,
     origin: "manual",
-    osmRefHistory: [],
+    pastOsmRefs: [],
     manual: facts,
     resolutionState: "unlinked",
     createdAt: now,
@@ -147,7 +149,7 @@ export function createImportedPlace(
   return {
     id,
     origin: "import",
-    osmRefHistory: [],
+    pastOsmRefs: [],
     manual: facts,
     ...(externalRef ? { externalRefs: [externalRef] } : {}),
     resolutionState: "unlinked",
@@ -177,29 +179,25 @@ export function linkPlaceToOsm(
   place: Place,
   poi: ResolvedPoi,
   now: string,
-  reason: RelinkReason,
+  /** Why the link changed. Kept in the signature so callers stay explicit; not persisted. */
+  _reason: RelinkReason,
 ): Place {
   const evidence = evidenceFromPoi(poi);
-  const history = place.currentOsmRef
+  // The outgoing ref joins the set; re-linking to one already there is a no-op.
+  const past = place.currentOsmRef
     ? [
-        ...place.osmRefHistory,
-        {
-          ref: place.currentOsmRef,
-          linkedAt: place.currentOsmLinkedAt ?? place.createdAt,
-          unlinkedAt: now,
-          reason,
-        },
+        ...place.pastOsmRefs.filter((ref) => refKey(ref) !== refKey(place.currentOsmRef!)),
+        place.currentOsmRef,
       ]
-    : place.osmRefHistory;
+    : place.pastOsmRefs;
   return {
     ...place,
     currentOsmRef: poi.osmRef,
     currentOsmLinkedAt: now,
-    osmRefHistory: history,
+    pastOsmRefs: past,
     firstSeen: place.firstSeen ?? evidence, // firstSeen is never overwritten
     lastVerified: evidence,
     resolutionState: "resolved",
-    lastResolutionAttemptAt: now,
     updatedAt: now,
   };
 }
@@ -270,6 +268,6 @@ export function isResolutionExpired(
 export function allRefKeys(place: Place): string[] {
   const keys = new Set<string>();
   if (place.currentOsmRef) keys.add(refKey(place.currentOsmRef));
-  for (const entry of place.osmRefHistory) keys.add(refKey(entry.ref));
+  for (const ref of place.pastOsmRefs) keys.add(refKey(ref));
   return [...keys];
 }

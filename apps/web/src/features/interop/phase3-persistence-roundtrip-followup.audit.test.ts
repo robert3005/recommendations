@@ -80,7 +80,7 @@ describe("Phase 3 persisted interchange fidelity follow-up", () => {
     const sourcePlace: Place = {
       id: "formula-place",
       origin: "manual",
-      osmRefHistory: [],
+      pastOsmRefs: [],
       manual: {
         name: "=SUM(A1:A2)",
         address: "@sensitive-address",
@@ -131,14 +131,7 @@ describe("Phase 3 persisted interchange fidelity follow-up", () => {
     const sourcePlace: Place = {
       id: "history-only-place",
       origin: "import",
-      osmRefHistory: [
-        {
-          ref,
-          linkedAt: NOW,
-          unlinkedAt: NOW,
-          reason: "replaced",
-        },
-      ],
+      pastOsmRefs: [ref],
       manual: { name: "Former OSM café", category: "cafe", lat: 38.72, lng: -9.14 },
       resolutionState: "unlinked",
       createdAt: NOW,
@@ -156,9 +149,9 @@ describe("Phase 3 persisted interchange fidelity follow-up", () => {
       ) as { attribution?: string };
 
       expect({
-        history: importedView.place.osmRefHistory.map((entry) => entry.ref),
+        pastRefs: importedView.place.pastOsmRefs,
         attributed: reexported.attribution?.includes("ODbL") === true,
-      }).toEqual({ history: [ref], attributed: true });
+      }).toEqual({ pastRefs: [ref], attributed: true });
     } finally {
       repo.db.close();
     }

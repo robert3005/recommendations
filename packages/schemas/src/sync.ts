@@ -66,14 +66,7 @@ const placeSchema = z
     origin: z.enum(["osm", "manual", "import"]),
     currentOsmRef: osmRefSchema.optional(),
     currentOsmLinkedAt: timestampSchema.optional(),
-    osmRefHistory: z.array(
-      z.object({
-        ref: osmRefSchema,
-        linkedAt: timestampSchema,
-        unlinkedAt: timestampSchema.optional(),
-        reason: z.enum(["replaced", "merged", "owner-confirmed", "resolver-match"]).optional(),
-      }),
-    ),
+    pastOsmRefs: z.array(osmRefSchema),
     firstSeen: evidenceSchema.optional(),
     lastVerified: evidenceSchema.optional(),
     manual: z
@@ -105,19 +98,11 @@ const placeSchema = z
       "needs-review",
       "unlinked",
     ]),
-    lastResolutionAttemptAt: timestampSchema.optional(),
     // Local-only derived index. Receivers recompute it before writing.
     refKeys: z.array(z.string()).optional(),
   })
   .strict()
   .superRefine((place, context) => {
-    if (place.osmRefHistory.some((entry) => entry.unlinkedAt === undefined)) {
-      context.addIssue({
-        code: "custom",
-        message: "OSM history contains only completed link intervals",
-        path: ["osmRefHistory"],
-      });
-    }
     if (place.currentOsmRef) {
       if (!place.currentOsmLinkedAt || !place.firstSeen || !place.lastVerified) {
         context.addIssue({

@@ -21,7 +21,7 @@ const list: List = {
 const place: Place = {
   id: "direct-kml-place",
   origin: "manual",
-  osmRefHistory: [],
+  pastOsmRefs: [],
   manual: { name: "One large place", lat: 38.7, lng: -9.1 },
   resolutionState: "unlinked",
   createdAt: NOW,

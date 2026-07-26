@@ -15,7 +15,7 @@ const list: List = {
 const place: Place = {
   id: "place",
   origin: "manual",
-  osmRefHistory: [],
+  pastOsmRefs: [],
   manual: { name: "Unreadable-note place", lat: 38.7, lng: -9.1 },
   resolutionState: "unlinked",
   createdAt: NOW,

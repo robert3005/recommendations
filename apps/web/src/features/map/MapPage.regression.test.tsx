@@ -16,7 +16,7 @@ vi.mock("../../data/hooks", () => ({
       place: {
         id: "imported-place",
         origin: "import",
-        osmRefHistory: [],
+        pastOsmRefs: [],
         manual: { name: "Imported café", lat: 38.7139, lng: -9.1394 },
         resolutionState: "unlinked",
         createdAt: "2026-07-18T12:00:00.000Z",

@@ -13,7 +13,7 @@ const NOW = "2026-07-20T00:00:00.000Z";
 const place: Place = {
   id: "guarded-place",
   origin: "manual",
-  osmRefHistory: [],
+  pastOsmRefs: [],
   manual: { name: "Guarded café", category: "cafe", lat: 51.5, lng: -0.12 },
   resolutionState: "unlinked",
   createdAt: NOW,

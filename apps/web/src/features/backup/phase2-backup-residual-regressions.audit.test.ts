@@ -144,7 +144,7 @@ describe("Phase 2 residual backup identity validation", () => {
       const malformed = await rewriteArchive(await exportBackup(source, NOW), (data) => {
         const place = data.places?.[0];
         if (!place) throw new Error("place fixture is missing");
-        place.osmRefHistory = [
+        place.pastOsmRefs = [
           {
             ref: { type: "way", id: "999" },
             unlinkedAt: NOW,

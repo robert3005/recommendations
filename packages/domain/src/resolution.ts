@@ -52,13 +52,12 @@ export function applyExactOutcome(
       place: {
         ...place,
         resolutionState: place.resolutionState === "needs-review" ? "needs-review" : "unavailable",
-        lastResolutionAttemptAt: now,
         updatedAt: now,
       },
     };
   }
   if (outcome.type === "gone") {
-    return { kind: "recover", place: { ...place, lastResolutionAttemptAt: now, updatedAt: now } };
+    return { kind: "recover", place: { ...place, updatedAt: now } };
   }
   const prev = recoveryEvidence(place);
   if (prev && !plausiblySameElement(prev, outcome.poi)) {
@@ -68,7 +67,6 @@ export function applyExactOutcome(
       place: {
         ...place,
         resolutionState: "needs-review",
-        lastResolutionAttemptAt: now,
         updatedAt: now,
       },
     };
@@ -79,7 +77,6 @@ export function applyExactOutcome(
       ...place,
       lastVerified: evidenceFromPoi(outcome.poi),
       resolutionState: "resolved",
-      lastResolutionAttemptAt: now,
       updatedAt: now,
     },
   };
@@ -98,7 +95,7 @@ export function applyRecovery(place: Place, candidates: ResolvedPoi[], now: stri
     (evidence): evidence is NonNullable<typeof evidence> => evidence !== undefined,
   );
   if (sources.length === 0) {
-    return { ...place, resolutionState: "missing", lastResolutionAttemptAt: now, updatedAt: now };
+    return { ...place, resolutionState: "missing", updatedAt: now };
   }
   let sawReview = false;
   for (const evidence of sources) {
@@ -112,11 +109,10 @@ export function applyRecovery(place: Place, candidates: ResolvedPoi[], now: stri
     return {
       ...place,
       resolutionState: "needs-review",
-      lastResolutionAttemptAt: now,
       updatedAt: now,
     };
   }
-  return { ...place, resolutionState: "missing", lastResolutionAttemptAt: now, updatedAt: now };
+  return { ...place, resolutionState: "missing", updatedAt: now };
 }
 
 /** TTL expiry without a completed refresh is `stale` — never an identity change. */

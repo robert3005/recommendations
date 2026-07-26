@@ -19,7 +19,7 @@ describe("Phase 3 GeoJSON list-name fidelity", () => {
     const place: Place = {
       id: "place",
       origin: "import",
-      osmRefHistory: [],
+      pastOsmRefs: [],
       manual: { name: "Miradouro", lat: 38.7139, lng: -9.1394 },
       resolutionState: "unlinked",
       createdAt: NOW,

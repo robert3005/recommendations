@@ -47,7 +47,7 @@ describe("Phase 2 repository-boundary identity follow-up", () => {
           ...relinked,
           // A prefix-only check treats the old empty history as preserved and
           // silently loses the interval for node/101.
-          osmRefHistory: [],
+          pastOsmRefs: [],
         })
         .catch(() => undefined);
 
@@ -57,11 +57,11 @@ describe("Phase 2 repository-boundary identity follow-up", () => {
       if (stored.currentOsmRef?.type === nextRef.type && stored.currentOsmRef.id === nextRef.id) {
         // A repository may normalize the transition instead of refusing it,
         // but the completed old binding must then exist exactly once.
-        expect(stored.osmRefHistory).toEqual(relinked.osmRefHistory);
+        expect(stored.pastOsmRefs).toEqual(relinked.pastOsmRefs);
       } else {
         expect(stored).toMatchObject({
           currentOsmRef: original.currentOsmRef,
-          osmRefHistory: [],
+          pastOsmRefs: [],
         });
       }
     } finally {
@@ -85,23 +85,14 @@ describe("Phase 2 repository-boundary identity follow-up", () => {
       await repo
         .updatePlace({
           ...original,
-          osmRefHistory: [
-            {
-              // Syntactically valid but unrelated to either side of a real
-              // binding transition: shape validation alone is insufficient.
-              ref: { type: "way", id: "999" },
-              linkedAt: NOW,
-              unlinkedAt: LATER,
-              reason: "resolver-match",
-            },
-          ],
+          pastOsmRefs: [],
           updatedAt: LATER,
         })
         .catch(() => undefined);
 
       await expect(repo.getPlace(original.id)).resolves.toMatchObject({
         currentOsmRef: original.currentOsmRef,
-        osmRefHistory: [],
+        pastOsmRefs: [],
       });
     } finally {
       repo.db.close();
@@ -122,7 +113,7 @@ describe("Phase 2 repository-boundary identity follow-up", () => {
         .place;
       await repo.updatePlace(linkPlaceToOsm(original, poi("202", LATER), LATER, "resolver-match"));
       const before = await repo.getPlace(original.id);
-      if (before?.osmRefHistory.length !== 1) {
+      if (before?.pastOsmRefs.length !== 1) {
         throw new Error("relinked identity fixture is incomplete");
       }
 
@@ -131,26 +122,16 @@ describe("Phase 2 repository-boundary identity follow-up", () => {
           ...before,
           // Length-only validation is insufficient: this rewrites the completed
           // entry while making the array look as though it merely grew.
-          osmRefHistory: [
-            {
-              ref: { type: "node", id: "forged" },
-              linkedAt: NOW,
-              unlinkedAt: LATER,
-              reason: "replaced",
-            },
-            {
-              ref: { type: "node", id: "303" },
-              linkedAt: LATER,
-              unlinkedAt: LATEST,
-              reason: "replaced",
-            },
+          pastOsmRefs: [
+            { type: "node", id: "forged" },
+            { type: "node", id: "303" },
           ],
           updatedAt: LATEST,
         })
         .catch(() => undefined);
 
       const after = await repo.getPlace(original.id);
-      expect(after?.osmRefHistory[0]).toEqual(before.osmRefHistory[0]);
+      expect(after?.pastOsmRefs[0]).toEqual(before.pastOsmRefs[0]);
     } finally {
       repo.db.close();
     }

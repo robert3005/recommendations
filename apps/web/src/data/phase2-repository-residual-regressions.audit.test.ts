@@ -67,15 +67,7 @@ describe("Phase 2 residual durable-identity boundaries", () => {
       const canonical = linkPlaceToOsm(original, poi("202", LATER), LATER, "owner-confirmed");
       const forged = {
         ...canonical,
-        osmRefHistory: [
-          {
-            ref: { type: "way" as const, id: "999" },
-            linkedAt: NOW,
-            unlinkedAt: LATER,
-            reason: "replaced" as const,
-          },
-          ...canonical.osmRefHistory,
-        ],
+        pastOsmRefs: [{ type: "way" as const, id: "999" }],
       };
 
       await repo.updatePlace(forged).catch(() => undefined);
@@ -84,12 +76,12 @@ describe("Phase 2 residual durable-identity boundaries", () => {
       if (!stored) throw new Error("place fixture disappeared");
       if (stored.currentOsmRef?.id === canonical.currentOsmRef?.id) {
         // Normalizing to the one domain-produced interval is valid.
-        expect(stored.osmRefHistory).toEqual(canonical.osmRefHistory);
+        expect(stored.pastOsmRefs).toEqual(canonical.pastOsmRefs);
       } else {
         // Refusing the whole transition is also valid.
         expect(stored).toMatchObject({
           currentOsmRef: original.currentOsmRef,
-          osmRefHistory: original.osmRefHistory,
+          pastOsmRefs: original.pastOsmRefs,
         });
       }
     } finally {
@@ -110,14 +102,7 @@ describe("Phase 2 residual durable-identity boundaries", () => {
           ...original,
           currentOsmRef: undefined,
           currentOsmLinkedAt: undefined,
-          osmRefHistory: [
-            {
-              ref: original.currentOsmRef,
-              linkedAt: original.currentOsmLinkedAt,
-              unlinkedAt: LATER,
-              reason: "owner-confirmed",
-            },
-          ],
+          pastOsmRefs: [],
           resolutionState: "unlinked",
           updatedAt: LATER,
         })

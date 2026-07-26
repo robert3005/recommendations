@@ -29,7 +29,7 @@ describe("place creation policy", () => {
     expect(place.currentOsmRef).toBeUndefined();
     expect(place.firstSeen).toBeUndefined();
     expect(place.lastVerified).toBeUndefined();
-    expect(place.osmRefHistory).toHaveLength(0);
+    expect(place.pastOsmRefs).toHaveLength(0);
     expect(place.manual?.name).toBe("Picnic bench");
   });
 

@@ -25,7 +25,7 @@ const linked: Place = {
   origin: "osm",
   currentOsmRef: { type: "node", id: "101" },
   currentOsmLinkedAt: NOW,
-  osmRefHistory: [],
+  pastOsmRefs: [],
   lastVerified: {
     ref: { type: "node", id: "101" },
     source: "OpenStreetMap",
@@ -48,7 +48,7 @@ const linked: Place = {
 const imported: Place = {
   id: "p2",
   origin: "import",
-  osmRefHistory: [],
+  pastOsmRefs: [],
   manual: { name: "Dropped pin", lat: 38.71, lng: -9.15 },
   externalRefs: [
     {
