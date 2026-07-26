@@ -61,39 +61,42 @@ export interface PostBlockView {
 }
 
 /**
- * Why a teardown was refused (spec/src/posts.md §Where embeds come from):
- * every refusal is actionable — the dialog names the blockers and links to
- * them, and the owner dismantles them explicitly.
+ * One thing the owner must dismantle before a teardown can proceed
+ * (spec/src/posts.md §Where embeds come from). Every refusal is actionable: the
+ * dialog names each blocker and links to it.
+ *
+ * One flat list rather than an array per kind — the four-armed report needed an
+ * empty-constructor, a has-any predicate and a four-branch renderer to say what
+ * `blockers.length > 0` and a `switch` say here. Wording lives in the UI; this
+ * carries only identity and the name of the thing in the way.
  */
-export interface TeardownBlockers {
-  /** Live notes on a place whose existence would end with this removal. */
-  notes: { placeId: PlaceId; noteId: string; title?: string }[];
-  /** Live post embeds that reference a place in the removal's scope. */
-  embeds: { placeId: PlaceId; postId: string; postTitle: string; blockId: string }[];
-  /** Live posts editorialising a list that was asked to delete. */
-  posts: { postId: string; title: string }[];
-  /** Places still members of a list that was asked to delete. */
-  members: PlaceId[];
-}
+export type BlockerKind =
+  /** A live post editorialises the list asked to delete. */
+  | "post"
+  /** A place is still a member of the list asked to delete. */
+  | "member"
+  /** A live post embed references the place. */
+  | "embed"
+  /** The place carries a note the owner wrote. */
+  | "note";
 
-export function emptyBlockers(): TeardownBlockers {
-  return { notes: [], embeds: [], posts: [], members: [] };
-}
-
-export function hasBlockers(blockers: TeardownBlockers): boolean {
-  return (
-    blockers.notes.length > 0 ||
-    blockers.embeds.length > 0 ||
-    blockers.posts.length > 0 ||
-    blockers.members.length > 0
-  );
+export interface Blocker {
+  kind: BlockerKind;
+  /** Post id, place id, post-block id or note id, by kind. */
+  id: string;
+  /** Display name of the blocking thing: post title, note title. */
+  label?: string;
+  /** The post to open, for `post` and `embed`. */
+  postId?: string;
+  /** The place to open, for `member`, `embed` and `note`. */
+  placeId?: PlaceId;
 }
 
 /** Thrown when bottom-up teardown refuses a removal; carries the report. */
 export class TeardownRefusedError extends Error {
-  readonly blockers: TeardownBlockers;
+  readonly blockers: Blocker[];
 
-  constructor(message: string, blockers: TeardownBlockers) {
+  constructor(message: string, blockers: Blocker[]) {
     super(message);
     this.name = "TeardownRefusedError";
     this.blockers = blockers;

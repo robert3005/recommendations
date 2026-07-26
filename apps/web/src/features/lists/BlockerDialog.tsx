@@ -1,23 +1,42 @@
 /**
  * Bottom-up teardown refusals (spec/src/posts.md §Where embeds come from):
- * every refusal is actionable — this dialog names the blockers so the owner
- * can dismantle them explicitly. Nothing authored ever dies as a side effect.
+ * every refusal is actionable — this dialog names the blockers so the owner can
+ * dismantle them explicitly. Nothing authored ever dies as a side effect.
+ *
+ * One list with a `switch` on kind, not four arrays with four renderers. The
+ * notes section additionally offers a single confirmed bulk delete: the
+ * guarantee is that the owner decides, not that they click once per note.
  */
-import type { TeardownBlockers } from "@placemarks/domain";
+import type { Blocker } from "@placemarks/domain";
+import { useState } from "react";
+
+function postHref(postId: string, blockId?: string): string {
+  const base = `/post/${encodeURIComponent(postId)}/edit`;
+  return blockId ? `${base}#${encodeURIComponent(blockId)}` : base;
+}
 
 export function BlockerDialog({
   title,
   blockers,
   placeNames,
   onOpenPlace,
+  onDeleteNotes,
   onClose,
 }: {
   title: string;
-  blockers: TeardownBlockers;
+  blockers: Blocker[];
   placeNames: Readonly<Record<string, string>>;
   onOpenPlace: (placeId: string) => void;
+  /** Delete every listed note, after the owner confirms. Absent = no bulk action. */
+  onDeleteNotes?: (noteIds: string[]) => Promise<void> | void;
   onClose: () => void;
 }) {
+  const [confirmingNotes, setConfirmingNotes] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const noteBlockers = blockers.filter((blocker) => blocker.kind === "note");
+  const placeName = (placeId?: string) =>
+    placeId ? (placeNames[placeId] ?? `Place ${placeId}`) : "this place";
+
   return (
     <div
       role="alertdialog"
@@ -32,58 +51,112 @@ export function BlockerDialog({
           Nothing you wrote is deleted as a side effect — remove these first:
         </p>
         <ul className="mt-2 space-y-1 text-sm text-stone-800">
-          {blockers.posts.map((post) => (
-            <li key={post.postId} data-testid="blocker-post">
-              ✍ The post{" "}
-              <a
-                href={`/post/${encodeURIComponent(post.postId)}/edit`}
-                className="font-medium text-blue-700 underline"
-              >
-                “{post.title}”
-              </a>{" "}
-              is about this list — open it and delete the post first.
-            </li>
-          ))}
-          {blockers.members.map((placeId) => (
-            <li key={placeId} data-testid="blocker-member">
-              ◉{" "}
-              <button
-                type="button"
-                className="font-medium text-blue-700 underline"
-                onClick={() => onOpenPlace(placeId)}
-              >
-                {placeNames[placeId] ?? `Place ${placeId}`}
-              </button>{" "}
-              is still in this list — open the place and remove it first.
-            </li>
-          ))}
-          {blockers.embeds.map((embed) => (
-            <li key={embed.blockId} data-testid="blocker-embed">
-              ⌘ Embedded in the post{" "}
-              <a
-                href={`/post/${encodeURIComponent(embed.postId)}/edit#${encodeURIComponent(embed.blockId)}`}
-                className="font-medium text-blue-700 underline"
-              >
-                “{embed.postTitle}”
-              </a>{" "}
-              — open it and remove the embed first.
-            </li>
-          ))}
-          {blockers.notes.map((note) => (
-            <li key={note.noteId} data-testid="blocker-note">
-              ✎{" "}
-              <button
-                type="button"
-                className="font-medium text-blue-700 underline"
-                onClick={() => onOpenPlace(note.placeId)}
-              >
-                {placeNames[note.placeId] ?? `Place ${note.placeId}`}
-              </button>{" "}
-              carries your note{note.title ? ` “${note.title}”` : ""} — open it and delete the note
-              first.
-            </li>
-          ))}
+          {blockers.map((blocker) => {
+            if (blocker.kind === "post") {
+              return (
+                <li key={`post-${blocker.id}`} data-testid="blocker-post">
+                  ✍ The post{" "}
+                  <a href={postHref(blocker.id)} className="font-medium text-blue-700 underline">
+                    “{blocker.label ?? "Untitled post"}”
+                  </a>{" "}
+                  is about this list — open it and delete the post first.
+                </li>
+              );
+            }
+            if (blocker.kind === "member") {
+              return (
+                <li key={`member-${blocker.id}`} data-testid="blocker-member">
+                  ◉{" "}
+                  <button
+                    type="button"
+                    className="font-medium text-blue-700 underline"
+                    onClick={() => onOpenPlace(blocker.id)}
+                  >
+                    {placeName(blocker.placeId ?? blocker.id)}
+                  </button>{" "}
+                  is still in this list — open the place and remove it first.
+                </li>
+              );
+            }
+            if (blocker.kind === "embed") {
+              return (
+                <li key={`embed-${blocker.id}`} data-testid="blocker-embed">
+                  ⌘ Embedded in the post{" "}
+                  <a
+                    href={postHref(blocker.postId ?? "", blocker.id)}
+                    className="font-medium text-blue-700 underline"
+                  >
+                    “{blocker.label ?? "Untitled post"}”
+                  </a>{" "}
+                  — open it and remove the embed first.
+                </li>
+              );
+            }
+            return (
+              <li key={`note-${blocker.id}`} data-testid="blocker-note">
+                ✎{" "}
+                <button
+                  type="button"
+                  className="font-medium text-blue-700 underline"
+                  onClick={() => blocker.placeId && onOpenPlace(blocker.placeId)}
+                >
+                  {placeName(blocker.placeId)}
+                </button>{" "}
+                carries your note{blocker.label ? ` “${blocker.label}”` : ""} — open it and delete
+                the note first.
+              </li>
+            );
+          })}
         </ul>
+
+        {onDeleteNotes && noteBlockers.length > 0 ? (
+          <div className="mt-3 rounded border border-stone-200 bg-stone-50 p-2 text-sm">
+            {confirmingNotes ? (
+              <>
+                <p className="text-stone-700">
+                  Delete {noteBlockers.length} {noteBlockers.length === 1 ? "note" : "notes"}{" "}
+                  permanently? This cannot be undone.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    className="rounded bg-red-700 px-2 py-1 font-medium text-white disabled:opacity-40"
+                    data-testid="blocker-delete-notes-confirm"
+                    onClick={() => {
+                      setBusy(true);
+                      void Promise.resolve(
+                        onDeleteNotes(noteBlockers.map((blocker) => blocker.id)),
+                      ).finally(() => {
+                        setBusy(false);
+                        setConfirmingNotes(false);
+                      });
+                    }}
+                  >
+                    Delete them
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border border-stone-300 px-2 py-1 font-medium text-stone-600"
+                    onClick={() => setConfirmingNotes(false)}
+                  >
+                    Keep them
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="font-medium text-blue-700 underline"
+                data-testid="blocker-delete-notes"
+                onClick={() => setConfirmingNotes(true)}
+              >
+                Delete these {noteBlockers.length} {noteBlockers.length === 1 ? "note" : "notes"}…
+              </button>
+            )}
+          </div>
+        ) : null}
+
         <div className="mt-4 flex justify-end">
           <button
             type="button"

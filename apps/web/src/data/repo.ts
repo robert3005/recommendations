@@ -21,6 +21,7 @@
 import {
   type AddToListSource,
   allRefKeys,
+  type Blocker,
   type BlockNoteAttachment,
   compareByRank,
   createImportedPlace,
@@ -29,10 +30,8 @@ import {
   displayFacts,
   distanceMeters,
   type ExternalRef,
-  emptyBlockers,
   evidenceFromPoi,
   type Hlc,
-  hasBlockers,
   hasExternalRef,
   incrementVersionVector,
   isSyncedTable,
@@ -69,7 +68,6 @@ import {
   sameRef,
   type Tag,
   type TagAssignment,
-  type TeardownBlockers,
   TeardownRefusedError,
   tickHlc,
   type VersionVector,
@@ -1328,25 +1326,40 @@ export class DexieRepository implements PlacemarksRepository {
   }
 
   /**
-   * Blockers for ending this place's existence (spec/src/posts.md §Where
-   * embeds come from): live notes on the place and live post embeds of it.
+   * What must be dismantled before this place loses the membership in `scope`.
+   * The scope is the only difference between the two teardown questions the
+   * repository asks, so they share one implementation: removing the place asks
+   * about every post that embeds it, while removing one membership asks only
+   * about that list's posts — and about the place's notes only when this is the
+   * last membership, i.e. when the place itself would cease to exist.
    */
-  private async placeRemovalBlockers(placeId: PlaceId): Promise<TeardownBlockers> {
-    const blockers = emptyBlockers();
-    for (const note of await this.liveNotesOfPlace(placeId)) {
-      blockers.notes.push({
+  private async blockersFor(
+    placeId: PlaceId,
+    scope: { kind: "place" } | { kind: "membership"; listId: string; blockId: string },
+  ): Promise<Blocker[]> {
+    const blockers: Blocker[] = [];
+    for (const embed of await this.liveEmbedsOfPlace(placeId)) {
+      if (scope.kind === "membership" && embed.post.listId !== scope.listId) continue;
+      blockers.push({
+        kind: "embed",
+        id: embed.block.id,
+        label: embed.post.title,
+        postId: embed.post.id,
         placeId,
-        noteId: note.id,
-        ...(note.title !== undefined ? { title: note.title } : {}),
       });
     }
-    for (const embed of await this.liveEmbedsOfPlace(placeId)) {
-      blockers.embeds.push({
-        placeId,
-        postId: embed.post.id,
-        postTitle: embed.post.title,
-        blockId: embed.block.id,
-      });
+    const endsExistence =
+      scope.kind === "place" ||
+      (await this.livePlaceBlocks(placeId)).filter((b) => b.id !== scope.blockId).length === 0;
+    if (endsExistence) {
+      for (const note of await this.liveNotesOfPlace(placeId)) {
+        blockers.push({
+          kind: "note",
+          id: note.id,
+          ...(note.title !== undefined ? { label: note.title } : {}),
+          placeId,
+        });
+      }
     }
     return blockers;
   }
@@ -1373,8 +1386,8 @@ export class DexieRepository implements PlacemarksRepository {
         if (!place) return;
         // Removing the place from every list ends its existence — refused
         // while authored content still hangs off it (bottom-up teardown).
-        const blockers = await this.placeRemovalBlockers(placeId);
-        if (hasBlockers(blockers)) {
+        const blockers = await this.blockersFor(placeId, { kind: "place" });
+        if (blockers.length > 0) {
           throw new TeardownRefusedError(
             "removing this place is blocked — delete its notes and post embeds first",
             blockers,
@@ -1760,15 +1773,17 @@ export class DexieRepository implements PlacemarksRepository {
         if (!list) return;
         // Bottom-up teardown: a list deletes only once it is empty and no
         // live post editorialises it — nothing cascades through it.
-        const blockers = emptyBlockers();
+        const blockers: Blocker[] = [];
+        for (const post of await this.listPostsForList(listId)) {
+          blockers.push({ kind: "post", id: post.id, label: post.title, postId: post.id });
+        }
         const members = (await this.db.listBlocks.where("listId").equals(listId).toArray()).filter(
           (b) => !b.deleted && b.kind === "place",
         );
-        for (const block of members) blockers.members.push(block.refId);
-        for (const post of await this.listPostsForList(listId)) {
-          blockers.posts.push({ postId: post.id, title: post.title });
+        for (const block of members) {
+          blockers.push({ kind: "member", id: block.refId, placeId: block.refId });
         }
-        if (hasBlockers(blockers)) {
+        if (blockers.length > 0) {
           throw new TeardownRefusedError(
             "deleting this list is blocked — remove its places and delete its posts first",
             blockers,
@@ -1972,38 +1987,6 @@ export class DexieRepository implements PlacemarksRepository {
     );
   }
 
-  /**
-   * Blockers for removing one membership block: a live post about this list
-   * embedding the place; and — when this is the place's last membership —
-   * the place's live notes.
-   */
-  private async blockRemovalBlockers(block: ListBlockRow): Promise<TeardownBlockers> {
-    const blockers = emptyBlockers();
-    if (block.kind !== "place") return blockers;
-    const placeId = block.refId;
-    for (const embed of await this.liveEmbedsOfPlace(placeId)) {
-      if (embed.post.listId === block.listId) {
-        blockers.embeds.push({
-          placeId,
-          postId: embed.post.id,
-          postTitle: embed.post.title,
-          blockId: embed.block.id,
-        });
-      }
-    }
-    const remaining = (await this.livePlaceBlocks(placeId)).filter((b) => b.id !== block.id);
-    if (remaining.length === 0) {
-      for (const note of await this.liveNotesOfPlace(placeId)) {
-        blockers.notes.push({
-          placeId,
-          noteId: note.id,
-          ...(note.title !== undefined ? { title: note.title } : {}),
-        });
-      }
-    }
-    return blockers;
-  }
-
   async removeBlock(blockId: string, now: string): Promise<void> {
     // The removal and its publication dirtying are one commit.
     await this.db.transaction(
@@ -2024,8 +2007,15 @@ export class DexieRepository implements PlacemarksRepository {
       async () => {
         const block = live(await this.db.listBlocks.get(blockId));
         if (!block) return;
-        const blockers = await this.blockRemovalBlockers(block);
-        if (hasBlockers(blockers)) {
+        const blockers =
+          block.kind === "place"
+            ? await this.blockersFor(block.refId, {
+                kind: "membership",
+                listId: block.listId,
+                blockId: block.id,
+              })
+            : [];
+        if (blockers.length > 0) {
           throw new TeardownRefusedError(
             "removing this place is blocked — remove its post embeds (and notes, when this is its last list) first",
             blockers,
@@ -2066,13 +2056,17 @@ export class DexieRepository implements PlacemarksRepository {
         if (!live(await this.db.lists.get(listId))) throw new Error("list not found");
         const blocks = (await this.liveBlocks(listId)).filter((b) => b.kind === "place");
         if (blocks.length === 0) return;
-        const blockers = emptyBlockers();
+        const blockers: Blocker[] = [];
         for (const block of blocks) {
-          const each = await this.blockRemovalBlockers(block);
-          blockers.embeds.push(...each.embeds);
-          blockers.notes.push(...each.notes);
+          blockers.push(
+            ...(await this.blockersFor(block.refId, {
+              kind: "membership",
+              listId: block.listId,
+              blockId: block.id,
+            })),
+          );
         }
-        if (hasBlockers(blockers)) {
+        if (blockers.length > 0) {
           throw new TeardownRefusedError(
             "emptying this list is blocked — some places carry notes or post embeds",
             blockers,

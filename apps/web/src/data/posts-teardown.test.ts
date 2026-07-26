@@ -229,8 +229,8 @@ describe("bottom-up teardown", () => {
     if (!blockId) throw new Error("no membership block");
 
     const refusal = await refusalOf(repo.removeBlock(blockId, LATER));
-    expect(refusal.blockers.embeds).toEqual([
-      { placeId: place.id, postId: "p1", postTitle: "The guide", blockId: embed.id },
+    expect(refusal.blockers).toEqual([
+      { kind: "embed", id: embed.id, label: "The guide", postId: "p1", placeId: place.id },
     ]);
 
     // Dismantling the embed unblocks the removal; the place then tombstones
@@ -250,11 +250,9 @@ describe("bottom-up teardown", () => {
     const embed = await repo.embedPlaceInPost("p1", place.id, NOW);
 
     const refusal = await refusalOf(repo.removePlace(place.id, LATER));
-    expect(refusal.blockers.notes).toEqual([
-      { placeId: place.id, noteId: "n1", title: "Espresso notes" },
-    ]);
-    expect(refusal.blockers.embeds).toEqual([
-      { placeId: place.id, postId: "p1", postTitle: "The guide", blockId: embed.id },
+    expect(refusal.blockers).toEqual([
+      { kind: "embed", id: embed.id, label: "The guide", postId: "p1", placeId: place.id },
+      { kind: "note", id: "n1", label: "Espresso notes", placeId: place.id },
     ]);
     expect(await repo.getPlaceView(place.id)).toBeDefined();
 
@@ -272,8 +270,10 @@ describe("bottom-up teardown", () => {
     await repo.db.publications.put(listPub);
 
     const refusal = await refusalOf(repo.deleteList("l1", LATER));
-    expect(refusal.blockers.members).toEqual([place.id]);
-    expect(refusal.blockers.posts).toEqual([{ postId: "p1", title: "The guide" }]);
+    expect(refusal.blockers).toEqual([
+      { kind: "post", id: "p1", label: "The guide", postId: "p1" },
+      { kind: "member", id: place.id, placeId: place.id },
+    ]);
     expect(await repo.getList("l1")).toBeDefined();
 
     await repo.deletePost("p1", LATER);
@@ -301,8 +301,12 @@ describe("bottom-up teardown", () => {
     const embed = await repo.embedPlaceInPost("p1", embedded.id, NOW);
 
     const refusal = await refusalOf(repo.removeAllPlaces("l1", LATER));
-    expect(refusal.blockers.notes.map((n) => n.placeId)).toEqual([noted.id]);
-    expect(refusal.blockers.embeds.map((e) => e.placeId)).toEqual([embedded.id]);
+    expect(refusal.blockers.filter((b) => b.kind === "note").map((b) => b.placeId)).toEqual([
+      noted.id,
+    ]);
+    expect(refusal.blockers.filter((b) => b.kind === "embed").map((b) => b.placeId)).toEqual([
+      embedded.id,
+    ]);
     // All-or-nothing: nothing was removed, not even the unblocked place.
     expect(await repo.getListBlocks("l1")).toHaveLength(3);
     expect(await repo.getPlaceView(free.id)).toBeDefined();

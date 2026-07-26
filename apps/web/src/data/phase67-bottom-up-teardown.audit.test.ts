@@ -49,7 +49,7 @@ describe("Phase 6/7 bottom-up teardown", () => {
     const refusal = repo.removeBlock(membership.block.id, LATER);
     await expect(refusal).rejects.toBeInstanceOf(TeardownRefusedError);
     await expect(refusal).rejects.toMatchObject({
-      blockers: { notes: [{ noteId: "note-1", title: "Keep me" }] },
+      blockers: [{ kind: "note", id: "note-1", label: "Keep me" }],
     });
 
     expect(await repo.getPlace(view.place.id)).toBeDefined();
@@ -86,7 +86,7 @@ describe("Phase 6/7 bottom-up teardown", () => {
     if (!membership) throw new Error("membership fixture missing");
 
     await expect(repo.removeBlock(membership.block.id, LATER)).rejects.toMatchObject({
-      blockers: { embeds: [{ postId: "post-1", blockId: embed.id }], notes: [] },
+      blockers: [{ kind: "embed", id: embed.id, postId: "post-1" }],
     });
 
     await repo.removePostBlock(embed.id, LATER);
@@ -108,15 +108,15 @@ describe("Phase 6/7 bottom-up teardown", () => {
     });
 
     await expect(repo.deleteList("list-1", LATER)).rejects.toMatchObject({
-      blockers: {
-        members: [expect.any(String)],
-        posts: [{ postId: "post-1", title: "Post one" }],
-      },
+      blockers: [
+        { kind: "post", id: "post-1", label: "Post one" },
+        { kind: "member", id: expect.any(String) },
+      ],
     });
 
     await repo.removeAllPlaces("list-1", LATER);
     await expect(repo.deleteList("list-1", LATER)).rejects.toMatchObject({
-      blockers: { members: [], posts: [{ postId: "post-1" }] },
+      blockers: [{ kind: "post", id: "post-1" }],
     });
     await repo.deletePost("post-1", LATER);
     await repo.deleteList("list-1", LATER);

@@ -57,25 +57,16 @@ describe("Phase 6/7 place-card teardown refusal", () => {
     mocks.clearSelection.mockClear();
     mocks.removePlace.mockReset();
     mocks.removePlace.mockRejectedValue(
-      new TeardownRefusedError("authored content blocks removal", {
-        notes: [
-          {
-            placeId: place.id,
-            noteId: "note-1",
-            title: "Why this place matters",
-          },
-        ],
-        embeds: [
-          {
-            placeId: place.id,
-            postId: "post-1",
-            postTitle: "A weekend in London",
-            blockId: "embed-1",
-          },
-        ],
-        posts: [],
-        members: [],
-      }),
+      new TeardownRefusedError("authored content blocks removal", [
+        {
+          kind: "embed",
+          id: "embed-1",
+          label: "A weekend in London",
+          postId: "post-1",
+          placeId: place.id,
+        },
+        { kind: "note", id: "note-1", label: "Why this place matters", placeId: place.id },
+      ]),
     );
   });
 

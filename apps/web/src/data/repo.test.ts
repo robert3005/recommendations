@@ -131,8 +131,8 @@ describe("membership is existence", () => {
       (error: unknown) => error,
     );
     expect(refusal).toBeInstanceOf(TeardownRefusedError);
-    expect((refusal as TeardownRefusedError).blockers.notes).toEqual([
-      { placeId: view.place.id, noteId: "n1" },
+    expect((refusal as TeardownRefusedError).blockers).toEqual([
+      { kind: "note", id: "n1", placeId: view.place.id },
     ]);
 
     await repo.deleteNote("n1", LATER);
@@ -186,9 +186,12 @@ describe("membership is existence", () => {
       (error: unknown) => error,
     );
     expect(refusal).toBeInstanceOf(TeardownRefusedError);
-    expect([...(refusal as TeardownRefusedError).blockers.members].sort()).toEqual(
-      [only.place.id, shared.place.id].sort(),
-    );
+    expect(
+      (refusal as TeardownRefusedError).blockers
+        .filter((b) => b.kind === "member")
+        .map((b) => b.id)
+        .sort(),
+    ).toEqual([only.place.id, shared.place.id].sort());
 
     await repo.removeAllPlaces("l1", LATER);
     await repo.deleteList("l1", LATER);

@@ -5,10 +5,10 @@
  * the place).
  */
 import {
+  type Blocker,
   displayFacts,
   linkPlaceToOsm,
   type Note,
-  type TeardownBlockers,
   TeardownRefusedError,
 } from "@placemarks/domain";
 import { useLiveQuery } from "dexie-react-hooks";
@@ -78,7 +78,7 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
   const [editingNote, setEditingNote] = useState<Note>();
   const [linking, setLinking] = useState(false);
   const [message, setMessage] = useState<string>();
-  const [refusal, setRefusal] = useState<TeardownBlockers>();
+  const [refusal, setRefusal] = useState<Blocker[]>();
   // Modal focus: enter the sheet once it has actually rendered (the place
   // view resolves asynchronously — a mount-time effect fires while the sheet
   // is still null and focuses nothing), return to the invoker on close.
@@ -191,6 +191,10 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
           blockers={refusal}
           placeNames={{ [view.place.id]: facts?.name ?? "Unnamed place" }}
           onOpenPlace={() => setRefusal(undefined)}
+          onDeleteNotes={async (noteIds) => {
+            for (const noteId of noteIds) await repo.deleteNote(noteId, nowIso());
+            setRefusal(undefined);
+          }}
           onClose={() => setRefusal(undefined)}
         />
       ) : null}

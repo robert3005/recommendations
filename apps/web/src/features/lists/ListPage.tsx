@@ -5,10 +5,10 @@
  * Every list exports as KML / Takeout-shaped CSV / GeoJSON / GPX.
  */
 import {
+  type Blocker,
   displayFacts,
   type ListBlockView,
   type Note,
-  type TeardownBlockers,
   TeardownRefusedError,
 } from "@placemarks/domain";
 import type { SharedGuide } from "@placemarks/schemas";
@@ -60,7 +60,7 @@ export function ListPage() {
   useCanvasProjection({ kind: "list", listId });
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState<string>();
-  const [refusal, setRefusal] = useState<{ title: string; blockers: TeardownBlockers }>();
+  const [refusal, setRefusal] = useState<{ title: string; blockers: Blocker[] }>();
   const [sharing, setSharing] = useState<{
     guide: SharedGuide;
     stats: ProjectionStats;
@@ -532,6 +532,10 @@ export function ListPage() {
             setRefusal(undefined);
             selectPlace(placeId);
             if (facts) requestFlyTo({ lat: facts.lat, lng: facts.lng, zoom: 16 });
+          }}
+          onDeleteNotes={async (noteIds) => {
+            for (const noteId of noteIds) await repo.deleteNote(noteId, nowIso());
+            setRefusal(undefined);
           }}
           onClose={() => setRefusal(undefined)}
         />

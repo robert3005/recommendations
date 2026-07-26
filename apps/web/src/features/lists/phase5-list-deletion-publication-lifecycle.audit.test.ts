@@ -55,7 +55,11 @@ describe("Phase 5 list-deletion publication lifecycle", () => {
         (err: unknown) => err,
       );
       expect(refusal).toBeInstanceOf(TeardownRefusedError);
-      expect((refusal as TeardownRefusedError).blockers.members).toEqual([member.place.id]);
+      expect(
+        (refusal as TeardownRefusedError).blockers
+          .filter((b) => b.kind === "member")
+          .map((b) => b.id),
+      ).toEqual([member.place.id]);
       await expect(repo.getList("list-1")).resolves.toMatchObject({ id: "list-1" });
       await expect(repo.db.publications.get(hosted.id)).resolves.toMatchObject({
         status: "published",
