@@ -95,8 +95,29 @@ describe("share service", () => {
     const ok = await put(TOKEN, '"1"', "u3");
     expect(ok.status).toBe(200);
     expect(await ok.json()).toEqual({ slug: "lisbon-trip", revision: 2 });
-    // An out-of-order retry of an older job can never roll the document back.
-    expect((await put(TOKEN, '"1"', "u4")).status).toBe(412);
+    // A stale If-Match whose stored document is byte-identical to what the
+    // request asks for is acknowledged, not refused: the requested end state
+    // already holds, produced by this token, with nothing written since. That
+    // is what lets a lost replay handle recover instead of stranding the page.
+    // It still cannot roll the document back — the read below proves it.
+    const recovered = await put(TOKEN, '"1"', "u4");
+    expect(recovered.status).toBe(200);
+    expect(await recovered.json()).toEqual({ slug: "lisbon-trip", revision: 2 });
+    // A stale If-Match with DIFFERENT content is still a conflict.
+    expect(
+      (
+        await request("/s/lists/lisbon-trip", {
+          method: "PUT",
+          headers: {
+            authorization: `Bearer ${TOKEN}`,
+            "if-match": '"1"',
+            "idempotency-key": "u5",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ document: guide("Something else") }),
+        })
+      ).status,
+    ).toBe(412);
 
     const read = await request("/s/lists/lisbon-trip");
     expect(((await read.json()) as SharedGuide).title).toBe("Updated title");
@@ -182,7 +203,7 @@ describe("share service", () => {
     expect(limited).toBe(true);
   });
 
-  it("stores only the token hash and audits denied attempts", async () => {
+  it("stores only the token hash and refuses a wrong-token write", async () => {
     const { storage, create, request } = harness();
     await create("lisbon-trip");
     const doc = await storage.get("list", "lisbon-trip");
@@ -199,6 +220,7 @@ describe("share service", () => {
       },
       body: JSON.stringify({ document: guide() }),
     });
-    expect(storage.auditEntries.some((entry) => entry.action === "denied")).toBe(true);
+    // The wrong token never mutates the document.
+    expect((await storage.get("list", "lisbon-trip"))?.revision).toBe(1);
   });
 });

@@ -5,9 +5,9 @@
  */
 import type { SharedGuide } from "@placemarks/schemas";
 import { LIMITS } from "@placemarks/schemas";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { createShareApp } from "./app";
-import { type AuditEntry, MemoryStorage } from "./storage";
+import { MemoryStorage } from "./storage";
 
 const TOKEN = "a".repeat(43); // 32 bytes encoded as unpadded base64url
 
@@ -41,18 +41,6 @@ function harness(storage = new MemoryStorage()) {
       body: JSON.stringify({ desiredSlug: slug, document: options.document ?? guide() }),
     });
   return { storage, request, create };
-}
-
-class UpdateAuditFailsOnceStorage extends MemoryStorage {
-  private shouldFail = true;
-
-  override async audit(entry: AuditEntry): Promise<void> {
-    if (entry.action === "update" && this.shouldFail) {
-      this.shouldFail = false;
-      throw new Error("simulated audit write failure");
-    }
-    await super.audit(entry);
-  }
 }
 
 class UpdateIdempotencyFailsOnceStorage extends MemoryStorage {
@@ -169,30 +157,6 @@ describe("Phase 5 bearer and idempotency security", () => {
 
     expect(responses.map((response) => response.status)).toEqual([201, 201]);
     expect(await responses[0]?.text()).toBe(await responses[1]?.text());
-  });
-
-  it("does not commit a revision without its audit and idempotency records", async () => {
-    const { request, create } = harness(new UpdateAuditFailsOnceStorage());
-    await create("atomic-update");
-    const update = {
-      method: "PUT",
-      headers: {
-        authorization: `Bearer ${TOKEN}`,
-        "if-match": '"1"',
-        "idempotency-key": "atomic-update-job",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ document: guide({ title: "Atomic title" }) }),
-    } satisfies RequestInit;
-
-    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const firstAttempt = await request("/s/lists/atomic-update", update);
-    logged.mockRestore();
-    expect(firstAttempt.status).toBe(500);
-    const retry = await request("/s/lists/atomic-update", update);
-
-    expect(retry.status).toBe(200);
-    expect(await retry.json()).toEqual({ slug: "atomic-update", revision: 2 });
   });
 
   it("does not commit a revision when persisting its idempotent result fails", async () => {
@@ -372,14 +336,5 @@ describe("Phase 5 conditional, limit, and audit enforcement", () => {
     }
 
     expect(statuses).toContain(429);
-  });
-
-  it("audits successful public reads as well as mutations", async () => {
-    const { storage, request, create } = harness();
-    await create("audited-read");
-
-    expect((await request("/s/lists/audited-read")).status).toBe(200);
-
-    expect(storage.auditEntries.map((entry) => String(entry.action))).toContain("read");
   });
 });

@@ -3,15 +3,7 @@
  * and conditional revision updates — not KV). Minimal structural typing keeps
  * the package free of a workers-types dependency.
  */
-import type {
-  AuditEntry,
-  CreateCommit,
-  DocumentKind,
-  IdempotencyRecord,
-  ShareStorage,
-  StoredDocument,
-  UpdateCommit,
-} from "./storage";
+import type { DocumentKind, IdempotencyRecord, ShareStorage, StoredDocument } from "./storage";
 
 interface D1Result {
   results?: unknown[];
@@ -26,8 +18,6 @@ interface D1PreparedStatement {
 
 export interface D1Like {
   prepare(sql: string): D1PreparedStatement;
-  /** Transactional statement group — D1 executes a batch atomically. */
-  batch?(statements: D1PreparedStatement[]): Promise<D1Result[]>;
 }
 
 export class D1Storage implements ShareStorage {
@@ -105,155 +95,24 @@ export class D1Storage implements ShareStorage {
     return (result.meta?.changes ?? 0) === 0 ? "conflict" : "ok";
   }
 
-  async audit(entry: AuditEntry): Promise<void> {
-    await this.db
-      .prepare("INSERT INTO audit (at, slug, kind, action, revision) VALUES (?, ?, ?, ?, ?)")
-      .bind(entry.at, entry.slug, entry.kind, entry.action, entry.revision ?? null)
-      .run();
-  }
-
   async getIdempotent(key: string): Promise<IdempotencyRecord | undefined> {
     const row = await this.db
       .prepare("SELECT * FROM idempotency WHERE key = ?")
       .bind(key)
       .first<IdempotencyRecord>();
-    if (row) return row;
-    // A reservation not yet promoted surfaces as pending — never as success.
-    const pending = await this.db
-      .prepare("SELECT * FROM idempotency WHERE key = ?")
-      .bind(`pending:${key}`)
-      .first<IdempotencyRecord>();
-    return pending ? { ...pending, key } : undefined;
+    return row ?? undefined;
   }
 
   async putIdempotent(record: IdempotencyRecord): Promise<void> {
-    // Records are immutable inserts. A pending reservation (status 0) lives
-    // under a state-prefixed key, so promoting it to the final replayable
-    // result is a fresh INSERT of the bare key — no UPDATE ever needed.
-    const key = record.status >= 200 ? record.key : `pending:${record.key}`;
+    // Immutable inserts under the bare key. The two-phase `pending:` encoding
+    // existed only to keep the batched commit unit's ordering honest.
     await this.db
       .prepare(
         "INSERT OR IGNORE INTO idempotency (key, response, status, createdAt) " +
           "VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
       )
-      .bind(key, record.response, record.status)
+      .bind(record.key, record.response, record.status)
       .run();
-  }
-
-  private auditStatement(entry: AuditEntry): D1PreparedStatement {
-    return this.db
-      .prepare("INSERT INTO audit (at, slug, kind, action, revision) VALUES (?, ?, ?, ?, ?)")
-      .bind(entry.at, entry.slug, entry.kind, entry.action, entry.revision ?? null);
-  }
-
-  private idempotentStatement(record: IdempotencyRecord): D1PreparedStatement {
-    const key = record.status >= 200 ? record.key : `pending:${record.key}`;
-    return this.db
-      .prepare(
-        "INSERT OR IGNORE INTO idempotency (key, response, status, createdAt) " +
-          "VALUES (?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
-      )
-      .bind(key, record.response, record.status);
-  }
-
-  async createCommit(input: CreateCommit): Promise<"created" | "collision"> {
-    // Transactional commits REQUIRE the batch API — sequential writes cannot
-    // give the all-or-nothing guarantee, so fail closed before any write.
-    if (!this.db.batch) {
-      throw new Error("D1 batch API unavailable — transactional commits require it");
-    }
-    const doc = input.document;
-    try {
-      // ONE atomic D1 unit: audit, key reservation, slug claim, replayable ack.
-      await this.db.batch([
-        this.auditStatement(input.audit),
-        this.idempotentStatement({ key: input.reservationKey, response: "", status: 0 }),
-        this.db
-          .prepare(
-            "INSERT INTO documents (slug, kind, revision, tokenHash, body, createdAt, updatedAt, revoked) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
-          )
-          .bind(
-            doc.slug,
-            doc.kind,
-            doc.revision,
-            doc.tokenHash,
-            doc.body,
-            doc.createdAt,
-            doc.updatedAt,
-          ),
-        this.idempotentStatement({
-          key: input.reservationKey,
-          response: input.response,
-          status: 201,
-        }),
-      ]);
-      return "created";
-    } catch (err) {
-      if (err instanceof Error && /UNIQUE constraint failed/i.test(err.message)) {
-        return "collision";
-      }
-      throw err;
-    }
-  }
-
-  async updateCommit(input: UpdateCommit): Promise<StoredDocument | "conflict" | "missing"> {
-    // Transactional commits REQUIRE the batch API — sequential writes cannot
-    // give the all-or-nothing guarantee, so fail closed before any write.
-    if (!this.db.batch) {
-      throw new Error("D1 batch API unavailable — transactional commits require it");
-    }
-    const existing = await this.get(input.kind, input.slug);
-    if (!existing || existing.revoked) return "missing";
-    if (existing.revision !== input.expectedRevision) return "conflict";
-    // ONE atomic D1 unit (spec/src/sharing.md §Share service): the guarded
-    // conditional write, then audit, reservation, and — last — the replayable
-    // acknowledgement. A changes-0 UPDATE is still a "successful" SQL
-    // statement, so the revision guard directly after it turns a lost race
-    // into a STATEMENT FAILURE (NULL into the NOT NULL idempotency key),
-    // aborting and rolling back the whole batch: a lost or interrupted commit
-    // leaves nothing durable — no audit row, no reservation, and never a
-    // replayable success for a write that did not apply.
-    const conditionalWrite = this.db
-      .prepare(
-        "UPDATE documents SET revision = revision + 1, body = ?, updatedAt = ? WHERE kind = ? AND slug = ? AND revision = ? AND revoked = 0",
-      )
-      .bind(input.body, input.updatedAt, input.kind, input.slug, input.expectedRevision);
-    const revisionGuard = this.db.prepare(
-      "INSERT INTO idempotency (key, response, status, createdAt) " +
-        "SELECT NULL, '', 0, strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE changes() = 0",
-    );
-    try {
-      await this.db.batch([
-        conditionalWrite,
-        revisionGuard,
-        this.auditStatement(input.audit),
-        this.idempotentStatement({ key: input.reservationKey, response: "", status: 0 }),
-        this.idempotentStatement({
-          key: input.reservationKey,
-          response: input.response,
-          status: 200,
-        }),
-      ]);
-    } catch (err) {
-      // The guard's designed failure IS the lost race; anything else is a
-      // real storage failure and must surface for retry.
-      if (
-        err instanceof Error &&
-        /NOT NULL constraint failed: idempotency\.key/i.test(err.message)
-      ) {
-        return "conflict";
-      }
-      throw err;
-    }
-    // The acknowledgement is THIS update's committed transition — a later
-    // writer may already have advanced the document, and its state must
-    // never masquerade as ours.
-    return {
-      ...existing,
-      revision: input.expectedRevision + 1,
-      body: input.body,
-      updatedAt: input.updatedAt,
-    };
   }
 
   async hit(bucket: string, windowMs: number, now: number): Promise<number> {

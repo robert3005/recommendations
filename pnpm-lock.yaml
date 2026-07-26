@@ -180,11 +180,16 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/debug@4.1.13)(@types/node@26.1.1)(jiti@2.7.0)(jsdom@26.1.0)(lightningcss@1.32.0)(msw@2.15.0(@types/node@26.1.1)(typescript@5.9.3))(terser@5.49.0)
 
+  packages/service-kit: {}
+
   services/share:
     dependencies:
       '@placemarks/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
+      '@placemarks/service-kit':
+        specifier: workspace:*
+        version: link:../../packages/service-kit
       hono:
         specifier: ^4.6.0
         version: 4.12.30
@@ -207,6 +212,9 @@ importers:
       '@placemarks/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
+      '@placemarks/service-kit':
+        specifier: workspace:*
+        version: link:../../packages/service-kit
       hono:
         specifier: ^4.6.0
         version: 4.12.30

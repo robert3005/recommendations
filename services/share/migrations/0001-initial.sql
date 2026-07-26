@@ -1,11 +1,13 @@
--- Migration baseline for both a fresh D1 database and the original deployed
--- share service.  Existing tables are left in place; missing auxiliary tables
--- and revision triggers are added before later migrations evolve the schema.
--- `documents` intentionally starts with the pre-post CHECK: 0003 proves and
--- performs the data-preserving transition to the current list/post/note shape.
+-- Baseline schema for a fresh D1 database. The service has never been
+-- deployed (wrangler.toml still carries REPLACE_WITH_REAL_ID), so there is no
+-- predecessor to upgrade; migrations that evolve a live database start being
+-- written the day one exists.
+-- Share-service D1 schema snapshot (spec/src/sharing.md §Share service).
+-- Production and fresh databases use the ordered migrations/ workflow; this
+-- file is a reference, not an upgrade command.
 CREATE TABLE IF NOT EXISTS documents (
   slug TEXT NOT NULL,
-  kind TEXT NOT NULL CHECK (kind IN ('list', 'note')),
+  kind TEXT NOT NULL CHECK (kind IN ('list', 'post')),
   revision INTEGER NOT NULL,
   tokenHash TEXT NOT NULL,
   body TEXT NOT NULL,
@@ -15,45 +17,15 @@ CREATE TABLE IF NOT EXISTS documents (
   PRIMARY KEY (slug, kind)
 );
 
-CREATE TABLE IF NOT EXISTS document_revisions (
-  slug TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  revision INTEGER NOT NULL,
-  body TEXT NOT NULL,
-  recordedAt TEXT NOT NULL,
-  PRIMARY KEY (kind, slug, revision)
-);
-
-CREATE TRIGGER IF NOT EXISTS documents_revision_on_insert
-AFTER INSERT ON documents
-BEGIN
-  INSERT OR IGNORE INTO document_revisions (slug, kind, revision, body, recordedAt)
-  VALUES (NEW.slug, NEW.kind, NEW.revision, NEW.body, NEW.updatedAt);
-END;
-
-CREATE TRIGGER IF NOT EXISTS documents_revision_on_update
-AFTER UPDATE OF revision ON documents
-WHEN NEW.revoked = 0
-BEGIN
-  INSERT OR IGNORE INTO document_revisions (slug, kind, revision, body, recordedAt)
-  VALUES (NEW.slug, NEW.kind, NEW.revision, NEW.body, NEW.updatedAt);
-END;
-
-CREATE TABLE IF NOT EXISTS audit (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  at TEXT NOT NULL,
-  slug TEXT NOT NULL,
-  kind TEXT NOT NULL,
-  action TEXT NOT NULL,
-  revision INTEGER
-);
-
--- 0002 adds/backfills the retention timestamp. Keeping the baseline at the
--- predecessor shape makes the same ordered migration set work on a fresh DB.
+-- Replay handles for retried publish/revoke jobs. Written AFTER the mutation
+-- they acknowledge: an interrupted write simply re-executes, and recovery runs
+-- through slug ownership and stored-body comparison, which carry the weight.
 CREATE TABLE IF NOT EXISTS idempotency (
   key TEXT PRIMARY KEY,
   response TEXT NOT NULL,
-  status INTEGER NOT NULL
+  status INTEGER NOT NULL,
+  -- ISO-8601 "T" so TEXT comparison against a purge cutoff is chronological.
+  createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS rate (

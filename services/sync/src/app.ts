@@ -13,6 +13,7 @@ import {
   pushEnvelopeRequestSchema,
   SYNC_LIMITS,
 } from "@placemarks/schemas";
+import { bearerToken, sha256Hex, timingSafeEqualHex } from "@placemarks/service-kit";
 import { type Context, Hono } from "hono";
 import type { SyncStorage } from "./storage";
 
@@ -29,23 +30,6 @@ export interface SyncServiceOptions {
   newId?: () => string;
   newCode?: () => string;
   newToken?: () => string;
-}
-
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-function timingSafeEqualHex(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-function bearerToken(header: string | undefined): string | undefined {
-  const match = header?.match(/^Bearer\s+(\S{43,512})$/);
-  return match?.[1];
 }
 
 function defaultToken(): string {

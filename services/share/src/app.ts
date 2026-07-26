@@ -13,6 +13,7 @@ import {
   RESERVED_SLUGS,
   sharedGuideSchema,
 } from "@placemarks/schemas";
+import { bearerToken, sha256Hex, timingSafeEqualHex, utf8Bytes } from "@placemarks/service-kit";
 import { Hono } from "hono";
 import type { ShareStorage } from "./storage";
 
@@ -20,27 +21,6 @@ export interface ServiceOptions {
   storage: ShareStorage;
   now?: () => string;
 }
-
-async function sha256Hex(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/** Constant-time hex comparison. */
-function timingSafeEqualHex(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-function bearerToken(header: string | undefined): string | undefined {
-  // ≥256 random bits: 43 unpadded base64url characters minimum.
-  const match = header?.match(/^Bearer\s+(\S{43,512})$/);
-  return match?.[1];
-}
-
-const utf8Bytes = (value: string): number => new TextEncoder().encode(value).byteLength;
 
 /** Strict ETag revision: exactly "N" — a malformed value never partially parses. */
 function parseIfMatch(value: string | undefined): number | undefined {
@@ -104,7 +84,6 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         // A tombstone and a never-existed slug read identically (no probing).
         return c.text("not found", 404, PUBLIC_HEADERS);
       }
-      await storage.audit({ at: now(), slug, kind, action: "read", revision: doc.revision });
       const etag = `"${doc.revision}"`;
       // A stable purgeable surrogate key per publication: an update or revoke
       // can purge every cached representation deterministically.
@@ -187,31 +166,25 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
             "Content-Type": "application/json; charset=utf-8",
           });
         }
-        await storage.audit({ at, slug, kind, action: "denied" });
         return c.text("slug already taken", 409, MUTATION_HEADERS);
       };
       if (await storage.get(kind, slug)) return collision();
-      // The whole first-publish transition is ONE storage commit: audit → key
-      // reservation → atomic slug claim → replayable success. The success
-      // record is the commit acknowledgement, so it lands last; an interrupted
-      // commit leaves nothing durable and simply re-executes on retry.
+      // The claim is one atomic INSERT; the replay handle is written after it.
+      // An interrupted create leaves no handle and simply re-executes: the
+      // retry recovers through slug ownership and stored-body comparison.
       const response = JSON.stringify({ slug, revision: 1 });
-      const committed = await storage.createCommit({
-        audit: { at, slug, kind, action: "create", revision: 1 },
-        reservationKey: scopedKey,
-        document: {
-          slug,
-          kind,
-          revision: 1,
-          tokenHash,
-          body: documentBody,
-          createdAt: at,
-          updatedAt: at,
-          revoked: false,
-        },
-        response,
+      const claimed = await storage.create({
+        slug,
+        kind,
+        revision: 1,
+        tokenHash,
+        body: documentBody,
+        createdAt: at,
+        updatedAt: at,
+        revoked: false,
       });
-      if (committed === "collision") return collision();
+      if (!claimed) return collision();
+      await storage.putIdempotent({ key: scopedKey, response, status: 201 });
       return c.body(response, 201, {
         ...MUTATION_HEADERS,
         "Content-Type": "application/json; charset=utf-8",
@@ -230,7 +203,6 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
       const doc = await storage.get(kind, slug);
       if (!doc || doc.revoked) return { ok: false, status: 404 };
       if (!timingSafeEqualHex(doc.tokenHash, await sha256Hex(token))) {
-        await storage.audit({ at: now(), slug, kind, action: "denied" });
         return { ok: false, status: 403 };
       }
       const match = c.req.header("if-match");
@@ -256,8 +228,6 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
       // different operation nor replay one slug's result as another's.
       const scopedKey = `${kind}:put:${c.req.param("slug")}:${tokenHash}:${idKey}`;
       const replay = await storage.getIdempotent(scopedKey);
-      // A pending marker (status 0) reserves the key but never replays — an
-      // interrupted attempt re-executes instead of faking success.
       if (replay && replay.status >= 200) {
         return c.body(replay.response, replay.status as 200, {
           ...MUTATION_HEADERS,
@@ -286,10 +256,14 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         return c.text("document too large", 413, MUTATION_HEADERS);
       }
       if (!auth.ok) {
-        // A pending reservation plus a document that already matches this
-        // exact request means our earlier attempt committed but its success
-        // record was lost — recover the result instead of failing the retry.
-        if (auth.status === 412 && replay) {
+        // A stale If-Match whose stored document is EXACTLY what this request
+        // asks for means our earlier attempt committed and its replay handle
+        // was lost. The content proves it: our token owns the document, the
+        // revision is precisely the one this write would have produced, and the
+        // body is byte-identical. Recover the result rather than failing the
+        // retry — this is what lets the handle be written after the mutation
+        // instead of inside an atomic batch with it.
+        if (auth.status === 412) {
           const expected = parseIfMatch(c.req.header("if-match"));
           const doc = await storage.get(kind, c.req.param("slug"));
           if (
@@ -311,21 +285,10 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         return c.text("mutation refused", auth.status, MUTATION_HEADERS);
       }
       const at = now();
-      // The whole update transition is ONE storage commit: audit → key
-      // reservation → conditional revision write → replayable success. An
-      // interrupted commit leaves nothing durable; the success record is the
-      // acknowledgement and lands last.
+      // One conditional UPDATE; the replay handle follows it. A lost race is
+      // a changes-0 write, reported as "conflict" without any handle written.
       const response = JSON.stringify({ slug: auth.slug, revision: auth.expected + 1 });
-      const result = await storage.updateCommit({
-        audit: { at, slug: auth.slug, kind, action: "update", revision: auth.expected + 1 },
-        reservationKey: scopedKey,
-        kind,
-        slug: auth.slug,
-        expectedRevision: auth.expected,
-        body: serialized,
-        updatedAt: at,
-        response,
-      });
+      const result = await storage.update(kind, auth.slug, auth.expected, serialized, at);
       if (result === "missing") return c.text("not found", 404, MUTATION_HEADERS);
       if (result === "conflict") {
         // A concurrent identical retry converges on the winner's committed
@@ -339,6 +302,7 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         }
         return c.text("stale revision", 412, MUTATION_HEADERS);
       }
+      await storage.putIdempotent({ key: scopedKey, response, status: 200 });
       return c.body(JSON.stringify({ slug: auth.slug, revision: result.revision }), 200, {
         ...MUTATION_HEADERS,
         "Content-Type": "application/json; charset=utf-8",
@@ -358,13 +322,13 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
       const auth = await authorized(c);
       if (!auth.ok) {
         if (auth.status === 404) {
-          // A reservation under our (token, slug, key) scope plus a tombstone
-          // under our token means this revocation already applied — by an
-          // interrupted earlier attempt or a concurrent retry of the same job.
-          // Recover the success instead of reading the tombstone as gone.
-          const record = replay ?? (await storage.getIdempotent(scopedKey));
+          // A tombstone under OUR token is itself the proof that this
+          // revocation already applied — only its owner could have produced
+          // that state. Recover the success instead of reading the tombstone as
+          // gone. (This used to additionally require a key reservation; the
+          // reservation proved nothing the tombstone does not.)
           const doc = await storage.get(kind, c.req.param("slug"));
-          if (record && doc?.revoked && timingSafeEqualHex(doc.tokenHash, tokenHash)) {
+          if (doc?.revoked && timingSafeEqualHex(doc.tokenHash, tokenHash)) {
             await storage.putIdempotent({ key: scopedKey, response: "", status: 204 });
             return c.body(null, 204, MUTATION_HEADERS);
           }
@@ -377,13 +341,11 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         return c.text("rate limited", 429, MUTATION_HEADERS);
       }
       const at = now();
-      await storage.audit({ at, slug: auth.slug, kind, action: "revoke" });
-      await storage.putIdempotent({ key: scopedKey, response: "", status: 0 });
       const result = await storage.revoke(kind, auth.slug, auth.expected, at);
       if (result !== "ok") {
         // A concurrent identical retry converges on the winner's success: its
-        // record, or the tombstone the winner left under our token (we hold a
-        // reservation for exactly this job, so the outcome is ours to claim).
+        // record, or the tombstone the winner left under our token — a
+        // tombstone we own is the outcome this job wanted.
         const winner = await storage.getIdempotent(scopedKey);
         if (winner && winner.status >= 200) return c.body(null, 204, MUTATION_HEADERS);
         const doc = await storage.get(kind, auth.slug);
