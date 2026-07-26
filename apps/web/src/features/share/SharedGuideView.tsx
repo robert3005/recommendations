@@ -20,7 +20,6 @@ import { usePaneStore } from "../../state/pane";
 import { useCanvasProjection, useProjectionStore } from "../../state/projection";
 import { useUiStore } from "../../state/ui";
 import { NavLinks } from "../place/NavLinks";
-import { OsmLink } from "../place/OsmLink";
 import { articleFollowGroups } from "../posts/articleFollow";
 import { useVisibleFollowKeys } from "../posts/useVisibleFollowKeys";
 import { resolveAllAnchors, type SharedResolution } from "./resolveShared";
@@ -433,8 +432,8 @@ export function SharedGuideView({
                         lat={coords.lat}
                         lng={coords.lng}
                         {...(shown.name ? { name: shown.name } : {})}
+                        {...(osmRef ? { osmRef } : {})}
                       />
-                      {osmRef ? <OsmLink osmRef={osmRef} /> : null}
                     </div>
                   );
                 })()}

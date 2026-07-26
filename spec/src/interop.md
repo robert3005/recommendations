@@ -61,11 +61,32 @@ Facts about the Takeout CSVs that shape the whole design:
   Google URL to scrape coordinates. The proprietary-API ban ([vision](./vision.md)) stands.
   Importing is *parsing files the user exported of their own data* — portability, not
   integration.
-- ❌ **No shared-link scraping.** Pasting a `maps.app.goo.gl` list link will not import it:
-  it requires scraping Google's app markup, which is fragile and against terms. The supported
-  answer is "run Takeout, drop the archive here."
+- ❌ **No shared-link scraping.** Pasting a Google *list* link will not import it: it requires
+  scraping Google's app markup, which is fragile and against terms. The supported answer is "run
+  Takeout, drop the archive here." Pasting a link to a *single place* is different and is
+  supported — see below — because the URL itself carries the coordinates; we read the string and
+  never fetch it. A `maps.app.goo.gl` short link is the exception in the other direction: only a
+  redirect would reveal what it points at, so we ask for the expanded URL instead of guessing.
 - ❌ **No live two-way sync with Google Maps.** Import and export are explicit, file-shaped,
   repeatable actions.
+
+### Adding one place (2026-07-26)
+
+Import is the bulk path, but requiring a Takeout archive to keep a single café someone just
+mentioned is the wrong shape. Two front doors sit together in one field, in the content pane
+where the app opens (search that only exists on a visible map is search that does not exist):
+
+- **Search** queries OpenStreetMap, as it always did.
+- **Paste a link** accepts a Google Maps, Apple Maps or OpenStreetMap URL. Parsing is pure string
+  work — no fetch, no API, so the non-goals above are untouched. An OSM element link is the good
+  case: it resolves to real copied evidence, so the place is OSM-bound from birth. Google and
+  Apple links carry coordinates and usually a name, which makes an import-origin place with the
+  URL retained as provenance and as the deep link back. Google-derived facts still never pre-fill
+  an OSM contribution.
+
+Two parsing judgements worth recording: Google's `!3d`/`!4d` pair (the pin) is preferred over
+`@lat,lng` (the camera) because they differ, and a coordinate pair sitting in the name slot is not
+a name.
 
 ## Import pipeline
 
@@ -163,6 +184,7 @@ Every list exports to the formats the ecosystem ingests. Fidelity varies and is 
 | **CSV** (Takeout-shaped) | Title, Note, URL, Address | spreadsheets; round-trips into our own importer | URL column: retained Google external ref, else OSM portal URL, else a `lat,lng` maps search URL |
 | **GeoJSON** | everything portable: coords, names, notes, tags, external refs as properties | web GIS tools, other apps | the interchange format; our ZIP backup remains the full-fidelity archive |
 | **GPX** | waypoints: name, description | OsmAnd, Garmin, hiking watches | |
+| **Text list** (Markdown) | the list as prose: name, category, address, tags, notes, and all three deep links per place | a person — paste into a message, a doc, a blog post | the nearest honest thing to "share a Google list": Google has no write API, and My Maps gives a map layer, not a list |
 
 - **"Send to Google My Maps"** is a KML download plus a short guided instruction ("My Maps →
   Import → choose this file") — there is no write API, and pretending otherwise would mean
@@ -201,6 +223,12 @@ Placemarks curates; navigation happens wherever the user prefers. The place card
 - **View on OpenStreetMap** — the existing portal link, when OSM-linked.
 
 Turn-by-turn routing stays a non-goal; deep links *are* the navigation story.
+
+*(2026-07-26.)* One module builds these URLs and parses incoming ones, so the place card, the
+public share page and the text export hand out the same links. The share document deliberately
+carries no Google URL — it holds only OSM evidence and owner-authored facts — so a shared page's
+Google link is a coordinate/name search. A stored URL is only opened as a Google link when it is
+genuinely an https Google host.
 
 ## List curation returns (edit mode)
 

@@ -28,6 +28,7 @@ import {
   exportListGpx,
   exportListKml,
   exportListKmz,
+  exportListMarkdown,
 } from "../interop/export";
 import { StateBadge } from "../place/StateBadge";
 import { PublishControls } from "../publish/PublishControls";
@@ -39,6 +40,9 @@ import { MarkerGlyph } from "./MarkerGlyph";
 import { MarkerSwatches } from "./MarkerSwatches";
 
 const EXPORTS = [
+  // First, because it is the one a person reads: a list of places with links
+  // out to Google, Apple and OpenStreetMap, ready to paste anywhere.
+  { key: "md", label: "Text list", mime: "text/markdown", write: exportListMarkdown },
   { key: "kml", label: "KML", mime: "application/vnd.google-earth.kml+xml", write: exportListKml },
   { key: "csv", label: "CSV", mime: "text/csv", write: exportListCsv },
   { key: "geojson", label: "GeoJSON", mime: "application/geo+json", write: exportListGeoJson },

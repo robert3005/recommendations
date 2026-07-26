@@ -9,6 +9,7 @@
  */
 import type { OsmElementRef } from "@placemarks/domain";
 import { placeLinksFor } from "../interop/placeLinks";
+import { OsmLink } from "./OsmLink";
 
 export interface NavLinksProps {
   lat: number;
@@ -26,7 +27,6 @@ export function NavLinks({ lat, lng, name, externalUrl, osmRef }: NavLinksProps)
     lng,
     ...(name ? { name } : {}),
     ...(externalUrl ? { externalUrl } : {}),
-    ...(osmRef ? { osmRef } : {}),
   });
   const linkClass = "text-[11px] text-ink-3 underline hover:text-ink-2";
   return (
@@ -49,17 +49,7 @@ export function NavLinks({ lat, lng, name, externalUrl, osmRef }: NavLinksProps)
       >
         Open in Apple Maps
       </a>
-      {links.osm ? (
-        <a
-          href={links.osm}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={linkClass}
-          data-testid="open-openstreetmap"
-        >
-          View on OpenStreetMap
-        </a>
-      ) : null}
+      {osmRef ? <OsmLink osmRef={osmRef} /> : null}
     </>
   );
 }

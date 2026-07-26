@@ -7,7 +7,13 @@
  */
 import type { List, Note, Place } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
-import { exportListCsv, exportListGeoJson, exportListGpx, exportListKml } from "./export";
+import {
+  exportListCsv,
+  exportListGeoJson,
+  exportListGpx,
+  exportListKml,
+  exportListMarkdown,
+} from "./export";
 import { parseSavedCsv } from "./parse";
 
 const NOW = "2026-07-18T12:00:00.000Z";
@@ -157,6 +163,42 @@ Great bica, sit outside</desc>
 </gpx>
 `,
     );
+  });
+
+  it("the text list hands out all three deep links per place", () => {
+    const md = exportListMarkdown(list, views);
+    expect(md).toBe(
+      `# Lisbon <trip>
+
+## Café Central
+
+cafe · Rua Example 12, Lisboa
+
+Great bica, sit outside
+
+[Google Maps](https://www.google.com/maps/search/?api=1&query=Caf%C3%A9%20Central%2038.7139%2C-9.1394) · [Apple Maps](https://maps.apple.com/?ll=38.7139,-9.1394&q=Caf%C3%A9%20Central) · [OpenStreetMap](https://www.openstreetmap.org/node/101)
+
+## Dropped pin
+
+[Google Maps](https://www.google.com/maps/search/38.71,-9.15) · [Apple Maps](https://maps.apple.com/?ll=38.71,-9.15&q=Dropped%20pin)
+
+---
+
+Contains OSM-derived data © OpenStreetMap contributors, ODbL 1.0 (opendatacommons.org/licenses/odbl/1-0/)
+`,
+    );
+  });
+
+  it("the text list never opens a non-Google URL as a Google link", () => {
+    const spoofed: Place = {
+      ...imported,
+      externalRefs: [
+        { provider: "google-maps", url: "https://evil.example/steal", importedAt: NOW },
+      ],
+    };
+    const md = exportListMarkdown(list, [{ place: spoofed, notes: [] }]);
+    expect(md).not.toContain("evil.example");
+    expect(md).toContain("google.com/maps/search");
   });
 
   it("attribution disappears when nothing is OSM-derived", () => {

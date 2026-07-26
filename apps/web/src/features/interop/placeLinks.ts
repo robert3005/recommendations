@@ -12,7 +12,7 @@
  *
  * Everything here is pure string work — no fetch, no DOM.
  */
-import type { OsmElementRef } from "@placemarks/domain";
+import { type OsmElementRef, osmElementUrl } from "@placemarks/domain";
 import { googleFeatureId, googleUrlCoords, isGoogleMapsUrl, osmRefFromUrl } from "./googleUrl";
 
 export type LinkProvider = "google-maps" | "openstreetmap" | "apple-maps";
@@ -198,6 +198,6 @@ export function placeLinksFor(input: {
       safeGoogleUrl(externalUrl) ??
       `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`,
     apple: `https://maps.apple.com/?ll=${lat},${lng}${name ? `&q=${encodeURIComponent(name)}` : ""}`,
-    ...(osmRef ? { osm: `https://www.openstreetmap.org/${osmRef.type}/${osmRef.id}` } : {}),
+    ...(osmRef ? { osm: osmElementUrl(osmRef) } : {}),
   };
 }
