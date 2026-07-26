@@ -66,15 +66,6 @@ function boundsOf(points: { lat: number; lng: number }[]): BBox | undefined {
   return { west, south, east, north };
 }
 
-interface FrozenView {
-  placePins: PlacePinFeature[];
-  poiPins: PoiPinFeature[];
-  markPins: MarkPinFeature[];
-  selectionPin: { lat: number; lng: number } | null;
-  flyTo: { lat: number; lng: number; zoom?: number } | null;
-  fitTo: { bounds: BBox; key: string } | null;
-}
-
 export interface MapCanvasProps {
   readOnly?: boolean;
   routeViewport?: { lat?: number; lng?: number; zoom?: number };
@@ -370,18 +361,11 @@ export function MapCanvas({
         }))
       : [];
 
-  // ---- Idling: freeze the rendered view; changes coalesce until reveal ----
-  const live: FrozenView = {
-    placePins,
-    poiPins,
-    markPins: projection.kind === "shared" ? sharedPins : markPins,
-    selectionPin,
-    flyTo,
-    fitTo,
-  };
-  const frozen = useRef<FrozenView>(live);
-  if (!idle) frozen.current = live;
-  const shown = idle ? frozen.current : live;
+  // Idling needs no snapshot: every projection effect in MapView is gated on
+  // `idle` and lists it as a dependency, so while hidden nothing is applied and
+  // on reveal each one re-runs against the CURRENT values. Freezing the props
+  // here was a second mechanism for the same thing — and a staler one.
+  const shownMarkPins = projection.kind === "shared" ? sharedPins : markPins;
 
   return (
     <div className="relative h-full" data-testid="map-page" data-canvas-idle={idle ? "1" : "0"}>
@@ -392,12 +376,12 @@ export function MapCanvas({
         initialCenter={{ lat: startViewport.lat, lng: startViewport.lng }}
         initialZoom={startViewport.zoom}
         routeCamera={restoredRouteCamera}
-        placePins={shown.placePins}
-        poiPins={shown.poiPins}
-        markPins={shown.markPins}
-        selectionPin={shown.selectionPin}
-        flyTo={shown.flyTo}
-        fitTo={shown.fitTo}
+        placePins={placePins}
+        poiPins={poiPins}
+        markPins={shownMarkPins}
+        selectionPin={selectionPin}
+        flyTo={flyTo}
+        fitTo={fitTo}
         onSelectPlace={
           readOnly
             ? undefined

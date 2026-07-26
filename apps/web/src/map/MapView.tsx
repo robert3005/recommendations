@@ -85,72 +85,6 @@ export interface MapViewProps {
 const LONG_PRESS_MS = 600;
 const LONG_PRESS_TOLERANCE_PX = 8;
 
-interface IdleTile {
-  state: string;
-  aborted: boolean;
-}
-
-interface IdleTileManager {
-  pause: () => void;
-  resume: () => void;
-  reload: (sourceDataChanged?: boolean) => void;
-  getSource: () => { abortTile?: (tile: IdleTile) => Promise<void> };
-  _inViewTiles?: { getAllTiles: () => IdleTile[] };
-}
-
-interface MapIdleInternals {
-  _frameRequest?: AbortController | null;
-  _renderTaskQueue?: { clear: () => void };
-  style?: { tileManagers?: Record<string, IdleTileManager> };
-}
-
-interface IdleOwnership {
-  pausedManagers: Set<IdleTileManager>;
-  abortedManagers: Set<IdleTileManager>;
-}
-
-function tileManagersOf(map: maplibregl.Map): IdleTileManager[] {
-  const internals = map as unknown as MapIdleInternals;
-  return Object.values(internals.style?.tileManagers ?? {});
-}
-
-/**
- * Idempotently stop every currently known render/tile path. MapLibre can add
- * managers after construction while a style is loading, so callers always
- * enumerate fresh and ownership records ensure we resume only our own pauses.
- */
-function quiesce(map: maplibregl.Map, ownership: IdleOwnership): void {
-  const internals = map as unknown as MapIdleInternals;
-  map.stop();
-  internals._frameRequest?.abort();
-  internals._frameRequest = null;
-  internals._renderTaskQueue?.clear();
-
-  for (const manager of tileManagersOf(map)) {
-    if (!ownership.pausedManagers.has(manager)) {
-      // Record before pausing: synchronous data events can re-enter quiesce.
-      ownership.pausedManagers.add(manager);
-      manager.pause();
-    }
-    const source = manager.getSource();
-    for (const tile of manager._inViewTiles?.getAllTiles() ?? []) {
-      if (tile.state === "loaded" || tile.state === "errored" || tile.aborted) continue;
-      tile.aborted = true;
-      ownership.abortedManagers.add(manager);
-      void source.abortTile?.(tile).catch(() => {
-        // Best effort inside MapLibre. Reveal reloads every manager for which
-        // we attempted an abort, even if the provider rejected cancellation.
-      });
-    }
-  }
-
-  // Pausing/aborting may synchronously enqueue one last frame.
-  const finalInternals = map as unknown as MapIdleInternals;
-  finalInternals._frameRequest?.abort();
-  finalInternals._frameRequest = null;
-  finalInternals._renderTaskQueue?.clear();
-}
-
 /** Sprite id for a marker variant — parsed back by the sprite painter. */
 function markerImageId(pin: PlacePinFeature): string {
   return `pm|${pin.color}|${pin.icon}|${pin.unlinked ? "u" : "-"}|${pin.multi ? "m" : "-"}`;
@@ -277,8 +211,6 @@ export function MapView({
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const pausedTileManagersRef = useRef(new Set<IdleTileManager>());
-  const abortedTileManagersRef = useRef(new Set<IdleTileManager>());
   const idleRef = useRef(idle);
   idleRef.current = idle;
   const wasIdleRef = useRef(idle);
@@ -323,28 +255,6 @@ export function MapView({
       attributionControl: false,
     });
     mapRef.current = map;
-    const ownership: IdleOwnership = {
-      pausedManagers: pausedTileManagersRef.current,
-      abortedManagers: abortedTileManagersRef.current,
-    };
-
-    // Style/source events can create managers or request a frame after the
-    // pane became fully occluded. These listeners live for the map instance,
-    // and triggerRepaint itself is guarded, closing both late-event paths.
-    const quiesceIfIdle = () => {
-      if (idleRef.current) quiesce(map, ownership);
-    };
-    for (const event of ["dataloading", "data", "sourcedataabort", "error"] as const) {
-      map.on(event, quiesceIfIdle);
-    }
-    const originalTriggerRepaint = map.triggerRepaint.bind(map);
-    map.triggerRepaint = (() => {
-      if (idleRef.current) {
-        quiesce(map, ownership);
-        return;
-      }
-      originalTriggerRepaint();
-    }) as typeof map.triggerRepaint;
 
     // OSM attribution is a licensing requirement on every map surface.
     map.addControl(
@@ -635,8 +545,6 @@ export function MapView({
       if (moveTimer) clearTimeout(moveTimer);
       map.remove();
       mapRef.current = null;
-      pausedTileManagersRef.current.clear();
-      abortedTileManagersRef.current.clear();
     };
   }, []);
 
@@ -647,10 +555,15 @@ export function MapView({
       return;
     }
     if (idle) {
-      quiesce(map, {
-        pausedManagers: pausedTileManagersRef.current,
-        abortedManagers: abortedTileManagersRef.current,
-      });
+      // `stop()` ends animations and pending easing. Everything else that used
+      // to be forced here — aborting the frame request, clearing the render
+      // task queue, pausing every tile manager, aborting in-flight tiles — was
+      // reaching into MapLibre's private fields to duplicate what the browser
+      // already does for a hidden element, against a caret-ranged dependency.
+      // What actually keeps a hidden canvas off the network is the `if (idle)
+      // return` guards on the projection effects below, plus never activating
+      // the provider style until first reveal.
+      map.stop();
       if (containerRef.current) containerRef.current.dataset.idle = "1";
       wasIdleRef.current = true;
       return;
@@ -664,17 +577,7 @@ export function MapView({
       if (containerRef.current) containerRef.current.dataset.idle = "0";
       return;
     }
-    // Managers may have appeared or disappeared while hidden. Enumerate the
-    // live style and touch only managers whose pause/abort we own.
-    for (const manager of tileManagersOf(map)) {
-      if (pausedTileManagersRef.current.delete(manager)) manager.resume();
-      if (abortedTileManagersRef.current.delete(manager)) {
-        for (const tile of manager._inViewTiles?.getAllTiles() ?? []) tile.aborted = false;
-        manager.reload(true);
-      }
-    }
-    pausedTileManagersRef.current.clear();
-    abortedTileManagersRef.current.clear();
+    // Revealed: the box changed while hidden, so remeasure and paint once.
     map.resize();
     map.triggerRepaint();
     if (containerRef.current) containerRef.current.dataset.idle = "0";

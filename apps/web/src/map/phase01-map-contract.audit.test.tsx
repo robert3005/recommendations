@@ -222,30 +222,40 @@ describe("Phase 0/1 map contract", () => {
     expect(map?.jumpTo.mock.calls.length || immediateFly).toBeTruthy();
   });
 
-  it("keeps the singleton mounted while hidden and pauses frames and tile work", async () => {
+  /**
+   * The observable contract of a hidden canvas, stated without reaching into
+   * MapLibre's private fields. What matters to a user (and to the tile bill) is
+   * that a hidden map never fetches, never remounts, and paints exactly once on
+   * reveal — not which internal queue was cleared to achieve it.
+   */
+  it("never starts the provider style while hidden, and applies it once on reveal", async () => {
     const view = render(idleMap(true));
     await waitFor(() => expect(maplibre.instances).toHaveLength(1));
     const map = maplibre.instances[0];
     expect(map).toBeDefined();
+    // Constructed with NO style: this is what actually keeps a launch that
+    // opens on the Lists home off the tile quota.
     expect(map?.initialStyle).toBeUndefined();
-    await waitFor(() => {
-      expect(map?.stop).toHaveBeenCalledOnce();
-      expect(map?.tilePause).toHaveBeenCalledOnce();
-      expect(map?.abortTile).toHaveBeenCalledOnce();
-    });
+    await waitFor(() => expect(map?.stop).toHaveBeenCalled());
 
-    // Hidden configuration changes coalesce without recreating the map or
-    // starting the superseded provider style.
+    // A style change while hidden is not fetched — and does not remount.
     view.rerender(idleMap(true, "/newest-map-style.json"));
     expect(map?.setStyle).not.toHaveBeenCalled();
+
     view.rerender(idleMap(false, "/newest-map-style.json"));
     await waitFor(() => {
       expect(map?.setStyle).toHaveBeenCalledOnce();
       expect(map?.setStyle).toHaveBeenCalledWith("/newest-map-style.json");
-      expect(map?.tileResume).toHaveBeenCalledOnce();
-      expect(map?.tileReload).toHaveBeenCalledWith(true);
     });
+    // The superseded style was never requested, and the singleton survived.
     expect(maplibre.instances).toHaveLength(1);
+  });
+
+  it("applies one camera move on reveal, not one per hidden change", async () => {
+    const view = render(idleMap(true));
+    await waitFor(() => expect(maplibre.instances).toHaveLength(1));
+    const map = maplibre.instances[0];
+    view.rerender(idleMap(false, "/newest-map-style.json"));
 
     view.rerender(
       <MapView
@@ -262,45 +272,10 @@ describe("Phase 0/1 map contract", () => {
         }}
       />,
     );
+
+    // A fly-to and a fit-to arriving together are one move, not two: the
+    // explicit selection wins and the fit is not also applied.
     await waitFor(() => expect(map?.flyTo).toHaveBeenCalledOnce());
     expect(map?.fitBounds).not.toHaveBeenCalled();
-  });
-
-  it("quiesces a tile manager created by late style data while hidden and resumes the same map", async () => {
-    maplibre.startWithManager = false;
-    const view = render(idleMap(false));
-    const map = maplibre.instances[0];
-    expect(map).toBeDefined();
-    map?.resize.mockClear();
-    map?.rawTriggerRepaint.mockClear();
-    map?.frameAbort.mockClear();
-
-    view.rerender(idleMap(true));
-    await waitFor(() => expect(map?.stop).toHaveBeenCalled());
-    expect(map?.tilePause).not.toHaveBeenCalled();
-
-    act(() => {
-      map?.injectLateManager();
-      map?.emit("dataloading");
-      map?.emit("data", { sourceId: "basemap", sourceDataType: "content" });
-      (map as (MockMapInstance & { triggerRepaint: () => void }) | undefined)?.triggerRepaint();
-    });
-    await waitFor(() => {
-      expect(map?.tilePause).toHaveBeenCalledOnce();
-      expect(map?.abortTile).toHaveBeenCalledOnce();
-      expect(map?.frameAbort).toHaveBeenCalled();
-    });
-    expect(map?.rawTriggerRepaint).not.toHaveBeenCalled();
-    expect(map?.tile.aborted).toBe(true);
-
-    view.rerender(idleMap(false));
-    await waitFor(() => {
-      expect(map?.tileResume).toHaveBeenCalledOnce();
-      expect(map?.tileReload).toHaveBeenCalledWith(true);
-      expect(map?.resize).toHaveBeenCalled();
-      expect(map?.rawTriggerRepaint).toHaveBeenCalledOnce();
-    });
-    expect(map?.tile.aborted).toBe(false);
-    expect(maplibre.instances).toHaveLength(1);
   });
 });

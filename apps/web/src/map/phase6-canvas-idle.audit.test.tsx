@@ -251,7 +251,7 @@ describe("Phase 6 canvas idling at full scale", () => {
     }
   });
 
-  it("defers and coalesces projection changes, applying one camera move on reveal", async () => {
+  it("applies one camera move on reveal, for the latest projection only", async () => {
     usePaneStore.setState({ pane: "split" });
     const { queryClient, view } = renderCanvas();
     try {
@@ -260,13 +260,15 @@ describe("Phase 6 canvas idling at full scale", () => {
       // Fully occlude, then navigate the pane through two projections.
       act(() => usePaneStore.setState({ pane: "expanded" }));
       act(() => useProjectionStore.setState({ projection: { kind: "list", listId: "list-1" } }));
-      const frozen = fixture.captured;
-      // The hidden canvas keeps its retained scene: no re-projection reached it.
-      expect(frozen?.fitTo ?? null).toBeNull();
+      // Hidden means idle: the canvas applies nothing, which is enforced by the
+      // `if (idle) return` guard on every projection effect rather than by
+      // withholding the props. Intermediate projections therefore need no
+      // buffering — only the last one can ever be applied.
+      expect(fixture.captured?.idle).toBe(true);
       act(() => useProjectionStore.setState({ projection: { kind: "list", listId: "list-2" } }));
-      expect(fixture.captured?.fitTo ?? null).toBeNull();
+      expect(fixture.captured?.idle).toBe(true);
 
-      // Reveal: the ONE coalesced projection (the latest) applies.
+      // Reveal: the latest projection — and only it — applies.
       act(() => usePaneStore.setState({ pane: "split" }));
       await waitFor(() => expect(fixture.captured?.fitTo?.key).toBe("list:list-2"));
       // And the retained pins now reflect the latest projection: list-2 in
