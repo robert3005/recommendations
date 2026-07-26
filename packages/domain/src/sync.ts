@@ -210,6 +210,12 @@ export interface PullResult {
   changes: RemoteChange[];
   /** Server-monotonic cursor — hand it back on the next pull. */
   cursor: string;
+  /**
+   * Rows this page carried that could not be read. They are skipped so the
+   * cursor can advance; the caller preserves them for inspection rather than
+   * letting one malformed row wedge the account's pull forever.
+   */
+  unreadable?: { raw: string; reason: string }[];
 }
 
 /** The transport contract (spec/src/architecture.md §External service adapters). */

@@ -113,7 +113,7 @@ export interface SyncRevRow {
  */
 export interface SyncConflictRow {
   id: string;
-  kind: "orphaned-note";
+  kind: "orphaned-note" | "unreadable-row";
   title?: string;
   body: string;
   reason: string;

@@ -327,6 +327,29 @@ function validateEnvelopeRow(
   }
 }
 
+/**
+ * The push envelope: routing and ordering fields, with `row` left opaque.
+ *
+ * The service validates only this. It never interprets a row — the store treats
+ * it as opaque JSON — so importing the per-entity shapes only coupled deploys:
+ * every entity-shape change forced a lockstep service release to keep accepting
+ * its own client's writes. The client still validates full rows on both sides.
+ */
+export const syncMutationEnvelopeSchema = z.object({
+  /** Globally unique — the push idempotency identity. */
+  id: z.string().min(1).max(80),
+  actorId: actorIdSchema,
+  table: z.enum(SYNCED_TABLE_NAMES),
+  entityId: idSchema,
+  /** Sortable hybrid-logical-clock stamp — the conflict order. */
+  hlc: hlcSchema,
+  /** Optional only for records accepted before causal vectors shipped. */
+  version: syncVersionVectorSchema.optional(),
+  /** The complete row after the mutation (tombstones carry deleted: true). */
+  row: z.record(z.string(), z.unknown()),
+});
+
+/** The envelope PLUS the per-entity row shape — what the client holds itself to. */
 export const syncMutationSchema = z
   .object({
     /** Globally unique — the push idempotency identity. */
@@ -345,6 +368,11 @@ export const syncMutationSchema = z
 
 export const pushRequestSchema = z.object({
   mutations: z.array(syncMutationSchema).max(200),
+});
+
+/** What the service parses: envelopes only. */
+export const pushEnvelopeRequestSchema = z.object({
+  mutations: z.array(syncMutationEnvelopeSchema).max(200),
 });
 
 export const pushResponseSchema = z.object({
@@ -369,6 +397,18 @@ export const pullResponseSchema = z.object({
   cursor: z.string(),
 });
 
+/**
+ * The pull envelope, with rows left opaque. Validating the page as a whole made
+ * one unreadable row unrecoverable: the parse threw, the cursor never advanced,
+ * and the account could never pull again. The client parses the envelope, then
+ * validates each row on its own with `remoteChangeSchema` — a bad row is set
+ * aside and the cursor still moves.
+ */
+export const pullEnvelopeSchema = z.object({
+  changes: z.array(z.unknown()),
+  cursor: z.string(),
+});
+
 export const loginRequestSchema = z.object({
   email: z.string().email().max(320),
 });
@@ -386,9 +426,11 @@ export const loginCompleteResponseSchema = z.object({
 
 export type SyncMutation = z.infer<typeof syncMutationSchema>;
 export type PushRequest = z.infer<typeof pushRequestSchema>;
+export type PushEnvelopeRequest = z.infer<typeof pushEnvelopeRequestSchema>;
 export type PushResponse = z.infer<typeof pushResponseSchema>;
 export type RemoteChangeWire = z.infer<typeof remoteChangeSchema>;
 export type PullResponse = z.infer<typeof pullResponseSchema>;
+export type PullEnvelope = z.infer<typeof pullEnvelopeSchema>;
 
 /** Push batch/row limits enforced by the service (mirrored client-side). */
 export const SYNC_LIMITS = {

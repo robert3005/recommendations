@@ -10,7 +10,7 @@
 import {
   loginCompleteRequestSchema,
   loginRequestSchema,
-  pushRequestSchema,
+  pushEnvelopeRequestSchema,
   SYNC_LIMITS,
 } from "@placemarks/schemas";
 import { type Context, Hono } from "hono";
@@ -220,7 +220,7 @@ export function createSyncApp({
     if (!authed) return c.text("unauthorized", 401, NO_STORE);
     const body = await readBoundedJson(c, SYNC_LIMITS.requestBytes);
     if (!body.ok) return c.text(body.message, body.status, NO_STORE);
-    const parsed = pushRequestSchema.safeParse(body.value);
+    const parsed = pushEnvelopeRequestSchema.safeParse(body.value);
     if (!parsed.success) return c.text("invalid request", 400, NO_STORE);
     const acked: string[] = [];
     for (const mutation of parsed.data.mutations) {

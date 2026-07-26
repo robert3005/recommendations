@@ -831,23 +831,8 @@ export class DexieRepository implements PlacemarksRepository {
           await tombstone("tags", tag);
         }
 
-        // Invalid or duplicate tag assignments are pure edges: tombstone them.
-        const assignmentWinner = new Map<string, string>();
-        for (const assignment of (await this.db.tagAssignments.toArray())
-          .filter((row) => !row.deleted)
-          .sort((a, b) => a.id.localeCompare(b.id))) {
-          const place = live(await this.db.places.get(assignment.placeId));
-          const tag = live(await this.db.tags.get(assignment.tagId));
-          const pair = `${assignment.placeId}\0${assignment.tagId}`;
-          if (!place || !tag || assignmentWinner.has(pair)) {
-            await tombstone("tagAssignments", assignment);
-          } else {
-            assignmentWinner.set(pair, assignment.id);
-          }
-        }
-
-        // Validate post blocks. A raced embed can revive the exact tombstoned
-        // membership it depended on; a fabricated reference is discarded.
+        // Validate post blocks. A raced embed re-establishes the membership it
+        // depended on; a fabricated reference is discarded.
         const postEmbedWinner = new Map<string, string>();
         for (const block of (await this.db.postBlocks.toArray())
           .filter((row) => !row.deleted)
@@ -876,9 +861,13 @@ export class DexieRepository implements PlacemarksRepository {
           );
           let membership = candidates.find((edge) => !edge.deleted);
           if (!membership) {
-            const deleted = candidates.sort((a, b) => a.id.localeCompare(b.id))[0];
-            if (deleted) {
-              membership = { ...deleted, deleted: undefined, updatedAt: now };
+            const template = candidates.sort((a, b) => a.id.localeCompare(b.id))[0];
+            if (template) {
+              // A FRESH row, not an un-delete. Resurrecting the tombstoned
+              // membership flaps: every peer that still holds that tombstone
+              // re-deletes it on the next pull, and the embed breaks again.
+              const { deleted: _tombstoned, ...rest } = template;
+              membership = { ...rest, id: newId(), createdAt: now, updatedAt: now };
               await this.syncedPut("listBlocks", membership);
             }
           }
@@ -891,6 +880,41 @@ export class DexieRepository implements PlacemarksRepository {
         for (const note of (await this.db.notes.toArray()).filter((row) => !row.deleted)) {
           if (!(await this.noteTargetIsLive(note))) {
             await rescueNote(note, "its place or post is missing after sync merge");
+          }
+        }
+
+        // Membership is existence: a live place with no live membership may not
+        // remain as a hidden orphan. This runs AFTER embed validation (which
+        // re-establishes the membership an embed depends on, so an embedded
+        // place is never orphaned) and BEFORE the pure-edge passes below, which
+        // is what makes a second closing pass unnecessary.
+        for (const place of (await this.db.places.toArray()).filter((row) => !row.deleted)) {
+          const hasMembership = (
+            await this.db.listBlocks.where("refId").equals(place.id).toArray()
+          ).some((block) => !block.deleted && block.kind === "place");
+          if (hasMembership) continue;
+          for (const note of (
+            await this.db.notes.where("targetKey").equals(`place:${place.id}`).toArray()
+          ).filter((row) => !row.deleted)) {
+            await rescueNote(note, "its place has no list membership after sync merge");
+          }
+          await tombstone("places", place);
+        }
+
+        // Pure edges last: places have stopped moving by now, so one pass over
+        // each is enough.
+        // Invalid or duplicate tag assignments are pure edges: tombstone them.
+        const assignmentWinner = new Map<string, string>();
+        for (const assignment of (await this.db.tagAssignments.toArray())
+          .filter((row) => !row.deleted)
+          .sort((a, b) => a.id.localeCompare(b.id))) {
+          const place = live(await this.db.places.get(assignment.placeId));
+          const tag = live(await this.db.tags.get(assignment.tagId));
+          const pair = `${assignment.placeId}\0${assignment.tagId}`;
+          if (!place || !tag || assignmentWinner.has(pair)) {
+            await tombstone("tagAssignments", assignment);
+          } else {
+            assignmentWinner.set(pair, assignment.id);
           }
         }
 
@@ -913,33 +937,6 @@ export class DexieRepository implements PlacemarksRepository {
           }
         }
 
-        // Membership is existence. At the final cursor, a live place with no
-        // live membership is not allowed to remain as a hidden orphan.
-        for (const place of (await this.db.places.toArray()).filter((row) => !row.deleted)) {
-          const hasMembership = (
-            await this.db.listBlocks.where("refId").equals(place.id).toArray()
-          ).some((block) => !block.deleted && block.kind === "place");
-          if (hasMembership) continue;
-          for (const note of (
-            await this.db.notes.where("targetKey").equals(`place:${place.id}`).toArray()
-          ).filter((row) => !row.deleted)) {
-            await rescueNote(note, "its place has no list membership after sync merge");
-          }
-          await tombstone("places", place);
-        }
-
-        // The final membership pass can newly tombstone a place after the
-        // earlier edge validation. Close that ordering gap before commit.
-        for (const assignment of (await this.db.tagAssignments.toArray()).filter(
-          (row) => !row.deleted,
-        )) {
-          if (
-            !live(await this.db.places.get(assignment.placeId)) ||
-            !live(await this.db.tags.get(assignment.tagId))
-          ) {
-            await tombstone("tagAssignments", assignment);
-          }
-        }
         if (options.publicationImpact) await this.reconcileHostedPublicationsAfterSync(now);
 
         const state = await this.db.syncState.get("sync");

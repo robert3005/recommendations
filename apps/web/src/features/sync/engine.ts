@@ -5,11 +5,18 @@
  * cursor-ordered change log through the repository's merge policy. A failed
  * network effect never rolls back a committed local edit.
  */
-import type { LocalMutation, PullResult, PushResult, SyncTransport } from "@placemarks/domain";
+import type {
+  LocalMutation,
+  PullResult,
+  PushResult,
+  RemoteChange,
+  SyncTransport,
+} from "@placemarks/domain";
 import {
   loginCompleteResponseSchema,
-  pullResponseSchema,
+  pullEnvelopeSchema,
   pushResponseSchema,
+  remoteChangeSchema,
   SYNC_LIMITS,
 } from "@placemarks/schemas";
 import { SYNC_API_URL } from "../../config";
@@ -63,8 +70,16 @@ export class HttpSyncTransport implements SyncTransport {
       headers: { authorization: `Bearer ${this.token}` },
     });
     if (!response.ok) throw new Error(`pull failed (${response.status.toString()})`);
-    const parsed = pullResponseSchema.parse(await response.json());
-    return { changes: parsed.changes, cursor: parsed.cursor };
+    const envelope = pullEnvelopeSchema.parse(await response.json());
+    // Row-at-a-time: one unreadable row is set aside, not fatal to the page.
+    const changes: RemoteChange[] = [];
+    const unreadable: { raw: string; reason: string }[] = [];
+    for (const raw of envelope.changes) {
+      const row = remoteChangeSchema.safeParse(raw);
+      if (row.success) changes.push(row.data);
+      else unreadable.push({ raw: JSON.stringify(raw), reason: row.error.message });
+    }
+    return { changes, cursor: envelope.cursor, ...(unreadable.length > 0 ? { unreadable } : {}) };
   }
 }
 
@@ -338,7 +353,21 @@ async function runSyncNow(
       await assertCurrentScope(repo, scope);
       const page = await wire.pull(cursor);
       await assertCurrentScope(repo, scope);
-      if (page.changes.length === 0) {
+      // Preserve anything the page carried that could not be read, so a bad row
+      // is inspectable rather than silently dropped — and never blocking. This
+      // runs before the drained check: a page of ONLY unreadable rows must still
+      // record them, advance, and keep draining.
+      for (const row of page.unreadable ?? []) {
+        await repo.db.syncConflicts.put({
+          id: crypto.randomUUID(),
+          kind: "unreadable-row",
+          body: row.raw,
+          reason: row.reason,
+          at: new Date().toISOString(),
+        });
+      }
+      const carried = page.changes.length + (page.unreadable?.length ?? 0);
+      if (carried === 0) {
         cursor = page.cursor;
         break;
       }
@@ -348,12 +377,14 @@ async function runSyncNow(
       // A valid dependency chain can cross the page boundary, so graph repair
       // runs once at the final cursor rather than treating an intermediate
       // page as the complete library.
-      remoteChanged =
-        (await repo.applyRemoteChanges(page.changes, {
-          repairGraph: false,
-          expectedScope: scope,
-        })) || remoteChanged;
-      applied += page.changes.length;
+      if (page.changes.length > 0) {
+        remoteChanged =
+          (await repo.applyRemoteChanges(page.changes, {
+            repairGraph: false,
+            expectedScope: scope,
+          })) || remoteChanged;
+        applied += page.changes.length;
+      }
       cursor = page.cursor;
     }
     if (applied > 0) {
