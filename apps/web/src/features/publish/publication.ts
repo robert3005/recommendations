@@ -6,107 +6,13 @@
  * never rolls back the public document; the UI derives "changes pending" from
  * localRevision vs lastPublishedLocalRevision.
  */
-import type { Note, Publication } from "@placemarks/domain";
-import { normalizeSlug, RESERVED_SLUGS, type SharedNote } from "@placemarks/schemas";
+import type { Publication } from "@placemarks/domain";
+import { normalizeSlug, RESERVED_SLUGS } from "@placemarks/schemas";
 import { SHARE_API_URL } from "../../config";
 import type { DexieRepository } from "../../data/repo";
 import { newId } from "../../lib/id";
 import { count, reportError } from "../../lib/metrics";
-import { anchorForPlace, projectList, projectPost, withImagePlaceholders } from "../share/project";
-
-/** The hosted publication for a note page, if any. */
-export async function publicationForNote(
-  repo: DexieRepository,
-  noteId: string,
-): Promise<Publication | undefined> {
-  const rows = (await repo.db.publications.toArray()).filter(
-    (p) => !p.deleted && p.target.kind === "note" && p.target.id === noteId,
-  );
-  // A live publication outranks a revoked tombstone of the same target.
-  return rows.find((p) => p.status !== "revoked") ?? rows[0];
-}
-
-/** Publish (or update) a standalone note page (spec/src/notes.md). */
-export async function publishNote(
-  repo: DexieRepository,
-  note: Note,
-  contextTitle: string,
-  now: string,
-  fetcher: typeof fetch = fetch,
-): Promise<Publication | undefined> {
-  if (!note.shareable) return undefined;
-  let publication = await publicationForNote(repo, note.id);
-  // A revoked page republishes as a fresh claim, never a tombstone update.
-  if (publication?.status === "revoked") publication = undefined;
-  const slug = publication?.slug ?? slugFor(note.title ?? contextTitle);
-  // A place note carries its durable OSM anchor (ref + copied recovery
-  // evidence); a post note carries its parent post's actual title — the
-  // published context is authoritative data, never a caller-supplied label.
-  let context: SharedNote["context"] = { kind: "post", postTitle: contextTitle };
-  if (note.target.kind === "place") {
-    const place = await repo.getPlace(note.target.placeId);
-    const anchor = place ? anchorForPlace(place) : undefined;
-    if (anchor) context = { kind: "place", place: anchor };
-  } else {
-    const post = await repo.getPost(note.target.postId);
-    if (post) context = { kind: "post", postTitle: post.title };
-  }
-  const document: SharedNote = {
-    v: 1,
-    slug,
-    ...(note.title ? { title: note.title } : {}),
-    context,
-    body: withImagePlaceholders(note.body),
-    contentHash: note.updatedAt,
-    publishedAt: now,
-  };
-  let newCredential:
-    | { id: string; token: string; createdAt: string; updatedAt: string }
-    | undefined;
-  if (!publication) {
-    const credentialId = newId();
-    newCredential = {
-      id: credentialId,
-      token: newEditorToken(),
-      createdAt: now,
-      updatedAt: now,
-    };
-    publication = {
-      id: newId(),
-      target: { kind: "note", id: note.id },
-      slug,
-      credentialId,
-      status: "queued",
-      localRevision: document.contentHash,
-      createdAt: now,
-      updatedAt: now,
-    };
-  } else {
-    publication = {
-      ...publication,
-      status: publication.status === "published" ? "queued" : publication.status,
-      localRevision: document.contentHash,
-      updatedAt: now,
-    };
-  }
-  await repo.db.transaction(
-    "rw",
-    [repo.db.credentials, repo.db.publications, repo.db.publicationOutbox],
-    async () => {
-      if (newCredential) await repo.db.credentials.put(newCredential);
-      await repo.db.publications.put(publication);
-      await enqueuePublish(
-        repo,
-        publication.id,
-        document.contentHash,
-        JSON.stringify(document),
-        now,
-      );
-    },
-  );
-  await runPublicationOutbox(repo, fetcher);
-  return (await repo.db.publications.get(publication.id)) ?? publication;
-}
+import { projectList, projectPost } from "../share/project";
 
 export function newEditorToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -299,10 +205,8 @@ export async function publishPost(
 }
 
 /** The share-service path segment for a publication, implied by its target kind. */
-export function publicationChannel(publication: Publication): "lists" | "posts" | "notes" {
-  if (publication.target.kind === "note") return "notes";
-  if (publication.target.kind === "post") return "posts";
-  return "lists";
+export function publicationChannel(publication: Publication): "lists" | "posts" {
+  return publication.target.kind === "post" ? "posts" : "lists";
 }
 
 /**
@@ -505,10 +409,7 @@ export async function runPublicationOutbox(
           ...Array.from({ length: 8 }, (_, i) => `${publication.slug}-${(i + 2).toString()}`),
         ];
         for (const candidate of candidates) {
-          // A note document embeds its public slug — keep it aligned with the
-          // slug actually being claimed.
           const document = JSON.parse(payload ?? "{}") as { slug?: string };
-          if (publication.target.kind === "note") document.slug = candidate;
           const response = await fetcher(base, {
             method: "POST",
             headers,

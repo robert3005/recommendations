@@ -112,10 +112,7 @@ describe("Phase 5 additional edit/dirty atomicity", () => {
         updatedAt: NOW,
       };
       await repo.createNote(note);
-      const publications = [
-        publication("publication-list", { kind: "list", id: "list-1" }),
-        publication("publication-note", { kind: "note", id: note.id }),
-      ];
+      const publications = [publication("publication-list", { kind: "list", id: "list-1" })];
       await repo.db.publications.bulkPut(publications);
 
       vi.spyOn(repo.db.publicationOutbox, "put").mockRejectedValueOnce(

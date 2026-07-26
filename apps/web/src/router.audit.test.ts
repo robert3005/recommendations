@@ -7,7 +7,7 @@ import {
 } from "./router";
 
 describe("route chrome projection", () => {
-  it.each(["/l", "/l/public-list", "/p/public-post", "/n/public-note"])(
+  it.each(["/l", "/l/public-list", "/p/public-post"])(
     "treats %s as a read-only public viewer",
     (pathname) => {
       expect(isPublicViewerPath(pathname)).toBe(true);

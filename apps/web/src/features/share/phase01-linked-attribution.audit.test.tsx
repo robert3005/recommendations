@@ -2,14 +2,11 @@
  * ODbL presentation contract from spec/src/data-sources.md: attribution is a
  * link wherever public OSM-derived facts are presented, not inert text.
  */
-import type { SharedGuide, SharedNote, SharedPlaceAnchor } from "@placemarks/schemas";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { SharedGuide, SharedPlaceAnchor } from "@placemarks/schemas";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { RepoProvider } from "../../data/RepoContext";
 import { DexieRepository } from "../../data/repo";
-import { useProjectionStore } from "../../state/projection";
-import { NoteViewerPage } from "./NoteViewerPage";
 import { SharedGuideView } from "./SharedGuideView";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -85,55 +82,6 @@ describe("linked public OSM attribution", () => {
     } finally {
       view.unmount();
       repo.db.close();
-    }
-  });
-
-  it("links standalone-note OSM attribution to the copyright page", async () => {
-    const note: SharedNote = {
-      v: 1,
-      slug: "osm-note",
-      title: "A shared note",
-      context: { kind: "place", place: anchor },
-      body: "Public prose",
-      contentHash: "note-attribution-fixture",
-      publishedAt: "2026-07-19T12:00:00.000Z",
-    };
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => Response.json(note)),
-    );
-    useProjectionStore.setState({ projection: { kind: "all" }, sharedSelectHandler: null });
-
-    try {
-      render(
-        <QueryClientProvider client={queryClient}>
-          <NoteViewerPage />
-        </QueryClientProvider>,
-      );
-
-      expect(await screen.findByText("Café")).toBeInTheDocument();
-      const attribution = screen.getByRole("link", {
-        name: /© OpenStreetMap contributors/i,
-      });
-      expect(attribution).toHaveAttribute(
-        "href",
-        expect.stringMatching(/^https:\/\/(www\.)?openstreetmap\.org\/copyright/),
-      );
-      expect(useProjectionStore.getState().projection).toEqual({
-        kind: "shared",
-        pins: [
-          {
-            key: "note-place",
-            name: "Café",
-            lat: 51.5,
-            lng: -0.12,
-          },
-        ],
-      });
-    } finally {
-      queryClient.clear();
-      vi.unstubAllGlobals();
     }
   });
 });

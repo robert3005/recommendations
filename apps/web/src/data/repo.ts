@@ -1622,17 +1622,7 @@ export class DexieRepository implements PlacemarksRepository {
             });
           }
         }
-        if (goingPrivate) {
-          // A place note that stops being shareable queues removal of its
-          // public page (spec/src/notes.md): the old revision stays up until
-          // revocation lands, and it supersedes every pending page update.
-          await this.revokePublicationsFor({ kind: "note", id: note.id }, note.updatedAt);
-        }
         await this.syncedPut("notes", toNoteRow(note));
-        if (note.shareable) {
-          // A shareable-note edit dirties its standalone page too.
-          await this.dirtyPublicationsFor({ kind: "note", id: note.id }, note.updatedAt);
-        }
         // Any transition visible in a hosted projection dirties it — including
         // a shareable place note going private, which makes it disappear.
         const touchedLists = new Set<string>();
@@ -1669,7 +1659,6 @@ export class DexieRepository implements PlacemarksRepository {
   private async tombstoneNote(note: Note, now: string): Promise<void> {
     await this.syncedPut("notes", toNoteRow({ ...note, deleted: true, updatedAt: now }));
     // A deleted note's standalone public page queues its removal.
-    await this.revokePublicationsFor({ kind: "note", id: note.id }, now);
     // A deleted note disappears from every attachment…
     const attachments = (
       await this.db.blockNoteAttachments.where("noteId").equals(note.id).toArray()

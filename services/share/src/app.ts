@@ -8,13 +8,10 @@
  */
 import {
   createGuideRequestSchema,
-  createNoteRequestSchema,
   LIMITS,
   putGuideRequestSchema,
-  putNoteRequestSchema,
   RESERVED_SLUGS,
   sharedGuideSchema,
-  sharedNoteSchema,
 } from "@placemarks/schemas";
 import { Hono } from "hono";
 import type { ShareStorage } from "./storage";
@@ -89,16 +86,10 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
     // projections (spec/src/sharing.md); /s/posts is the post projection's
     // home while pre-pivot guide documents keep serving from /s/lists.
     post: { create: createGuideRequestSchema, put: putGuideRequestSchema, doc: sharedGuideSchema },
-    note: { create: createNoteRequestSchema, put: putNoteRequestSchema, doc: sharedNoteSchema },
   } as const;
 
-  for (const collection of ["lists", "posts", "notes"] as const) {
-    const kind =
-      collection === "lists"
-        ? ("list" as const)
-        : collection === "posts"
-          ? ("post" as const)
-          : ("note" as const);
+  for (const collection of ["lists", "posts"] as const) {
+    const kind = collection === "lists" ? ("list" as const) : ("post" as const);
 
     app.get(`/s/${collection}/:slug`, async (c) => {
       const slug = c.req.param("slug");
@@ -179,12 +170,6 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         });
       }
       if (RESERVED_SLUGS.has(slug)) return c.text("reserved slug", 409, MUTATION_HEADERS);
-      if (kind === "note") {
-        const docSlug = (parsed.document as { slug?: string }).slug;
-        if (docSlug !== slug) {
-          return c.text("document slug disagrees with the claimed URL", 400, MUTATION_HEADERS);
-        }
-      }
       const documentBody = JSON.stringify(parsed.document);
       if (utf8Bytes(documentBody) > LIMITS.documentBytes) {
         return c.text("document too large", 413, MUTATION_HEADERS);
@@ -295,13 +280,6 @@ export function createShareApp({ storage, now = () => new Date().toISOString() }
         document = body.data.document;
       } catch {
         return c.text("invalid JSON", 400, MUTATION_HEADERS);
-      }
-      // The published note document must keep naming its public URL.
-      if (kind === "note") {
-        const docSlug = (document as { slug?: string }).slug;
-        if (docSlug !== c.req.param("slug")) {
-          return c.text("document slug disagrees with the public URL", 400, MUTATION_HEADERS);
-        }
       }
       const serialized = JSON.stringify(document);
       if (utf8Bytes(serialized) > LIMITS.documentBytes) {

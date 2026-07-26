@@ -5,8 +5,8 @@
  * and mirrors the same semantics.
  */
 
-/** The three public collections: /s/lists, /s/posts, /s/notes. */
-export type DocumentKind = "list" | "note" | "post";
+/** The two public collections: /s/lists and /s/posts. */
+export type DocumentKind = "list" | "post";
 
 export interface StoredDocument {
   slug: string;
@@ -15,7 +15,7 @@ export interface StoredDocument {
   revision: number;
   /** SHA-256 hex of the editor bearer token — never the token itself. */
   tokenHash: string;
-  /** Serialized SharedGuide/SharedNote JSON. */
+  /** Serialized SharedGuide JSON. */
   body: string;
   createdAt: string;
   updatedAt: string;

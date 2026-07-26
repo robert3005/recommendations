@@ -201,30 +201,4 @@ describe("share service", () => {
     });
     expect(storage.auditEntries.some((entry) => entry.action === "denied")).toBe(true);
   });
-
-  it("hosts note pages under the same contract", async () => {
-    const { request } = harness();
-    const note = {
-      v: 1,
-      slug: "my-note",
-      context: { kind: "list", listTitle: "Lisbon" },
-      body: "A note body",
-      media: [],
-      contentHash: "hash",
-      publishedAt: "2026-07-19T15:00:00.000Z",
-    };
-    const created = await request("/s/notes", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${TOKEN}`,
-        "idempotency-key": "n1",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ desiredSlug: "my-note", document: note }),
-    });
-    expect(created.status).toBe(201);
-    const read = await request("/s/notes/my-note");
-    expect(read.status).toBe(200);
-    expect(((await read.json()) as { body: string }).body).toBe("A note body");
-  });
 });

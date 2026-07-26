@@ -86,29 +86,11 @@ export const sharedGuideSchema = z.object({
   publishedAt: z.string().optional(),
 });
 
-export const sharedNoteContextSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("place"), place: sharedPlaceAnchorSchema }),
-  // Pre-pivot note pages carry { kind: "list" }; new ones target posts.
-  z.object({ kind: z.literal("list"), listTitle: z.string().max(300) }),
-  z.object({ kind: z.literal("post"), postTitle: z.string().max(300) }),
-]);
-
-export const sharedNoteSchema = z.object({
-  v: z.literal(1),
-  slug: z.string().max(120),
-  title: z.string().max(300).optional(),
-  context: sharedNoteContextSchema,
-  body: z.string().max(65_536),
-  contentHash: z.string().max(80),
-  publishedAt: z.string(),
-});
-
 export type SharedPlaceEvidence = z.infer<typeof sharedPlaceEvidenceSchema>;
 export type SharedPlaceAnchor = z.infer<typeof sharedPlaceAnchorSchema>;
 export type SharedNoteBody = z.infer<typeof sharedNoteBodySchema>;
 export type SharedBlock = z.infer<typeof sharedBlockSchema>;
 export type SharedGuide = z.infer<typeof sharedGuideSchema>;
-export type SharedNote = z.infer<typeof sharedNoteSchema>;
 
 /** Public slugs: normalized, human-readable, never secrets. */
 export const slugSchema = z

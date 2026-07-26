@@ -5,7 +5,7 @@
  * durable outbox job to commit as one aggregate transaction. Queue ordering is
  * per publication: a failure for one public page must not starve another page.
  */
-import { markerAt, type Note, type Publication } from "@placemarks/domain";
+import { markerAt, type Publication } from "@placemarks/domain";
 import { describe, expect, it, vi } from "vitest";
 import { DexieRepository } from "../../data/repo";
 import { revokePublication, runPublicationOutbox } from "./publication";
@@ -185,92 +185,6 @@ describe("Phase 5 per-publication outbox draining", () => {
       expect((await repo.db.publicationOutbox.toArray()).map((job) => job.id)).toEqual([
         "job-blocked",
       ]);
-    } finally {
-      repo.db.close();
-    }
-  });
-});
-
-describe("Phase 5 publication fan-out for shareable notes", () => {
-  it("queues every containing guide and the standalone note page after a body/title edit", async () => {
-    const repo = new DexieRepository(`phase5-note-edit-fanout-${crypto.randomUUID()}`);
-    try {
-      await seedList(repo, "list-1", "First guide", 0);
-      await seedList(repo, "list-2", "Second guide", 1);
-      const place = (
-        await repo.addToList(
-          "list-1",
-          {
-            kind: "manual",
-            facts: { name: "Shared place", lat: 51.5, lng: -0.12 },
-          },
-          NOW,
-        )
-      ).place;
-      await repo.addToList("list-2", { kind: "existing", placeId: place.id }, NOW);
-
-      const note: Note = {
-        id: "note-1",
-        target: { kind: "place", placeId: place.id },
-        title: "Old title",
-        body: "Old body",
-        shareable: true,
-        createdAt: NOW,
-        updatedAt: NOW,
-      };
-      await repo.createNote(note);
-
-      const publications = [
-        hostedPublication(
-          "publication-list-1",
-          { kind: "list", id: "list-1" },
-          "first-guide",
-          "credential-list-1",
-        ),
-        hostedPublication(
-          "publication-list-2",
-          { kind: "list", id: "list-2" },
-          "second-guide",
-          "credential-list-2",
-        ),
-        hostedPublication(
-          "publication-note",
-          { kind: "note", id: note.id },
-          "old-title",
-          "credential-note",
-        ),
-      ];
-      await repo.db.publications.bulkPut(publications);
-
-      await repo.updateNote({
-        ...note,
-        title: "Edited title",
-        body: "Edited body",
-        updatedAt: LATER,
-      });
-
-      await expect(repo.db.notes.get(note.id)).resolves.toMatchObject({
-        title: "Edited title",
-        body: "Edited body",
-      });
-      for (const publication of publications) {
-        await expect(repo.db.publications.get(publication.id)).resolves.toMatchObject({
-          status: "queued",
-          localRevision: expect.not.stringMatching(`${publication.id}-revision-1`),
-        });
-      }
-      const jobs = await repo.db.publicationOutbox.toArray();
-      expect(jobs).toHaveLength(3);
-      expect(jobs).toEqual(
-        expect.arrayContaining(
-          publications.map((publication) =>
-            expect.objectContaining({ publicationId: publication.id, action: "publish" }),
-          ),
-        ),
-      );
-      expect(jobs).not.toEqual(
-        expect.arrayContaining([expect.objectContaining({ action: "revoke" })]),
-      );
     } finally {
       repo.db.close();
     }

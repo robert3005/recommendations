@@ -26,7 +26,6 @@ import { PostEditorPage } from "./features/posts/PostEditorPage";
 import { PostPage } from "./features/posts/PostPage";
 import { HostedPostViewerPage } from "./features/share/HostedPostViewerPage";
 import { HostedViewerPage } from "./features/share/HostedViewerPage";
-import { NoteViewerPage } from "./features/share/NoteViewerPage";
 import { SnapshotViewerPage } from "./features/share/SnapshotViewerPage";
 import { MapCanvas } from "./map/MapCanvas";
 import { type PaneState, usePaneStore } from "./state/pane";
@@ -87,12 +86,7 @@ export function mapCanvasClasses(pane: PaneState): string {
 }
 
 export function isPublicViewerPath(pathname: string): boolean {
-  return (
-    pathname === "/l" ||
-    pathname.startsWith("/l/") ||
-    pathname.startsWith("/p/") ||
-    pathname.startsWith("/n/")
-  );
+  return pathname === "/l" || pathname.startsWith("/l/") || pathname.startsWith("/p/");
 }
 
 const PEEK_HEIGHT = 56;
@@ -359,12 +353,6 @@ const hostedPostRoute = createRoute({
   component: HostedPostViewerPage,
 });
 
-const noteRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/n/$slug",
-  component: NoteViewerPage,
-});
-
 export const routeTree = rootRoute.addChildren([
   homeRoute,
   listRoute,
@@ -375,7 +363,6 @@ export const routeTree = rootRoute.addChildren([
   snapshotRoute,
   hostedRoute,
   hostedPostRoute,
-  noteRoute,
 ]);
 
 export const router = createRouter({ routeTree });

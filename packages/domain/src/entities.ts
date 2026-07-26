@@ -121,7 +121,7 @@ export type PublicationStatus =
  * a separate credential record; only its id appears here.
  */
 export interface Publication extends BaseEntity {
-  target: { kind: "list" | "post" | "note"; id: string };
+  target: { kind: "list" | "post"; id: string };
   slug?: string; // public and guessable; the path segment follows target.kind
   credentialId?: string;
   status: PublicationStatus;

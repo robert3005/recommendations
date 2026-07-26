@@ -22,7 +22,6 @@ import { useUiStore } from "../../state/ui";
 import { BlockerDialog } from "../lists/BlockerDialog";
 import { NoteEditor } from "../notes/NoteEditor";
 import { CandidatePicker } from "../picker/CandidatePicker";
-import { NotePublishButton } from "../publish/NotePublishButton";
 import { AddToList } from "./AddToList";
 import { NavLinks } from "./NavLinks";
 import { OsmLink } from "./OsmLink";
@@ -281,7 +280,6 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
                   ) : null}
                 </span>
                 <span className="flex gap-1">
-                  {note.shareable ? <NotePublishButton note={note} /> : null}
                   <button
                     type="button"
                     onClick={() => setEditingNote(note)}

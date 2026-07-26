@@ -3,7 +3,7 @@
  * public HTTP boundary: bearer strength, replay authorization/scope, strict
  * conditional requests, byte limits, abuse controls, and read auditing.
  */
-import type { SharedGuide, SharedNote } from "@placemarks/schemas";
+import type { SharedGuide } from "@placemarks/schemas";
 import { LIMITS } from "@placemarks/schemas";
 import { describe, expect, it, vi } from "vitest";
 import { createShareApp } from "./app";
@@ -19,17 +19,6 @@ function guide(overrides: Partial<SharedGuide> = {}): SharedGuide {
     blocks: [],
     contentHash: "hash",
     ...overrides,
-  };
-}
-
-function note(slug: string): SharedNote {
-  return {
-    v: 1,
-    slug,
-    context: { kind: "list", listTitle: "Lisbon" },
-    body: "A note",
-    contentHash: "hash",
-    publishedAt: "2026-07-19T15:00:00.000Z",
   };
 }
 
@@ -392,26 +381,5 @@ describe("Phase 5 conditional, limit, and audit enforcement", () => {
     expect((await request("/s/lists/audited-read")).status).toBe(200);
 
     expect(storage.auditEntries.map((entry) => String(entry.action))).toContain("read");
-  });
-
-  it("rejects a note document whose public slug disagrees with the claimed URL", async () => {
-    const { request } = harness();
-
-    const response = await request("/s/notes", {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${TOKEN}`,
-        "idempotency-key": "mismatched-note-slug",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ desiredSlug: "canonical-note", document: note("different-note") }),
-    });
-
-    if (response.status === 201) {
-      const read = await request("/s/notes/canonical-note");
-      expect((await read.json()) as SharedNote).toMatchObject({ slug: "canonical-note" });
-    } else {
-      expect(response.status).toBe(400);
-    }
   });
 });
