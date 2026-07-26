@@ -79,8 +79,15 @@ export const OUR_SOURCE_IDS = ["saved", "marks", "selection"] as const;
 
 const PIN_LAYER_IDS = ["saved-pins", "saved-clusters", "mark-pins"] as const;
 
-const PAPER = "#FAF7F2";
-const INK = "#221D16";
+/**
+ * The basemap stays the LIGHT plate while the app chrome is the deep-green
+ * console (spec/src/design.md §Map styling). Everything painted INTO the map
+ * scene — pin outlines, cluster discs, mark labels, the selection ring —
+ * contrasts against that light plate, so these are fixed plate values, not
+ * the (dark) chrome tokens.
+ */
+const PLATE = "#FAF7F2";
+const PLATE_INK = "#221D16";
 
 /** Sprite id for a marker variant — parsed back by the sprite painter. */
 function markerImageId(pin: PlacePinFeature): string {
@@ -97,7 +104,7 @@ function markerImageId(pin: PlacePinFeature): string {
  * badge for 3+ lists — the deterministic multi-list variant.
  */
 function paintMarkerImage(id: string): ImageData | undefined {
-  const [, shape = "circle", color = INK, shape2 = "-", color2 = "-", countRaw = "1"] =
+  const [, shape = "circle", color = PLATE_INK, shape2 = "-", color2 = "-", countRaw = "1"] =
     id.split("|");
   const count = Number.parseInt(countRaw, 10) || 1;
   if (typeof document === "undefined" || typeof Path2D === "undefined") return undefined;
@@ -119,7 +126,7 @@ function paintMarkerImage(id: string): ImageData | undefined {
     ctx.fillStyle = fill;
     ctx.fill(path);
     ctx.lineWidth = 2.5 / px;
-    ctx.strokeStyle = PAPER;
+    ctx.strokeStyle = PLATE;
     ctx.stroke(path);
     ctx.restore();
   };
@@ -129,12 +136,12 @@ function paintMarkerImage(id: string): ImageData | undefined {
   if (count > 2) {
     ctx.beginPath();
     ctx.arc(size * 0.82, size * 0.82, size * 0.16, 0, Math.PI * 2);
-    ctx.fillStyle = INK;
+    ctx.fillStyle = PLATE_INK;
     ctx.fill();
     ctx.lineWidth = 2;
-    ctx.strokeStyle = PAPER;
+    ctx.strokeStyle = PLATE;
     ctx.stroke();
-    ctx.fillStyle = PAPER;
+    ctx.fillStyle = PLATE;
     ctx.font = `bold ${(size * 0.22).toString()}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -285,10 +292,10 @@ export function MapView({
         source: "saved",
         filter: ["has", "point_count"],
         paint: {
-          "circle-color": INK,
+          "circle-color": PLATE_INK,
           "circle-radius": ["step", ["get", "point_count"], 14, 10, 18, 50, 24],
           "circle-stroke-width": 2,
-          "circle-stroke-color": PAPER,
+          "circle-stroke-color": PLATE,
         },
       });
       map.addLayer({
@@ -300,7 +307,7 @@ export function MapView({
           "text-field": ["get", "point_count_abbreviated"],
           "text-size": 12,
         },
-        paint: { "text-color": PAPER },
+        paint: { "text-color": PLATE },
       });
       map.addLayer({
         id: "saved-pins",
@@ -327,7 +334,7 @@ export function MapView({
           "circle-color": "#E43D1F",
           "circle-radius": 10,
           "circle-stroke-width": 2,
-          "circle-stroke-color": PAPER,
+          "circle-stroke-color": PLATE,
         },
       });
       map.addLayer({
@@ -335,7 +342,7 @@ export function MapView({
         type: "symbol",
         source: "marks",
         layout: { "text-field": ["get", "label"], "text-size": 11 },
-        paint: { "text-color": PAPER },
+        paint: { "text-color": PLATE },
       });
 
       map.addSource("selection", {
@@ -365,7 +372,7 @@ export function MapView({
           "circle-color": "#000000",
           "circle-opacity": 0,
           "circle-stroke-width": 3,
-          "circle-stroke-color": INK,
+          "circle-stroke-color": PLATE_INK,
         },
       });
       if (container) {
@@ -578,11 +585,12 @@ export function MapView({
       </a>
       {/* A top banner, not a full-bleed takeover: a tile or glyph failure can
           happen over a map that is otherwise drawn and usable, and covering it
-          hides information the user already has. */}
+          hides information the user already has. Deep console chrome over the
+          light plate, like every control floating on the map. */}
       {unavailable ? (
         <div
           role="status"
-          className="absolute inset-x-0 top-0 z-10 bg-ink/90 px-3 py-2 text-center text-xs text-paper"
+          className="absolute inset-x-0 top-0 z-10 border-b border-hairline bg-paper/95 px-3 py-2 text-center text-xs text-ink"
         >
           <span className="font-semibold">Map unavailable.</span> Part of the map could not load.
           Search and your lists keep working — it returns when the connection does.

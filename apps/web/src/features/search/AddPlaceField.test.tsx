@@ -15,7 +15,12 @@ const geocoder = vi.hoisted(() => ({ search: vi.fn(), lookup: vi.fn() }));
 vi.mock("../../providers", () => ({ geocoder }));
 
 function renderField() {
-  const repo = { listLists: vi.fn().mockResolvedValue([]), addToList: vi.fn() };
+  const repo = {
+    listLists: vi.fn().mockResolvedValue([]),
+    addToList: vi.fn(),
+    createList: vi.fn(),
+    updatePlaceFacts: vi.fn().mockResolvedValue(undefined),
+  };
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -87,6 +92,65 @@ describe("pasting map links", () => {
     geocoder.lookup.mockResolvedValueOnce({ name: "Ponte", lat: 41.14, lng: -8.61 });
     await userEvent.click(screen.getByTestId("osm-lookup-retry"));
     await waitFor(() => expect(screen.getByTestId("confirm-name")).toHaveValue("Ponte"));
+  });
+});
+
+describe("add-time enrichment of search picks", () => {
+  const NOW = "2026-07-26T00:00:00.000Z";
+  const ESTRELA = {
+    name: "Jardim da Estrela",
+    lat: 38.7154,
+    lng: -9.1607,
+    osmRef: { type: "way", id: "77" },
+  };
+  const IMAGE = "https://commons.wikimedia.org/wiki/Special:FilePath/Estrela.jpg?width=640";
+
+  async function addSearchPick(repo: ReturnType<typeof renderField>) {
+    repo.createList.mockResolvedValue({
+      id: "list-1",
+      name: "Lisbon",
+      marker: { shape: "circle", color: "#F97316" },
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    repo.addToList.mockResolvedValue({
+      status: "added",
+      place: { id: "place-9", ...ESTRELA, origin: "search", createdAt: NOW, updatedAt: NOW },
+    });
+    await userEvent.type(screen.getByRole("combobox", { name: "Add a place" }), "estrela");
+    await userEvent.click(await screen.findByRole("option", { name: /Jardim da Estrela/ }));
+    await userEvent.type(screen.getByTestId("field-list-choice"), "Lisbon");
+    await userEvent.click(screen.getByTestId("field-create-option"));
+  }
+
+  it("fires one lookup after the add and writes the missing photo and address", async () => {
+    geocoder.search.mockResolvedValue([ESTRELA]);
+    geocoder.lookup.mockResolvedValue({
+      ...ESTRELA,
+      address: "Praça da Estrela, Lisboa",
+      imageUrl: IMAGE,
+    });
+    const repo = renderField();
+    await addSearchPick(repo);
+
+    await waitFor(() =>
+      expect(repo.updatePlaceFacts).toHaveBeenCalledWith("place-9", {
+        imageUrl: IMAGE,
+        address: "Praça da Estrela, Lisboa",
+      }),
+    );
+    expect(geocoder.lookup).toHaveBeenCalledTimes(1);
+    expect(geocoder.lookup).toHaveBeenCalledWith(ESTRELA.osmRef);
+  });
+
+  it("is best-effort: a failed lookup writes nothing and surfaces nothing", async () => {
+    geocoder.search.mockResolvedValue([ESTRELA]);
+    geocoder.lookup.mockRejectedValue(new Error("offline"));
+    const repo = renderField();
+    await addSearchPick(repo);
+
+    await waitFor(() => expect(geocoder.lookup).toHaveBeenCalledTimes(1));
+    expect(repo.updatePlaceFacts).not.toHaveBeenCalled();
   });
 });
 

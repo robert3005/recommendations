@@ -2,6 +2,8 @@
  * AddToList handles the repository's AddResult in full (spec/src/data-model.md
  * §Normative rules): added, already-member, and the name-proximity conflict,
  * which prompts — use the existing place or keep both — never merges silently.
+ * The one combobox picks or creates the list; picking is the add
+ * (spec/src/map-view.md §The place card).
  */
 import type { List, Place } from "@placemarks/domain";
 import { render, screen } from "@testing-library/react";
@@ -39,13 +41,17 @@ const place: Place = {
   updatedAt: NOW,
 };
 
-function renderWithRepo(repo: { addToList: ReturnType<typeof vi.fn> }, ui: React.ReactElement) {
+function renderWithRepo(
+  repo: { addToList: ReturnType<typeof vi.fn>; createList?: ReturnType<typeof vi.fn> },
+  ui: React.ReactElement,
+) {
   return render(<RepoProvider repo={repo as never}>{ui}</RepoProvider>);
 }
 
-async function pickListAndSubmit(listId: string) {
-  await userEvent.selectOptions(screen.getByTestId("add-list-choice"), listId);
-  await userEvent.click(screen.getByTestId("add-submit"));
+/** Type into the combobox, then click the option — picking is the add. */
+async function pickList(query: string, optionTestId: string) {
+  await userEvent.type(screen.getByTestId("add-list-choice"), query);
+  await userEvent.click(screen.getByTestId(optionTestId));
 }
 
 describe("AddToList result handling", () => {
@@ -60,7 +66,7 @@ describe("AddToList result handling", () => {
         onAdded={onAdded}
       />,
     );
-    await pickListAndSubmit("list-2");
+    await pickList("Porto", "add-option-list-2");
     expect(repo.addToList).toHaveBeenCalledWith(
       "list-2",
       { kind: "existing", placeId: place.id },
@@ -70,22 +76,35 @@ describe("AddToList result handling", () => {
     expect(screen.getByTestId("add-message").textContent).toContain("Added");
   });
 
-  it("shows current memberships and does not offer those lists again", () => {
-    const repo = { addToList: vi.fn() };
+  it("creates the list and adds in one flow when the Create option is picked", async () => {
+    const created: List = {
+      id: "list-3",
+      name: "Weekend",
+      marker: { shape: "square", color: "#17A34A" },
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    const repo = {
+      addToList: vi.fn().mockResolvedValue({ status: "added", place }),
+      createList: vi.fn().mockResolvedValue(created),
+    };
+    const onAdded = vi.fn();
     renderWithRepo(
       repo,
       <AddToList
         source={{ kind: "existing", placeId: place.id }}
         lists={lists}
-        memberListIds={["list-1"]}
+        onAdded={onAdded}
       />,
     );
-    expect(screen.getByTestId("current-list-memberships").textContent).toContain("Lisbon cafés");
-    const options = screen
-      .getAllByRole("option")
-      .map((option) => (option as HTMLOptionElement).value);
-    expect(options).not.toContain("list-1");
-    expect(options).toContain("list-2");
+    await pickList("Weekend", "add-create-option");
+    expect(repo.createList).toHaveBeenCalledWith("Weekend");
+    expect(repo.addToList).toHaveBeenCalledWith(
+      "list-3",
+      { kind: "existing", placeId: place.id },
+      undefined,
+    );
+    expect(onAdded).toHaveBeenCalledWith(place, "list-3");
   });
 
   it("reports already-member instead of duplicating", async () => {
@@ -99,7 +118,7 @@ describe("AddToList result handling", () => {
         onAdded={onAdded}
       />,
     );
-    await pickListAndSubmit("list-1");
+    await pickList("Lisbon", "add-option-list-1");
     expect(screen.getByTestId("add-message").textContent).toContain("already");
     expect(onAdded).not.toHaveBeenCalled();
   });
@@ -118,7 +137,7 @@ describe("AddToList result handling", () => {
         .mockResolvedValueOnce({ status: "added", place }),
     };
     renderWithRepo(repo, <AddToList source={{ kind: "new", facts }} lists={lists} />);
-    await pickListAndSubmit("list-1");
+    await pickList("Lisbon", "add-option-list-1");
     expect(screen.getByTestId("name-proximity-conflict").textContent).toContain("Café Central");
 
     await userEvent.click(screen.getByTestId("add-use-existing"));
@@ -145,7 +164,7 @@ describe("AddToList result handling", () => {
         .mockResolvedValueOnce({ status: "added", place: { ...place, id: "place-2" } }),
     };
     renderWithRepo(repo, <AddToList source={source} lists={lists} />);
-    await pickListAndSubmit("list-1");
+    await pickList("Lisbon", "add-option-list-1");
     await userEvent.click(screen.getByTestId("add-force-new"));
     expect(repo.addToList).toHaveBeenLastCalledWith("list-1", source, { forceNew: true });
   });

@@ -25,21 +25,24 @@ change.
 
 One adapter, two calls, possibly two endpoints:
 
-- `search(text, bias?)` — forward geocoding via a Photon-class autocomplete endpoint. Serves the
-  add-a-place field and the Title + Address step of the import coordinate ladder
+- `search(text, bias?)` — forward geocoding via a Photon-class **or** Pelias-class autocomplete
+  endpoint, selected by `VITE_GEOCODER` (`photon` is the keyless development default; `pelias`
+  requires `VITE_PELIAS_URL`, with an optional `VITE_PELIAS_KEY` sent as a query parameter).
+  Serves the add-a-place field and the Title + Address step of the import coordinate ladder
   ([Import & Export](./interop.md)).
 - `lookup(osmRef)` — exact element fetch via a Nominatim `/lookup`-class endpoint or the OSM API.
   Serves OSM element URL paste.
 
-Geocoder results are OSM data: any place created or placed from one (a search pick, ladder
-auto-placement, a review-queue candidate pick) records the result's `osmRef`
-([Data Model](./data-model.md)). The adapter owns debouncing, cancellation, result normalisation,
-and retry; callers see plain candidate lists.
+A search candidate records the result's `osmRef` whenever the upstream sources it from OSM
+([Data Model](./data-model.md)); Photon-class results always do. Pelias-class results may come
+from other open sources (OpenAddresses, Who's on First) and then carry no `osmRef` — such a pick
+behaves like manual placement: no ODbL attribution claim, no OSM element link. The adapter owns
+debouncing, cancellation, result normalisation, and retry; callers see plain candidate lists.
 
 Public endpoints such as photon.komoot.io and nominatim.openstreetmap.org carry strict usage
 policies and are development-only configurations. Production configuration is explicit and fails
-closed: a production build with either capability unconfigured refuses to run against public
-defaults.
+closed with either geocoder kind: a production build with any capability unconfigured refuses to
+run against public defaults.
 
 ## Privacy
 

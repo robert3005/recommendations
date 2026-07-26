@@ -1,12 +1,13 @@
 /**
- * The list page (spec/src/map-view.md §The list page): entries beside the
- * posts sidebar, with Edit mode for curation — reorder, rename, remove,
- * marker swap within free pairs — and the publish and export entry points.
- * The canvas shows the list's places with the rest of the library dimmed.
+ * The list page (spec/src/map-view.md §The list page): the entries are the
+ * centre of the page — full-width rows, the whole row one selection target —
+ * with Edit mode for curation (reorder, rename, remove, marker swap within
+ * free pairs), the publish entry point, and every export behind the one
+ * Export menu. The canvas shows the list's places with the library dimmed.
  */
 import type { List, ListEntry, Place, Post } from "@placemarks/domain";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useList, useListEntries, useLists, usePosts, usePostsFor } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import { type Blocker, TeardownRefusedError } from "../../data/repo";
@@ -34,6 +35,163 @@ const EXPORTS = [
   { key: "gpx", label: "GPX", mime: "application/gpx+xml", write: exportListGpx },
 ] as const;
 
+export interface ExportMenuItem {
+  testid: string;
+  label: string;
+  run: () => void;
+}
+
+/**
+ * The one export entry point (spec/src/map-view.md §The list page): a single
+ * "Export" button opening an ARIA menu of the artefact downloads plus the
+ * guided handoffs. Roving focus; arrow keys move, Home/End jump, Escape and
+ * outside click close. Exported for its unit tests.
+ */
+export function ExportMenu({
+  artefacts,
+  handoffs,
+}: {
+  artefacts: ExportMenuItem[];
+  handoffs: ExportMenuItem[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const baseId = useId();
+  const menuId = `${baseId}-menu`;
+  const handoffLabelId = `${baseId}-handoffs`;
+  const items = [...artefacts, ...handoffs];
+
+  // Roving focus: the active item is the one tab stop and holds real focus.
+  useEffect(() => {
+    if (open) itemRefs.current[active]?.focus();
+  }, [open, active]);
+
+  // Clicking outside closes without activating anything.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (
+        rootRef.current &&
+        event.target instanceof Node &&
+        !rootRef.current.contains(event.target)
+      ) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  const openAt = (index: number) => {
+    setActive(index);
+    setOpen(true);
+  };
+  const close = (refocus: boolean) => {
+    setOpen(false);
+    if (refocus) buttonRef.current?.focus();
+  };
+  const activate = (item: ExportMenuItem) => {
+    close(true);
+    item.run();
+  };
+
+  const onMenuKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActive((active + 1) % items.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive((active - 1 + items.length) % items.length);
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      setActive(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      setActive(items.length - 1);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      close(true);
+    } else if (e.key === "Tab") {
+      setOpen(false);
+    }
+  };
+
+  const menuItem = (item: ExportMenuItem, index: number) => (
+    <button
+      key={item.testid}
+      ref={(el) => {
+        itemRefs.current[index] = el;
+      }}
+      type="button"
+      role="menuitem"
+      tabIndex={index === active ? 0 : -1}
+      className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-ink/5"
+      data-testid={item.testid}
+      onClick={() => activate(item)}
+      onMouseEnter={() => setActive(index)}
+    >
+      {item.label}
+    </button>
+  );
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        className="rounded-crisp border border-hairline px-3 py-1 text-sm font-medium text-ink hover:bg-ink/5"
+        data-testid="export-menu"
+        onClick={() => {
+          if (open) close(false);
+          else openAt(0);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            openAt(0);
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            openAt(items.length - 1);
+          }
+        }}
+      >
+        Export ▾
+      </button>
+      {open ? (
+        <div
+          id={menuId}
+          role="menu"
+          aria-label="Export"
+          className="absolute top-full right-0 z-30 mt-1 w-56 rounded-crisp border border-hairline bg-paper py-1"
+          onKeyDown={onMenuKeyDown}
+        >
+          {artefacts.map((item, index) => menuItem(item, index))}
+          {/* biome-ignore lint/a11y/useSemanticElements: role=group is the ARIA pattern for a labelled section inside role=menu — a fieldset is not valid menu content */}
+          <div
+            role="group"
+            aria-labelledby={handoffLabelId}
+            className="mt-1 border-t border-hairline pt-1"
+          >
+            <p
+              id={handoffLabelId}
+              className="px-3 pt-1 pb-0.5 text-[10px] font-medium tracking-wide text-ink/50 uppercase"
+            >
+              Guided handoffs
+            </p>
+            {handoffs.map((item, index) => menuItem(item, artefacts.length + index))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ListPage() {
   const { listId } = useParams({ from: "/list/$listId" });
   const repo = useRepo();
@@ -52,6 +210,7 @@ export function ListPage() {
   const [name, setName] = useState<string>();
   const [refusal, setRefusal] = useState<{ title: string; blockers: Blocker[] }>();
   const [exportError, setExportError] = useState<string>();
+  const [handoffHint, setHandoffHint] = useState<string>();
 
   if (!list) return <div className="p-4 text-ink/60">List not found.</div>;
 
@@ -109,19 +268,71 @@ export function ListPage() {
     });
   };
 
-  const exportAs = (writer: (typeof EXPORTS)[number]) => {
-    // Fail closed: a broken artefact is worse than none — errors surface
-    // instead of downloading.
+  /** Fail closed: a broken artefact is worse than none — errors surface
+   *  instead of downloading. */
+  const runExport = (action: () => void) => {
+    setExportError(undefined);
+    setHandoffHint(undefined);
     try {
-      if (writer.key === "kml") {
-        exportKml();
-        return;
-      }
-      downloadText(`${safeName()}.${writer.key}`, writer.mime, writer.write(list, places));
+      action();
     } catch (err) {
       setExportError(err instanceof Error ? err.message : String(err));
     }
   };
+
+  /** The menu's artefact downloads, KMZ beside its sibling KML. */
+  const artefactItems: ExportMenuItem[] = EXPORTS.flatMap((writer) =>
+    writer.key === "kml"
+      ? [
+          { testid: "export-kml", label: writer.label, run: () => runExport(exportKml) },
+          { testid: "export-kmz", label: "KMZ", run: () => runExport(exportKmz) },
+        ]
+      : [
+          {
+            testid: `export-${writer.key}`,
+            label: writer.label,
+            run: () =>
+              runExport(() => {
+                downloadText(
+                  `${safeName()}.${writer.key}`,
+                  writer.mime,
+                  writer.write(list, places),
+                );
+              }),
+          },
+        ],
+  );
+
+  /** The guided handoffs (spec/src/interop.md §Export): download the right
+   *  artefact and say what to do with it. */
+  const handoffItems: ExportMenuItem[] = [
+    {
+      testid: "handoff-my-maps",
+      label: "Google My Maps",
+      run: () =>
+        runExport(() => {
+          exportKml();
+          setHandoffHint(
+            "KML downloaded — in Google My Maps choose Import and pick the file. Large lists split into numbered parts automatically.",
+          );
+        }),
+    },
+    {
+      testid: "handoff-umap",
+      label: "uMap (OSM)",
+      run: () =>
+        runExport(() => {
+          downloadText(
+            `${safeName()}.geojson`,
+            "application/geo+json",
+            exportListGeoJson(list, places),
+          );
+          setHandoffHint(
+            "GeoJSON downloaded — upload it to uMap (umap.openstreetmap.fr) to publish on OSM.",
+          );
+        }),
+    },
+  ];
 
   const move = (row: { entry: ListEntry }, direction: -1 | 1) => {
     const index = entries.findIndex((r) => r.entry.id === row.entry.id);
@@ -143,6 +354,9 @@ export function ListPage() {
 
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="list-page">
+      {/* One compact header row: the title and the secondary controls —
+          the Export menu and the Edit toggle (spec/src/map-view.md §The list
+          page). The entries below get the room. */}
       <div className="flex items-start justify-between gap-2">
         {editing ? (
           <div className="min-w-0 flex-1">
@@ -163,75 +377,144 @@ export function ListPage() {
             />
           </div>
         ) : (
-          <h1 className="flex items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
+          <h1 className="flex min-w-0 items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
             <span data-testid="list-marker" data-color={list.marker.color}>
               <MarkerGlyph marker={list.marker} size={18} />
             </span>
-            {list.name}
+            <span className="truncate">{list.name}</span>
           </h1>
         )}
-        <button
-          type="button"
-          className="shrink-0 rounded-crisp border border-hairline px-3 py-1 text-sm font-medium text-ink"
-          data-testid="edit-list"
-          onClick={() => {
-            if (editing) {
-              const trimmed = name?.trim();
-              if (trimmed && trimmed !== list.name) void repo.renameList(list.id, trimmed);
-              setName(undefined);
-            }
-            setEditing(!editing);
-          }}
-        >
-          {editing ? "Done" : "Edit"}
-        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {/* Every export lives behind this one menu (spec/src/interop.md §Export). */}
+          <ExportMenu artefacts={artefactItems} handoffs={handoffItems} />
+          <button
+            type="button"
+            className="rounded-crisp border border-hairline px-3 py-1 text-sm font-medium text-ink"
+            data-testid="edit-list"
+            onClick={() => {
+              if (editing) {
+                const trimmed = name?.trim();
+                if (trimmed && trimmed !== list.name) void repo.renameList(list.id, trimmed);
+                setName(undefined);
+              }
+              setEditing(!editing);
+            }}
+          >
+            {editing ? "Done" : "Edit"}
+          </button>
+        </div>
       </div>
 
       {/* Publish entry point (spec/src/sharing.md). */}
       <PublishControls listId={list.id} />
 
-      {/* Export entry points (spec/src/interop.md §Export). */}
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink/60">
-        Export:
-        {EXPORTS.map((writer) => (
-          <button
-            key={writer.key}
-            type="button"
-            className="rounded-crisp border border-hairline px-2 py-0.5 font-medium text-ink hover:bg-ink/5"
-            data-testid={`export-${writer.key}`}
-            onClick={() => exportAs(writer)}
-          >
-            {writer.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          className="rounded-crisp border border-hairline px-2 py-0.5 font-medium text-ink hover:bg-ink/5"
-          data-testid="export-kmz"
-          onClick={() => {
-            try {
-              exportKmz();
-            } catch (err) {
-              setExportError(err instanceof Error ? err.message : String(err));
-            }
-          }}
-        >
-          KMZ
-        </button>
-      </div>
       {exportError ? (
-        <output className="mt-1 block rounded-crisp border border-hairline p-2 text-[11px] text-ink">
+        <output className="mt-2 block rounded-crisp border border-hairline p-2 text-[11px] text-ink">
           Export failed — nothing was downloaded ({exportError}).
         </output>
       ) : null}
-      <p className="mt-1 text-[11px] text-ink/60">
-        Google My Maps: Import → choose the KML (large lists split into numbered parts
-        automatically). OSM: upload the GeoJSON or KML to uMap (umap.openstreetmap.fr).
-      </p>
+      {handoffHint ? (
+        <output
+          className="mt-2 block rounded-crisp border border-hairline p-2 text-[11px] text-ink"
+          data-testid="handoff-hint"
+        >
+          {handoffHint}
+        </output>
+      ) : null}
 
-      {/* The posts sidebar (spec/src/map-view.md §The list page): this list's
-          posts, with New post — a list post about this list. */}
-      <section className="mt-4 border-t border-hairline pt-3" id="posts" data-testid="list-posts">
+      {/* The entries are the visual centre: full-width rows, the whole row one
+          selection target (spec/src/map-view.md §The list page). */}
+      <ul className="mt-5 divide-y divide-hairline border-y border-hairline">
+        {entries.map((row) => (
+          <li key={row.entry.id} className="flex items-stretch gap-1" data-testid="place-item">
+            {/* Selection is bidirectional (spec/src/map-view.md): activate the
+                row in the notebook → the canvas highlights and flies. */}
+            <button
+              type="button"
+              className="min-w-0 flex-1 px-2 py-3 text-left hover:bg-ink/5"
+              data-testid="select-place"
+              onClick={() => focusPlace(row.place.id)}
+            >
+              <span className="font-medium text-ink">{row.place.name}</span>
+              {row.place.category ? (
+                <span className="ml-2 text-xs text-ink/60 capitalize">{row.place.category}</span>
+              ) : null}
+              {row.place.address ? (
+                <span className="mt-0.5 block text-sm text-ink/70">{row.place.address}</span>
+              ) : null}
+            </button>
+            {editing ? (
+              <span className="flex shrink-0 items-center gap-1 pr-1">
+                <button
+                  type="button"
+                  aria-label="Move up"
+                  className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    move(row, -1);
+                  }}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  aria-label="Move down"
+                  className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    move(row, 1);
+                  }}
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  className="rounded-crisp px-1.5 py-0.5 text-xs text-accent-vermilion-deep hover:bg-ink/5"
+                  data-testid="remove-from-list"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // Last membership deletes the place — refused while
+                    // posts target it (spec/src/data-model.md §Teardown).
+                    guarded("Can’t remove this place yet", () => repo.removeEntry(row.entry.id));
+                  }}
+                >
+                  Remove
+                </button>
+              </span>
+            ) : null}
+          </li>
+        ))}
+        {rows !== undefined && entries.length === 0 ? (
+          <li className="px-2 py-4 text-sm text-ink/60">
+            Nothing here yet — paste a link or search on the home page, or import a Takeout archive
+            in Settings.
+          </li>
+        ) : null}
+      </ul>
+
+      {editing ? (
+        <div className="mt-6">
+          <button
+            type="button"
+            className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-accent-vermilion-deep hover:bg-ink/5"
+            data-testid="delete-list"
+            onClick={() =>
+              guarded("Can’t delete this list yet", () =>
+                repo.deleteList(list.id).then(() => {
+                  void navigate({ to: "/" });
+                }),
+              )
+            }
+          >
+            Delete list
+          </button>
+        </div>
+      ) : null}
+
+      {/* The posts sidebar (spec/src/map-view.md §The list page) follows the
+          entries: this list's posts, with New post — a list post about this
+          list. */}
+      <section className="mt-6 border-t border-hairline pt-3" id="posts" data-testid="list-posts">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-sm font-semibold text-ink">Posts</h2>
           <button
@@ -266,94 +549,6 @@ export function ListPage() {
           </p>
         )}
       </section>
-
-      <ul className="mt-4 space-y-2">
-        {entries.map((row) => (
-          <li
-            key={row.entry.id}
-            className="rounded-crisp border border-hairline p-3"
-            data-testid="place-item"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                {/* Selection is bidirectional (spec/src/map-view.md): select
-                    in the notebook → the canvas highlights and flies. */}
-                <button
-                  type="button"
-                  className="text-left font-medium text-ink hover:underline"
-                  data-testid="select-place"
-                  onClick={() => focusPlace(row.place.id)}
-                >
-                  {row.place.name}
-                </button>
-                {row.place.category ? (
-                  <span className="ml-2 text-xs capitalize text-ink/60">{row.place.category}</span>
-                ) : null}
-                {row.place.address ? (
-                  <span className="block text-sm text-ink/70">{row.place.address}</span>
-                ) : null}
-              </div>
-              {editing ? (
-                <span className="flex shrink-0 gap-1">
-                  <button
-                    type="button"
-                    aria-label="Move up"
-                    className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
-                    onClick={() => move(row, -1)}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Move down"
-                    className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
-                    onClick={() => move(row, 1)}
-                  >
-                    ↓
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded-crisp px-1.5 py-0.5 text-xs text-accent-vermilion-deep hover:bg-ink/5"
-                    data-testid="remove-from-list"
-                    onClick={() =>
-                      // Last membership deletes the place — refused while
-                      // posts target it (spec/src/data-model.md §Teardown).
-                      guarded("Can’t remove this place yet", () => repo.removeEntry(row.entry.id))
-                    }
-                  >
-                    Remove
-                  </button>
-                </span>
-              ) : null}
-            </div>
-          </li>
-        ))}
-        {rows !== undefined && entries.length === 0 ? (
-          <li className="py-4 text-sm text-ink/60">
-            Nothing here yet — paste a link or search on the home page, or import a Takeout archive
-            in Settings.
-          </li>
-        ) : null}
-      </ul>
-
-      {editing ? (
-        <div className="mt-6">
-          <button
-            type="button"
-            className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-accent-vermilion-deep hover:bg-ink/5"
-            data-testid="delete-list"
-            onClick={() =>
-              guarded("Can’t delete this list yet", () =>
-                repo.deleteList(list.id).then(() => {
-                  void navigate({ to: "/" });
-                }),
-              )
-            }
-          >
-            Delete list
-          </button>
-        </div>
-      ) : null}
 
       {refusal ? (
         <BlockerDialog

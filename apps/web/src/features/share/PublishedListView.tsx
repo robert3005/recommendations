@@ -9,6 +9,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { PlaceImage } from "../place/PlaceImage";
 import { usePlaceFragmentSelection } from "./placeFragment";
 import { fetchPublishedList, PublishedDocumentError } from "./publishedDoc";
 import { useNoindex } from "./useNoindex";
@@ -83,6 +84,10 @@ export function PublishedListContent({ slug }: { slug: string }) {
               }`}
               data-selected={selectedId === place.id || undefined}
             >
+              {/* The photo, exactly as published — same rendering as the place card. */}
+              {place.imageUrl !== undefined ? (
+                <PlaceImage url={place.imageUrl} name={place.name} />
+              ) : null}
               <button
                 type="button"
                 onClick={() => select(place.id)}

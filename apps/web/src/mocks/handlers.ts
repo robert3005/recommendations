@@ -1,11 +1,13 @@
 import { createShareApp, MemoryStorage, type StoredDocument } from "@placemarks/share-service";
 import { HttpResponse, http } from "msw";
-import { OSM_API_URL, PHOTON_URL } from "../config";
+import { OSM_API_URL, PELIAS_URL, PHOTON_URL } from "../config";
 import {
   osmNode101,
   osmNode102,
   osmNode599,
   osmWay201Full,
+  PELIAS_TEST_URL,
+  peliasCafeResponse,
   photonCafeResponse,
   photonMigradoResponse,
 } from "./fixtures";
@@ -70,6 +72,14 @@ export const handlers = [
     const q = new URL(request.url).searchParams.get("q") ?? "";
     if (q.toLowerCase().includes("migrado")) return HttpResponse.json(photonMigradoResponse);
     if (q.toLowerCase().includes("caf")) return HttpResponse.json(photonCafeResponse);
+    return HttpResponse.json({ type: "FeatureCollection", features: [] });
+  }),
+
+  // Geocoder search (Pelias-class), served when VITE_GEOCODER=pelias runs
+  // against MSW; unit tests hit the same fixtures at the fallback test URL.
+  http.get(`${PELIAS_URL ?? PELIAS_TEST_URL}/v1/autocomplete`, ({ request }) => {
+    const text = new URL(request.url).searchParams.get("text") ?? "";
+    if (text.toLowerCase().includes("caf")) return HttpResponse.json(peliasCafeResponse);
     return HttpResponse.json({ type: "FeatureCollection", features: [] });
   }),
 

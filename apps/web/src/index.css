@@ -4,9 +4,11 @@
 
 /**
  * The visual system (spec/src/design.md): instrument-panel retrofuturism.
- * Warm paper, near-black ink, 1px hairlines, one sharp 2px radius, and the
- * eight accent colours — the list-marker palette — as the only hues in the
- * app. V1 is light-only; dark mode is a listed future.
+ * The deep-green console: a dark forest ground, warm off-white ink, 1px
+ * hairlines, one sharp 2px radius, and the eight accent colours — the
+ * list-marker palette — as the only hues in the app. The basemap stays the
+ * light plate, so the console frames a lit chart. One theme; a LIGHT theme
+ * is a listed future.
  *
  * These are Tailwind `@theme` tokens, so they generate real utilities:
  * `bg-paper`, `text-ink`, `border-hairline`, `bg-accent-orange`,
@@ -14,34 +16,40 @@
  * never a raw hex.
  */
 @theme {
-  /* Paper and ink — the one background, full-strength foreground. */
-  --color-paper: #faf7f2;
-  --color-ink: #221d16;
+  /* Paper and ink — the one background (deep forest, not black), and the
+     full-strength foreground (warm off-white). */
+  --color-paper: #0e1613;
+  --color-ink: #e9efe9;
+
+  /* Panel — the one raised surface, for popups and menus that must sit
+     above the ground. Everything else stays on paper. */
+  --color-panel: #15201b;
 
   /* Hairline — every rule and border, at 1px. */
-  --color-hairline: #e6dfd2;
+  --color-hairline: #2a3a31;
 
   /*
    * The eight accents. Bright fills are for markers, toggles, and large type;
-   * the -deep variants are for small text on paper (≈4.5:1). The canonical
+   * the -deep variants are the text-safe form — small text on paper (≈4.5:1)
+   * — so on the dark ground they are LIGHTENED, not darkened. The canonical
    * fills live in @placemarks/domain ACCENT_COLORS; these tokens mirror them.
    */
   --color-accent-orange: #f97316;
-  --color-accent-orange-deep: #b04a08;
+  --color-accent-orange-deep: #fba45c;
   --color-accent-cobalt: #2457e6;
-  --color-accent-cobalt-deep: #1b3ea9;
+  --color-accent-cobalt-deep: #7fa0f5;
   --color-accent-green: #17a34a;
-  --color-accent-green-deep: #0e6b33;
+  --color-accent-green-deep: #5ccb8a;
   --color-accent-magenta: #d6219c;
-  --color-accent-magenta-deep: #96156c;
+  --color-accent-magenta-deep: #ec72c4;
   --color-accent-cyan: #08aece;
-  --color-accent-cyan-deep: #0e7490;
+  --color-accent-cyan-deep: #5bcfe6;
   --color-accent-gold: #f0b100;
-  --color-accent-gold-deep: #8a6400;
+  --color-accent-gold-deep: #f5cb4d;
   --color-accent-vermilion: #e43d1f;
-  --color-accent-vermilion-deep: #ac2410;
+  --color-accent-vermilion-deep: #f58063;
   --color-accent-violet: #7c3aed;
-  --color-accent-violet-deep: #5b21b6;
+  --color-accent-violet-deep: #ad8bf7;
 
   /* Corners take one sharp radius everywhere. */
   --radius-crisp: 2px;
@@ -77,9 +85,11 @@ body {
   color: var(--color-paper);
 }
 
-/* One visible focus treatment everywhere, in cobalt so it never reads as an error. */
+/* One visible focus treatment everywhere, in cobalt so it never reads as an
+   error — the deep (lightened) variant, which carries the contrast on the
+   dark ground. */
 :where(a, button, input, textarea, select, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-accent-cobalt);
+  outline: 2px solid var(--color-accent-cobalt-deep);
   outline-offset: 2px;
   border-radius: var(--radius-crisp);
 }

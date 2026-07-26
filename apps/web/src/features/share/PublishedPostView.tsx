@@ -9,6 +9,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useMemo } from "react";
 import { Markdown } from "../../markdown/Markdown";
+import { PlaceImage } from "../place/PlaceImage";
 import { placeIdFromHash, usePlaceFragmentSelection } from "./placeFragment";
 import { fetchPublishedPost, PublishedDocumentError } from "./publishedDoc";
 import { useNoindex } from "./useNoindex";
@@ -77,6 +78,10 @@ export function PublishedPostContent({ slug }: { slug: string }) {
           <ul className="mt-1 space-y-1">
             {document.places.map((place) => (
               <li key={place.id} id={`place-${place.id}`} data-testid="published-place">
+                {/* The photo, exactly as published — same rendering as the place card. */}
+                {place.imageUrl !== undefined ? (
+                  <PlaceImage url={place.imageUrl} name={place.name} />
+                ) : null}
                 <button
                   type="button"
                   onClick={() => select(place.id)}

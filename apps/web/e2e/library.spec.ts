@@ -13,12 +13,12 @@ async function pickCandidate(page: Page, option: RegExp) {
   await expect(page.getByTestId("add-place-confirm")).toBeVisible();
 }
 
+/** One combobox picks or creates the list; picking is the add. */
 async function addToNewList(page: Page, option: RegExp, listName: string) {
   await pickCandidate(page, option);
   const confirm = page.getByTestId("add-place-confirm");
-  await confirm.getByTestId("field-list-choice").selectOption("__new__");
-  await confirm.getByTestId("field-new-list-name").fill(listName);
-  await confirm.getByTestId("field-submit").click();
+  await confirm.getByTestId("field-list-choice").fill(listName);
+  await confirm.getByTestId("field-create-option").click();
 }
 
 test.describe("places exist through lists", () => {
@@ -33,6 +33,10 @@ test.describe("places exist through lists", () => {
     await addToNewList(page, /Café Central/, "Coffee stops");
     const details = page.getByTestId("place-details");
     await expect(details).toBeVisible();
+    // On desktop the card is its own vertical in the shell row — a labelled
+    // aside beside the notebook, not a floating overlay or a modal
+    // (spec/src/map-view.md §The place card: it "rises in the notebook").
+    await expect(page.getByRole("complementary", { name: "Café Central" })).toBeVisible();
     await expect(details.getByRole("button", { name: "Save" })).toHaveCount(0);
     // Flat facts on the card (spec/src/map-view.md §The place card).
     await expect(details.getByTestId("place-name")).toHaveText("Café Central");

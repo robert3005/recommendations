@@ -14,19 +14,20 @@ async function pickCandidate(page: Page, option: RegExp) {
   await expect(page.getByTestId("add-place-confirm")).toBeVisible();
 }
 
+/** One combobox picks or creates the list; picking is the add. */
 async function addToNewList(page: Page, option: RegExp, listName: string) {
   await pickCandidate(page, option);
   const confirm = page.getByTestId("add-place-confirm");
-  await confirm.getByTestId("field-list-choice").selectOption("__new__");
-  await confirm.getByTestId("field-new-list-name").fill(listName);
-  await confirm.getByTestId("field-submit").click();
+  await confirm.getByTestId("field-list-choice").fill(listName);
+  await confirm.getByTestId("field-create-option").click();
 }
 
+/** The exact name match is the first, active option — Enter adds it. */
 async function addToExistingList(page: Page, option: RegExp, listName: string) {
   await pickCandidate(page, option);
-  const confirm = page.getByTestId("add-place-confirm");
-  await confirm.getByTestId("field-list-choice").selectOption({ label: listName });
-  await confirm.getByTestId("field-submit").click();
+  const combobox = page.getByTestId("add-place-confirm").getByTestId("field-list-choice");
+  await combobox.fill(listName);
+  await combobox.press("Enter");
 }
 
 /** Seed "Hosted picks" with Café Central and land on its list page. */

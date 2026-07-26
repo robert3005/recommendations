@@ -39,6 +39,7 @@ describe("toPublishedPlace", () => {
         address: "Av. Almirante Reis 1",
         category: "restaurant",
         osmRef: { type: "node", id: "42" },
+        imageUrl: "https://commons.wikimedia.org/wiki/Special:FilePath/Ramiro.jpg?width=640",
         googleUrl: "https://maps.google.com/?cid=1",
         appleUrl: "https://maps.apple.com/?ll=1,2",
       }),
@@ -51,6 +52,7 @@ describe("toPublishedPlace", () => {
       address: "Av. Almirante Reis 1",
       category: "restaurant",
       osmRef: { type: "node", id: "42" },
+      imageUrl: "https://commons.wikimedia.org/wiki/Special:FilePath/Ramiro.jpg?width=640",
     });
   });
 

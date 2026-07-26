@@ -41,6 +41,7 @@ const listDoc = {
       address: "Rua Example 12",
       category: "cafe",
       osmRef: { type: "node", id: "101" },
+      imageUrl: "https://commons.wikimedia.org/wiki/Special:FilePath/Central.jpg?width=640",
     },
     { id: "place-pin", name: "Picnic Bench", lat: 38.72, lng: -9.15 },
   ],
@@ -67,6 +68,12 @@ describe("PublishedListView", () => {
       "href",
       "https://example.test/p/the-write-up",
     );
+    // The published photo renders with its Wikimedia Commons credit.
+    expect(screen.getByRole("img", { name: "Café Central" })).toHaveAttribute(
+      "src",
+      "https://commons.wikimedia.org/wiki/Special:FilePath/Central.jpg?width=640",
+    );
+    expect(screen.getByTestId("place-image-credit")).toBeInTheDocument();
     // osmRef present on a place → attribution + the OSM deep link.
     expect(screen.getByTestId("odbl-attribution")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "OpenStreetMap" })).toHaveAttribute(

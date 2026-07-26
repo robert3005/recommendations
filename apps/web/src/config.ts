@@ -13,8 +13,22 @@
 export const MAP_STYLE_URL: string =
   import.meta.env.VITE_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/bright";
 
+/**
+ * Geocoder `search` kind (spec/src/data-sources.md §Geocoder): Photon-class by
+ * default (keyless dev demo), or a Pelias-class autocomplete endpoint for real
+ * POI/venue search (Stadia Maps, Geoapify, geocode.earth, self-hosted Pelias).
+ */
+export const GEOCODER_KIND: "photon" | "pelias" =
+  import.meta.env.VITE_GEOCODER === "pelias" ? "pelias" : "photon";
+
 /** Geocoder `search` — Photon-class forward geocoding (spec/src/data-sources.md). */
 export const PHOTON_URL: string = import.meta.env.VITE_PHOTON_URL ?? "https://photon.komoot.io";
+
+/** Pelias-class endpoint base. No default — Pelias has no keyless public demo. */
+export const PELIAS_URL: string | undefined = import.meta.env.VITE_PELIAS_URL;
+
+/** Optional Pelias key, sent as the `api_key` query param only — never a header. */
+export const PELIAS_KEY: string | undefined = import.meta.env.VITE_PELIAS_KEY;
 
 /** Geocoder `lookup` — exact element fetch for OSM element URL paste. */
 export const OSM_API_URL: string =

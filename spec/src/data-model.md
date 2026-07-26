@@ -37,6 +37,7 @@ interface Place {
   appleUrl?: string;    // retained Apple Maps link when the place arrived by one
   osmRef?: OsmRef;      // set whenever facts came from OSM (link paste, search pick, geocoder
                         // placement): deep link, export identity, dedup key, attribution trigger
+  imageUrl?: string;    // Wikimedia-hosted photo from the OSM element's tags, set at lookup time
   createdAt: string;
   updatedAt: string;
 }
@@ -100,7 +101,10 @@ interface ImportBatch {
   status: "reviewing" | "done" | "abandoned";
 }
 
-interface GeocoderCandidate { name: string; lat: number; lng: number; address?: string; osmRef?: OsmRef }
+interface GeocoderCandidate {
+  name: string; lat: number; lng: number; address?: string; osmRef?: OsmRef;
+  imageUrl?: string;  // Wikimedia-hosted photo, set only by the exact OSM element lookup
+}
 
 interface ImportItem {
   id: string;
@@ -131,7 +135,9 @@ report in [Import & Export](./interop.md).
   the result's `osmRef`. Manual placement by clicking the map yields user-provided coordinates
   and no `osmRef`. Exports attribute OSM (ODbL) exactly when `osmRef` is present. Wrong upstream
   facts are corrected on OpenStreetMap itself — the place card links out to the OSM element page
-  whenever `osmRef` exists.
+  whenever `osmRef` exists. An OSM element lookup may also capture a photo: `imageUrl` is set
+  only from the element's `image` / `wikimedia_commons` tags and only when the URL is
+  Wikimedia-hosted (`commons.wikimedia.org` / `upload.wikimedia.org`); any other host is ignored.
 - Post `body` link forms: `[text](place:<placeId>)` — a mention; the map focuses that place.
   `[text](post:<postId>)` — a cross-post link; this is how a list post links to place posts.
   Both are soft: a dangling target renders as plain text.

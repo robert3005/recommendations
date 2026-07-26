@@ -292,6 +292,36 @@ describe("dedup precedence: feature id → osmRef → name + proximity", () => {
     expect(merged?.osmRef).toEqual({ type: "node", id: "101" });
     expect(merged?.name).toBe("Café Central");
   });
+
+  it("imageUrl rides new-place facts and a dedup hit fills a missing one", async () => {
+    const IMAGE = "https://commons.wikimedia.org/wiki/Special:FilePath/Central.jpg?width=640";
+    const list = await repo.createList("Lisbon");
+    const bare = placeOf(
+      await repo.addToList(list.id, {
+        kind: "new",
+        facts: facts({ osmRef: { type: "node", id: "101" } }),
+      }),
+    );
+    expect(bare.imageUrl).toBeUndefined();
+
+    // The osmRef dedup hit fills the missing photo like the other provenance refs.
+    await repo.addToList(list.id, {
+      kind: "new",
+      facts: facts({ osmRef: { type: "node", id: "101" }, imageUrl: IMAGE }),
+    });
+    expect((await repo.getPlace(bare.id))?.imageUrl).toBe(IMAGE);
+
+    // A place born with one keeps it, and updatePlaceFacts can write it later.
+    const born = placeOf(
+      await repo.addToList(list.id, {
+        kind: "new",
+        facts: facts({ name: "Café do Rio", lat: 38.71, lng: -9.142, imageUrl: IMAGE }),
+      }),
+    );
+    expect(born.imageUrl).toBe(IMAGE);
+    await repo.updatePlaceFacts(bare.id, { imageUrl: `${IMAGE}&later` });
+    expect((await repo.getPlace(bare.id))?.imageUrl).toBe(`${IMAGE}&later`);
+  });
 });
 
 describe("markers", () => {

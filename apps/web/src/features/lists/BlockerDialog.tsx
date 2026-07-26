@@ -31,7 +31,7 @@ export function BlockerDialog({
       role="alertdialog"
       aria-modal="true"
       aria-label={title}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       data-testid="blocker-dialog"
     >
       <div className="w-full max-w-md rounded-crisp border border-hairline bg-paper p-4">

@@ -19,6 +19,8 @@ export interface Place {
   appleUrl?: string; // retained Apple Maps link when the place arrived by one
   osmRef?: OsmRef; // set whenever facts came from OSM (link paste, search pick, geocoder
   // placement): deep link, export identity, dedup key, attribution trigger
+  imageUrl?: string; // Wikimedia-hosted photo from the OSM element's image/wikimedia_commons
+  // tags, captured at lookup time; never any other host
   createdAt: string;
   updatedAt: string;
 }
@@ -96,6 +98,7 @@ export interface GeocoderCandidate {
   lng: number;
   address?: string;
   osmRef?: OsmRef;
+  imageUrl?: string; // Wikimedia-hosted photo, set only by the exact OSM element lookup
 }
 
 export interface ImportItem {

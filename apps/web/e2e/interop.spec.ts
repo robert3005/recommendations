@@ -109,10 +109,12 @@ test("a Takeout archive imports through the ladder; review resolves on the canva
   await expect(details.getByTestId("place-post-link")).toHaveText("Café Central");
   await details.getByRole("button", { name: "Close" }).click();
 
-  // Export as KML: list name, three placemarks — and NO ODbL attribution,
+  // Export as KML — behind the one Export menu (spec/src/map-view.md §The
+  // list page): list name, three placemarks — and NO ODbL attribution,
   // because no row here carries an osmRef (Google-derived and user-provided
   // coordinates only; spec/src/interop.md §Licensing).
   const downloadPromise = page.waitForEvent("download");
+  await page.getByTestId("export-menu").click();
   await page.getByTestId("export-kml").click();
   const download = await downloadPromise;
   const kmlPath = await download.path();
@@ -191,13 +193,28 @@ test("a list exports as a real KMZ with the guided handoffs; CSV export is gone"
   await page.getByRole("link", { name: /My Maps audit/ }).click();
   await expect(page.getByTestId("place-item")).toHaveCount(1);
 
-  // The guided handoffs (spec/src/interop.md §Export): My Maps and uMap are
-  // named next to the artefacts; CSV is no longer an export.
-  await expect(page.getByTestId("list-page")).toContainText(/My Maps/);
-  await expect(page.getByTestId("list-page")).toContainText(/uMap/i);
-  await expect(page.getByTestId("export-csv")).toHaveCount(0);
+  // Every export sits behind the one Export menu (spec/src/map-view.md §The
+  // list page); the guided handoffs (spec/src/interop.md §Export) are its
+  // grouped section, and CSV is no longer an export. Escape closes the menu.
+  const menu = page.getByRole("menu", { name: "Export" });
+  await page.getByTestId("export-menu").click();
+  await expect(menu).toBeVisible();
+  await expect(menu.getByTestId("handoff-my-maps")).toBeVisible();
+  await expect(menu.getByTestId("handoff-umap")).toBeVisible();
+  await expect(menu.getByTestId("export-csv")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+
+  // The My Maps handoff downloads the KML and says what to do with it.
+  const kmlPromise = page.waitForEvent("download");
+  await page.getByTestId("export-menu").click();
+  await menu.getByTestId("handoff-my-maps").click();
+  const kmlDownload = await kmlPromise;
+  expect(kmlDownload.suggestedFilename()).toMatch(/\.kml$/i);
+  await expect(page.getByTestId("handoff-hint")).toContainText(/My Maps/);
 
   const downloadPromise = page.waitForEvent("download");
+  await page.getByTestId("export-menu").click();
   await page.getByTestId("export-kmz").click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.kmz$/i);

@@ -94,6 +94,7 @@ export type NewPlaceFacts = {
   googleUrl?: string;
   appleUrl?: string;
   osmRef?: OsmRef;
+  imageUrl?: string; // Wikimedia-hosted only, derived at OSM lookup time
 };
 
 export type AddSource =
@@ -132,7 +133,7 @@ export interface LocalRepository {
   getPlace(id: PlaceId): Promise<Place | undefined>;
   updatePlaceFacts(
     id: PlaceId,
-    patch: Partial<Pick<Place, "name" | "address" | "category" | "lat" | "lng">>,
+    patch: Partial<Pick<Place, "name" | "address" | "category" | "lat" | "lng" | "imageUrl">>,
   ): Promise<void>;
   listPlaceViews(): Promise<PlaceView[]>;
   findByGoogleFeatureId(fid: string): Promise<Place | undefined>;
@@ -208,7 +209,7 @@ export class DexieRepository implements LocalRepository {
 
   async updatePlaceFacts(
     id: PlaceId,
-    patch: Partial<Pick<Place, "name" | "address" | "category" | "lat" | "lng">>,
+    patch: Partial<Pick<Place, "name" | "address" | "category" | "lat" | "lng" | "imageUrl">>,
   ): Promise<void> {
     await this.db.transaction("rw", [this.db.places], async () => {
       const row = await this.db.places.get(id);
@@ -222,6 +223,7 @@ export class DexieRepository implements LocalRepository {
         ...(patch.category !== undefined ? { category: patch.category } : {}),
         ...(patch.lat !== undefined ? { lat: patch.lat } : {}),
         ...(patch.lng !== undefined ? { lng: patch.lng } : {}),
+        ...(patch.imageUrl !== undefined ? { imageUrl: patch.imageUrl } : {}),
         updatedAt: nowIso(),
       };
       assertValidCoords(next.lat, next.lng);
@@ -436,7 +438,8 @@ export class DexieRepository implements LocalRepository {
 
           if (found) {
             // The user's copy of the facts is canon; a dedup hit only fills in
-            // provenance refs the place was missing (deep links + dedup keys).
+            // provenance refs the place was missing (deep links + dedup keys),
+            // and a missing photo the same way.
             const filled: Place = {
               ...found,
               ...(facts.googleUrl !== undefined && found.googleUrl === undefined
@@ -448,11 +451,15 @@ export class DexieRepository implements LocalRepository {
               ...(facts.osmRef !== undefined && found.osmRef === undefined
                 ? { osmRef: facts.osmRef }
                 : {}),
+              ...(facts.imageUrl !== undefined && found.imageUrl === undefined
+                ? { imageUrl: facts.imageUrl }
+                : {}),
             };
             if (
               filled.googleUrl !== found.googleUrl ||
               filled.appleUrl !== found.appleUrl ||
-              filled.osmRef !== found.osmRef
+              filled.osmRef !== found.osmRef ||
+              filled.imageUrl !== found.imageUrl
             ) {
               place = { ...filled, updatedAt: now };
               await this.db.places.put(toPlaceRow(place));
@@ -471,6 +478,7 @@ export class DexieRepository implements LocalRepository {
               ...(facts.googleUrl !== undefined ? { googleUrl: facts.googleUrl } : {}),
               ...(facts.appleUrl !== undefined ? { appleUrl: facts.appleUrl } : {}),
               ...(facts.osmRef !== undefined ? { osmRef: facts.osmRef } : {}),
+              ...(facts.imageUrl !== undefined ? { imageUrl: facts.imageUrl } : {}),
               createdAt: now,
               updatedAt: now,
             };

@@ -1,14 +1,15 @@
 /**
  * Add a place to a list — the one door into the library (membership is
- * existence, spec/src/data-model.md). Handles the repository's AddResult in
- * full: added, already-member, and the name-proximity conflict, which prompts
- * the user rather than merging silently.
+ * existence, spec/src/data-model.md). One combobox picks or creates the list;
+ * picking is the add. Handles the repository's AddResult in full: added,
+ * already-member, and the name-proximity conflict, which prompts the user
+ * rather than merging silently.
  */
 import type { List, Place } from "@placemarks/domain";
 import { useState } from "react";
 import { useRepo } from "../../data/RepoContext";
 import type { AddResult, AddSource } from "../../data/repo";
-import { type ListTarget, ListTargetPicker } from "../lists/ListTargetPicker";
+import { ListCombobox, type ListTarget } from "../lists/ListCombobox";
 import { MarkerGlyph } from "../lists/MarkerGlyph";
 
 export interface AddToListProps {
@@ -30,7 +31,6 @@ export function AddToList({
   idPrefix = "add",
 }: AddToListProps) {
   const repo = useRepo();
-  const [target, setTarget] = useState<ListTarget>();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string>();
   const [conflict, setConflict] = useState<{ existing: Place; listId: string }>();
@@ -95,21 +95,20 @@ export function AddToList({
         </ul>
       ) : null}
 
-      <ListTargetPicker
+      {/* One control: picking (or creating) the list IS the add — no submit
+          (spec/src/map-view.md §The place card). */}
+      <ListCombobox
         lists={lists}
-        onChange={setTarget}
+        onPick={(target) => void add(target, source)}
         idPrefix={idPrefix}
         excludeListIds={memberListIds}
+        disabled={busy}
       />
-      <button
-        type="button"
-        disabled={busy || target === undefined}
-        onClick={() => target && void add(target, source)}
-        className="mt-2 rounded-crisp bg-ink px-3 py-1.5 text-sm font-medium text-paper disabled:opacity-40"
-        data-testid={`${idPrefix}-submit`}
-      >
-        {busy ? "Adding…" : "Add to list"}
-      </button>
+      {busy ? (
+        <p className="mt-1 text-xs text-ink/60" role="status">
+          Adding…
+        </p>
+      ) : null}
 
       {conflict ? (
         <div

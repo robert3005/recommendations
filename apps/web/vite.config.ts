@@ -6,12 +6,10 @@ import { VitePWA } from "vite-plugin-pwa";
 /**
  * Public/demo OSM endpoints are development-only (spec/src/data-sources.md):
  * tiles, geocoder search, and geocoder lookup all fail closed in production.
+ * Search accepts either geocoder kind — VITE_PHOTON_URL by default, or
+ * VITE_GEOCODER=pelias with VITE_PELIAS_URL.
  */
-const REQUIRED_PROVIDER_VARS = [
-  "VITE_MAP_STYLE_URL",
-  "VITE_PHOTON_URL",
-  "VITE_OSM_API_URL",
-] as const;
+const BASE_REQUIRED_PROVIDER_VARS = ["VITE_MAP_STYLE_URL", "VITE_OSM_API_URL"] as const;
 
 /** The community/demo hosts the spec designates development-only. */
 const DEVELOPMENT_ONLY_HOSTS = [
@@ -28,7 +26,13 @@ export default defineConfig(({ command, mode }) => {
   if (command === "build" && mode === "production" && !process.env.PLACEMARKS_STORYBOOK) {
     const env = loadEnv(mode, process.cwd(), "VITE_");
     const providerValue = (key: string) => env[key] ?? process.env[key];
-    const missing = REQUIRED_PROVIDER_VARS.filter((key) => !providerValue(key));
+    // A production build still requires an explicit search geocoder: the
+    // selected kind names which var must be set — Pelias-class has no keyless
+    // public demo, so VITE_GEOCODER=pelias demands VITE_PELIAS_URL.
+    const searchVar =
+      providerValue("VITE_GEOCODER") === "pelias" ? "VITE_PELIAS_URL" : "VITE_PHOTON_URL";
+    const requiredProviderVars = [...BASE_REQUIRED_PROVIDER_VARS, searchVar];
+    const missing = requiredProviderVars.filter((key) => !providerValue(key));
     if (missing.length > 0) {
       throw new Error(
         `production build fails closed: missing provider configuration ${missing.join(", ")} — ` +
@@ -64,7 +68,7 @@ export default defineConfig(({ command, mode }) => {
         return false;
       }
     };
-    const malformed = REQUIRED_PROVIDER_VARS.filter((key) => {
+    const malformed = requiredProviderVars.filter((key) => {
       const value = providerValue(key);
       return hostnameOf(value) === undefined && !isRelativePath(value);
     });
@@ -74,7 +78,7 @@ export default defineConfig(({ command, mode }) => {
           "point every VITE_ provider variable at a contracted or self-hosted deployment.",
       );
     }
-    const demo = REQUIRED_PROVIDER_VARS.filter((key) =>
+    const demo = requiredProviderVars.filter((key) =>
       DEVELOPMENT_ONLY_HOSTS.some((host) => hostnameOf(providerValue(key)) === host),
     );
     if (demo.length > 0) {

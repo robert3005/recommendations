@@ -16,6 +16,25 @@ produces a union-of-all-designs codebase: roughly 8,500 lines of it, removed ove
 
 ---
 
+## 2026-07-26 — the deep-green console
+
+The owner picked the design-review artifact's deep green over the near-white paper as the app's
+one theme. The chrome tokens inverted in place — paper `#0E1613`, ink `#E9EFE9`, hairline
+`#2A3A31`, plus one raised surface `--color-panel` `#15201B` — under the same token names, so
+components changed no classes. The eight accent fills are unchanged; the `-deep` text variants
+are lightened to stay readable on the dark ground. The basemap deliberately stays the light
+plate — a dark console around a lit chart — so controls floating over the map restyled to deep
+chips. A light theme replaces dark mode as the listed future.
+
+## 2026-07-26 — POI search adapter
+
+The Photon public demo geocodes streets and towns but is unsuitable for venue search — the
+add-a-place field's whole job. A Pelias-class adapter (the API Stadia Maps, Geoapify,
+geocode.earth, and self-hosted Pelias all serve) now sits behind the same Geocoder contract,
+selected by `VITE_GEOCODER`; its non-OSM-sourced candidates carry no `osmRef` and are treated
+like manual placement. Photon stays the keyless dev default; proprietary places APIs remain
+banned.
+
 ## 2026-07-26 — the refocus (second pass)
 
 Same day, second pass. The morning pass deleted what no decision had ever removed; this one

@@ -16,6 +16,7 @@ export interface PublishedPlace {
   address?: string;
   category?: string;
   osmRef?: OsmRef; // attribution + OSM deep link on the public page
+  imageUrl?: string; // Wikimedia-hosted photo, when the place carries one
 }
 
 export interface PublishedList {
@@ -45,6 +46,7 @@ export function toPublishedPlace(p: Place): PublishedPlace {
     ...(p.address !== undefined ? { address: p.address } : {}),
     ...(p.category !== undefined ? { category: p.category } : {}),
     ...(p.osmRef !== undefined ? { osmRef: p.osmRef } : {}),
+    ...(p.imageUrl !== undefined ? { imageUrl: p.imageUrl } : {}),
   };
 }
 

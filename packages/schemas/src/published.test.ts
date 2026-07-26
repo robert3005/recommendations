@@ -61,6 +61,29 @@ describe("parsePublishedDocument", () => {
     ).toThrow();
   });
 
+  it("accepts only https Wikimedia-hosted imageUrls", () => {
+    const withImage = (imageUrl: string) => ({
+      ...listDoc,
+      places: [{ ...place, imageUrl }],
+    });
+    expect(() =>
+      parsePublishedDocument(
+        "list",
+        withImage("https://commons.wikimedia.org/wiki/Special:FilePath/Ramiro.jpg?width=640"),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      parsePublishedDocument(
+        "list",
+        withImage("https://upload.wikimedia.org/wikipedia/commons/1/2a/Ramiro.jpg"),
+      ),
+    ).not.toThrow();
+    expect(() => parsePublishedDocument("list", withImage("https://example.com/a.jpg"))).toThrow();
+    expect(() =>
+      parsePublishedDocument("list", withImage("http://commons.wikimedia.org/wiki/x.jpg")),
+    ).toThrow();
+  });
+
   it("rejects non-https post URLs and malformed osmRefs", () => {
     expect(() =>
       parsePublishedDocument("list", {

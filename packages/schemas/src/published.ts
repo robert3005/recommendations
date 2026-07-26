@@ -44,6 +44,12 @@ const httpsUrlSchema = z
   .max(2000)
   .regex(/^https:\/\//);
 
+/** Place photos are Wikimedia-hosted only (spec/src/sharing.md §Published documents). */
+const wikimediaImageUrlSchema = z
+  .string()
+  .max(2000)
+  .regex(/^https:\/\/(?:commons|upload)\.wikimedia\.org\//);
+
 export const publishedPlaceSchema = z.object({
   id: z.string().min(1).max(100), // the PlaceId — the stable key mentions rewrite to
   name: z.string().min(1).max(400),
@@ -52,6 +58,7 @@ export const publishedPlaceSchema = z.object({
   address: z.string().max(600).optional(),
   category: z.string().max(120).optional(),
   osmRef: osmRefSchema.optional(), // attribution + OSM deep link on the public page
+  imageUrl: wikimediaImageUrlSchema.optional(), // Wikimedia-hosted photo, when the place carries one
 });
 
 const placesSchema = z.array(publishedPlaceSchema).max(PUBLISHED_LIMITS.maxPlaces);

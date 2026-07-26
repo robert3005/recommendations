@@ -66,6 +66,7 @@ interface PublishedPlace {
   address?: string;
   category?: string;
   osmRef?: OsmRef;            // attribution + OSM deep link on the public page
+  imageUrl?: string;          // https + Wikimedia hosts only, enforced by the schema
 }
 
 interface PublishedList {

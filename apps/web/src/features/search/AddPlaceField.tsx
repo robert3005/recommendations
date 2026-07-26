@@ -9,11 +9,12 @@
  * exact `lookup` fetches that element's facts. Offline it fails politely —
  * nothing queues; the user retries online (spec/src/interop.md).
  */
-import type { GeocoderCandidate, OsmRef } from "@placemarks/domain";
+import type { GeocoderCandidate, OsmRef, Place } from "@placemarks/domain";
 import { parsePastedLink } from "@placemarks/domain";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useState } from "react";
 import { useLists } from "../../data/hooks";
+import { useRepo } from "../../data/RepoContext";
 import type { NewPlaceFacts } from "../../data/repo";
 import { geocoder } from "../../providers";
 import { useSelectionStore } from "../../state/projection";
@@ -40,6 +41,7 @@ export interface AddPlaceFieldProps {
 }
 
 export function AddPlaceField({ bias }: AddPlaceFieldProps) {
+  const repo = useRepo();
   const lists = useLists();
   // Select AND fly in one call (spec/src/map-view.md §Selection is bidirectional).
   const focusPlace = useSelectionStore((s) => s.focusPlace);
@@ -78,6 +80,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
           ...(candidate.address ? { address: candidate.address } : {}),
           origin: "osm",
           osmRef: ref,
+          ...(candidate.imageUrl ? { imageUrl: candidate.imageUrl } : {}),
         },
         candidate.name,
       );
@@ -88,6 +91,33 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
         message: "Could not reach OpenStreetMap to look this up. Try again when you are online.",
       });
     }
+  };
+
+  /**
+   * Add-time enrichment (spec/src/map-view.md §The place card): a search pick
+   * carries an osmRef but no element tags, so after a successful add one exact
+   * lookup fills a missing photo or address. Best-effort only — a failure or
+   * being offline changes nothing, and nothing queues.
+   */
+  const enrichSearchPick = (place: Place, ref: OsmRef) => {
+    geocoder
+      .lookup(ref)
+      .then((candidate) => {
+        if (!candidate) return;
+        const patch = {
+          ...(candidate.imageUrl !== undefined && place.imageUrl === undefined
+            ? { imageUrl: candidate.imageUrl }
+            : {}),
+          ...(candidate.address !== undefined && place.address === undefined
+            ? { address: candidate.address }
+            : {}),
+        };
+        if (Object.keys(patch).length === 0) return;
+        return repo.updatePlaceFacts(place.id, patch);
+      })
+      .catch(() => {
+        // Silent by design: enrichment never surfaces an error.
+      });
   };
 
   /** Returns true when the input was taken as a map link. */
@@ -220,7 +250,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
       {open && debouncedQuery.length >= 2 && pending === undefined ? (
         searchQuery.isPending || searchQuery.isError || results.length === 0 ? (
           <output
-            className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-paper px-3 py-2 text-sm"
+            className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel px-3 py-2 text-sm"
             data-testid="search-status"
           >
             {searchQuery.isPending ? (
@@ -237,7 +267,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
             // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: ul[role=listbox] with option children is the standard ARIA combobox pattern
             role="listbox"
             aria-label="Search results"
-            className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-crisp border border-hairline bg-paper"
+            className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-crisp border border-hairline bg-panel"
           >
             {results.map((candidate, index) => (
               <li key={`${index.toString()}-${candidate.lat}-${candidate.lng}`} role="presentation">
@@ -344,6 +374,10 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
               lists={lists}
               idPrefix="field"
               onAdded={(place) => {
+                const ref = pending.facts.osmRef;
+                if (pending.facts.origin === "search" && ref && place.imageUrl === undefined) {
+                  enrichSearchPick(place, ref);
+                }
                 reset();
                 focusPlace(place.id);
               }}

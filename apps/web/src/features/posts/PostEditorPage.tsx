@@ -216,7 +216,7 @@ export function PostEditorPage() {
           setTitle(undefined);
         }}
         aria-label="Post title"
-        className="w-full rounded border border-hairline px-2 py-1 font-display text-xl font-semibold"
+        className="w-full rounded-crisp border border-hairline px-2 py-1 font-display text-xl font-semibold"
         data-testid="post-title-input"
       />
       <p className="mt-1 text-xs text-ink/60">
@@ -226,7 +226,7 @@ export function PostEditorPage() {
       <div className="relative mt-3 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          className="rounded border border-hairline px-3 py-1.5 text-sm font-medium text-ink"
+          className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-ink"
           data-testid="insert-post-link"
           aria-expanded={pickerOpen}
           onClick={() => setPickerOpen((open) => !open)}
@@ -235,7 +235,7 @@ export function PostEditorPage() {
         </button>
         <button
           type="button"
-          className="rounded border border-hairline px-3 py-1.5 text-sm font-medium text-ink aria-pressed:bg-ink aria-pressed:text-paper"
+          className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-ink aria-pressed:bg-ink aria-pressed:text-paper"
           data-testid="toggle-preview"
           aria-pressed={preview}
           onClick={() => setPreview((value) => !value)}
@@ -244,7 +244,7 @@ export function PostEditorPage() {
         </button>
         <button
           type="button"
-          className="ml-auto rounded bg-ink px-3 py-1.5 text-sm font-medium text-paper"
+          className="ml-auto rounded-crisp bg-ink px-3 py-1.5 text-sm font-medium text-paper"
           data-testid="done-editing-post"
           onClick={() => void finishEditing()}
         >
@@ -253,7 +253,7 @@ export function PostEditorPage() {
 
         {pickerOpen ? (
           <div
-            className="absolute top-full left-0 z-10 mt-1 max-h-64 w-72 overflow-y-auto rounded border border-hairline bg-paper shadow-lg"
+            className="absolute top-full left-0 z-10 mt-1 max-h-64 w-72 overflow-y-auto rounded-crisp border border-hairline bg-panel"
             data-testid="post-link-picker"
           >
             {pickerGroups &&
@@ -271,13 +271,13 @@ export function PostEditorPage() {
       </div>
 
       {error ? (
-        <output className="mt-2 block rounded border border-hairline bg-paper p-2 text-xs text-ink">
+        <output className="mt-2 block rounded-crisp border border-hairline bg-paper p-2 text-xs text-ink">
           {error}
         </output>
       ) : null}
 
       {preview ? (
-        <div className="mt-3 rounded border border-hairline p-3" data-testid="post-preview">
+        <div className="mt-3 rounded-crisp border border-hairline p-3" data-testid="post-preview">
           <Markdown body={body} placeIds={placeIds} postIds={knownPostIds ?? new Set()} />
         </div>
       ) : (
@@ -287,14 +287,14 @@ export function PostEditorPage() {
           onChange={(e) => setDraft(e.target.value)}
           aria-label="Post body (Markdown)"
           placeholder="Write in Markdown. Tap a pin to mention a place."
-          className="mt-3 min-h-[50vh] w-full resize-y rounded border border-hairline p-3 font-mono text-sm leading-relaxed"
+          className="mt-3 min-h-[50vh] w-full resize-y rounded-crisp border border-hairline p-3 font-mono text-sm leading-relaxed"
           data-testid="post-body-input"
         />
       )}
 
       <button
         type="button"
-        className="mt-6 rounded border border-hairline px-3 py-1.5 text-sm font-medium text-ink"
+        className="mt-6 rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-ink"
         data-testid="delete-post"
         onClick={deletePost}
       >

@@ -193,7 +193,7 @@ export function ReviewPage() {
             <li
               key={item.id}
               className={`rounded-crisp border p-2 ${
-                underReview ? "border-ink-3 bg-paper shadow-sm" : "border-hairline bg-ink/5"
+                underReview ? "border-ink/30 bg-paper shadow-sm" : "border-hairline bg-ink/5"
               }`}
               data-testid="review-item"
             >

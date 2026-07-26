@@ -17,7 +17,7 @@ import { useEffect } from "react";
 import { ReviewPage } from "./features/interop/ReviewPage";
 import { ListPage } from "./features/lists/ListPage";
 import { ListsPage } from "./features/lists/ListsPage";
-import { PlaceSheet } from "./features/place/PlaceSheet";
+import { PlaceColumn, PlaceSheet } from "./features/place/PlaceSheet";
 import { PostEditorPage } from "./features/posts/PostEditorPage";
 import { PostPage } from "./features/posts/PostPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
@@ -26,19 +26,23 @@ import { PublishedPostView } from "./features/share/PublishedPostView";
 import { MapCanvas } from "./map/MapCanvas";
 import { type DesktopPane, type SheetDetent, usePaneStore } from "./state/pane";
 
-/** Notebook geometry: mobile sheet detents × desktop split/collapsed. */
+/** Notebook geometry: mobile sheet detents × desktop split/collapsed. On md+
+ *  the shell is a flex row — notebook, place column, canvas — so the notebook
+ *  is the row's first column, not an overlay. */
 function paneClasses(desktop: DesktopPane, sheet: SheetDetent): string {
   const base =
     "absolute inset-x-0 bottom-0 z-20 flex min-h-0 flex-col rounded-t-crisp border-t border-hairline bg-paper " +
-    "md:inset-x-auto md:left-0 md:top-0 md:h-full md:rounded-none md:border-t-0 md:border-r";
+    "md:relative md:inset-auto md:order-1 md:h-full md:shrink-0 md:rounded-none md:border-t-0 md:border-r";
   const mobile = sheet === "peek" ? "h-14 overflow-hidden" : sheet === "half" ? "h-1/2" : "h-full";
   const desktopWidth = desktop === "collapsed" ? "md:hidden" : "md:w-[26rem]";
   return `${base} ${mobile} ${desktopWidth}`;
 }
 
-/** Desktop split is true sibling geometry: the canvas starts after the notebook. */
-export function mapCanvasClasses(desktop: DesktopPane): string {
-  return `absolute inset-0 ${desktop === "split" ? "md:left-[26rem]" : ""}`.trim();
+/** Desktop is true sibling geometry: the canvas is the row's flexible last
+ *  column — it shrinks beside the notebook and the place column, never an
+ *  overlay on md+. */
+export function mapCanvasClasses(): string {
+  return "absolute inset-0 md:relative md:inset-auto md:order-3 md:h-full md:min-w-0 md:flex-1";
 }
 
 export function isPublicViewerPath(pathname: string): boolean {
@@ -72,18 +76,32 @@ function RootLayout() {
 
   return (
     <div
-      className="relative h-full overflow-hidden"
+      className="relative h-full overflow-hidden md:flex"
       data-testid="app-shell"
       data-pane-state={desktop}
       data-sheet-detent={sheet}
     >
       {/* The persistent canvas: always mounted, never navigates. */}
       <div
-        className={mapCanvasClasses(desktop)}
+        className={mapCanvasClasses()}
         data-testid="map-viewport"
         data-map-layout={desktop === "split" ? "beside-pane" : "full-bleed"}
       >
         <MapCanvas />
+        {/* Collapsed notebook: a floating reopen affordance on the canvas.
+            A deep-green chip — solid paper with a hairline — so every control
+            floating over the light map plate reads as console chrome
+            (spec/src/design.md §Map styling). */}
+        {desktop === "collapsed" ? (
+          <button
+            type="button"
+            data-testid="pane-reopen"
+            onClick={() => setDesktop("split")}
+            className="absolute bottom-16 left-3 z-10 hidden rounded-crisp border border-hairline bg-paper px-3 py-1.5 text-sm font-medium text-ink md:block"
+          >
+            {readOnly ? "⟩ Shared page" : "⟩ Lists"}
+          </button>
+        ) : null}
       </div>
 
       {/* The notebook: where routes render. */}
@@ -159,21 +177,12 @@ function RootLayout() {
         </main>
       </div>
 
-      {/* Collapsed notebook: a floating reopen affordance on the canvas. */}
-      {desktop === "collapsed" ? (
-        <button
-          type="button"
-          data-testid="pane-reopen"
-          onClick={() => setDesktop("split")}
-          className="absolute bottom-16 left-3 z-10 hidden rounded-crisp border border-hairline bg-paper px-3 py-1.5 text-sm font-medium text-ink md:block"
-        >
-          {readOnly ? "⟩ Shared page" : "⟩ Lists"}
-        </button>
-      ) : null}
-
       {/* Selection belongs to the notebook grammar, not the map's stacking
-          context: the place card stays visible when the sheet covers the map. */}
-      {!readOnly ? <PlaceSheet /> : null}
+          context (spec/src/map-view.md §The place card): on desktop the card
+          rises as its own vertical — a column between the notebook and the
+          canvas, present even while the notebook is collapsed; on mobile a
+          bottom sheet that stays visible when the sheet covers the map. */}
+      {!readOnly ? mode === "desktop" ? <PlaceColumn /> : <PlaceSheet /> : null}
     </div>
   );
 }

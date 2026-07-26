@@ -18,20 +18,27 @@ async function pickCandidate(page: Page, option: RegExp) {
   await expect(page.getByTestId("add-place-confirm")).toBeVisible();
 }
 
-/** Both add paths end in "pick a list" (spec/src/map-view.md §The add-a-place field). */
+/**
+ * Both add paths end in "pick a list" (spec/src/map-view.md §The add-a-place
+ * field) — one combobox picks or creates it; picking is the add. An unmatched
+ * name puts Create "<name>" first.
+ */
 async function addToNewList(page: Page, option: RegExp, listName: string) {
   await pickCandidate(page, option);
   const confirm = page.getByTestId("add-place-confirm");
-  await confirm.getByTestId("field-list-choice").selectOption("__new__");
-  await confirm.getByTestId("field-new-list-name").fill(listName);
-  await confirm.getByTestId("field-submit").click();
+  await confirm.getByTestId("field-list-choice").fill(listName);
+  await confirm.getByTestId("field-create-option").click();
 }
 
+/**
+ * Keyboard path (spec/src/map-view.md §Accessibility and failure): the exact
+ * name match is the first, active option — Enter adds it.
+ */
 async function addToExistingList(page: Page, option: RegExp, listName: string) {
   await pickCandidate(page, option);
-  const confirm = page.getByTestId("add-place-confirm");
-  await confirm.getByTestId("field-list-choice").selectOption({ label: listName });
-  await confirm.getByTestId("field-submit").click();
+  const combobox = page.getByTestId("add-place-confirm").getByTestId("field-list-choice");
+  await combobox.fill(listName);
+  await combobox.press("Enter");
 }
 
 async function closePlaceCard(page: Page) {
@@ -71,6 +78,13 @@ test("adding to a list saves the place; the Lists home reads the marked list", a
   await expect(items.nth(1)).toContainText("Café do Rio");
   // Read view: no edit affordances.
   await expect(page.getByRole("button", { name: "Move up" })).toHaveCount(0);
+
+  // The whole entry row is the selection target (spec/src/map-view.md §The
+  // list page): clicking anywhere on it raises the place card and flies.
+  await items.nth(0).click();
+  await expect(page.getByTestId("place-details")).toBeVisible();
+  await expect(page.getByTestId("place-details")).toContainText("Café Central");
+  await closePlaceCard(page);
 
   // Persists across a full reload (IndexedDB persistence).
   await page.reload();

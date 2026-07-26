@@ -2,38 +2,48 @@
 
 The direction is **instrument-panel retrofuturism**: the clean-lined, optimistic mid-century idea
 of the future — Eames-era cartography, the NASA punch-card era, Braun dials — not neon cyberpunk.
-Warm paper, precise hairlines, and a small set of bright signal colours doing real work. The whole
-system serves one job: the eight list-marker accents are the loudest, clearest thing in the app.
+A deep-green console, precise hairlines, and a small set of bright signal colours doing real
+work: dark chrome around a lit chart. The whole system serves one job: the eight list-marker
+accents are the loudest, clearest thing in the app.
 
 The system is expressed as Tailwind `@theme` tokens. This chapter names the tokens and gives rough
 starting values; it fixes roles and relationships, not pixel specs.
 
 ## Paper and ink
 
-Every surface is warm near-white paper with near-black ink — the notebook, cards, sheets, and the
-public viewer all sit on the same ground. There are no tinted panels; structure comes from
-hairlines and whitespace, not background changes. V1 is light-only; dark mode is a listed future.
+The ground is the **deep-green console**: deep forest (`#0E1613`, decidedly not black) with warm
+off-white ink (`#E9EFE9`) and hairlines in a muted green (`#2A3A31`). The notebook, cards, sheets,
+and the public viewer all sit on that same ground; structure comes from hairlines and whitespace,
+not background changes. The one exception is `--color-panel` (`#15201B`), a single slightly-raised
+surface reserved for popups and menus that must sit above the ground.
+
+The basemap deliberately stays a light plate (see [Map styling](#map-styling)), so the console
+frames a lit chart and the accent pins dominate it. Because the ground is dark, the deepened
+accent variants are *lightened* to stay text-safe. There is one theme; a light theme is a listed
+future.
 
 ## The eight accents
 
 The accent palette **is** the list-marker palette, and these are the only hues in the app. Each
-accent has a bright fill token and a deepened text variant at `--color-accent-<name>-deep` for
-small text on paper, where the bright fill would fall short of readable contrast.
+accent has a bright fill token and a text-safe variant at `--color-accent-<name>-deep` for small
+text on paper, where the bright fill would fall short of readable contrast. The paper is dark, so
+"deep" variants are in fact *lightened* toward the ink — the token name fixes the role (readable
+small text on paper), not a direction on the lightness scale.
 
 | Accent | Token | Fill start | Deep start |
 |---|---|---|---|
-| Signal orange | `--color-accent-orange` | `#F97316` | `#B04A08` |
-| Cobalt | `--color-accent-cobalt` | `#2457E6` | `#1B3EA9` |
-| Kelly green | `--color-accent-green` | `#17A34A` | `#0E6B33` |
-| Magenta | `--color-accent-magenta` | `#D6219C` | `#96156C` |
-| Cyan | `--color-accent-cyan` | `#08AECE` | `#0E7490` |
-| Golden yellow | `--color-accent-gold` | `#F0B100` | `#8A6400` |
-| Vermilion | `--color-accent-vermilion` | `#E43D1F` | `#AC2410` |
-| Violet | `--color-accent-violet` | `#7C3AED` | `#5B21B6` |
+| Signal orange | `--color-accent-orange` | `#F97316` | `#FBA45C` |
+| Cobalt | `--color-accent-cobalt` | `#2457E6` | `#7FA0F5` |
+| Kelly green | `--color-accent-green` | `#17A34A` | `#5CCB8A` |
+| Magenta | `--color-accent-magenta` | `#D6219C` | `#EC72C4` |
+| Cyan | `--color-accent-cyan` | `#08AECE` | `#5BCFE6` |
+| Golden yellow | `--color-accent-gold` | `#F0B100` | `#F5CB4D` |
+| Vermilion | `--color-accent-vermilion` | `#E43D1F` | `#F58063` |
+| Violet | `--color-accent-violet` | `#7C3AED` | `#AD8BF7` |
 
-Bright fills are for markers, toggles, and large type; deepened variants are for small text on
-paper and should hold roughly 4.5:1 contrast against it. Values are starting points, tuned during
-the visual-system pass — the token names and the eight-accent count are the fixed part.
+Bright fills are for markers, toggles, and large type; deep variants are for small text on paper
+and should hold roughly 4.5:1 contrast against it. Values are starting points, tuned during the
+visual-system pass — the token names and the eight-accent count are the fixed part.
 
 ## Clean lines
 
@@ -67,9 +77,16 @@ tapping it names the lists it belongs to.
 
 ## Map styling
 
-The basemap is neutral and desaturated — a light, quiet ground restyled from the provider's
+The basemap is neutral and desaturated — a light, quiet plate restyled from the provider's
 default (see [Map Data & Providers](./data-sources.md)) so that accent pins are the loudest thing
-on the canvas. Attribution is always visible.
+on the canvas. It deliberately stays light while the chrome is dark: the console frames a lit
+chart, and the map reads as the bright instrument in the panel rather than dissolving into it.
+
+Two consequences follow. Every control floating over the map — the list-toggle chips, the
+reopen affordance, the unavailable banner, attribution — reads as a deep console chip: solid
+paper, hairline border, ink text. And everything painted *into* the map scene (pin outlines,
+cluster discs, the selection ring) contrasts against the light plate, not the dark chrome — those
+are fixed plate values, not the chrome tokens. Attribution is always visible.
 
 ## Motion
 
@@ -78,11 +95,14 @@ things. Under `prefers-reduced-motion` every one of them completes instantly.
 
 ## Token families
 
-- **Paper** — `--color-paper` (`#FAF7F2`): the one background.
-- **Ink** — `--color-ink` (`#221D16`): text, icons, and controls at full strength.
+- **Paper** — `--color-paper` (`#0E1613`): the one background — deep forest, not black.
+- **Ink** — `--color-ink` (`#E9EFE9`): text, icons, and controls at full strength — warm
+  off-white.
+- **Panel** — `--color-panel` (`#15201B`): the one raised surface, only for popups and menus
+  that sit above the ground.
 - **Accents** — `--color-accent-<name>` and `--color-accent-<name>-deep`, eight of each (table
   above). No other hues exist in the app.
-- **Hairline** — `--color-hairline` (`#E6DFD2`): every rule and border, at 1px.
+- **Hairline** — `--color-hairline` (`#2A3A31`): every rule and border, at 1px.
 - **Radius** — `--radius-crisp` (`2px`): the one corner radius.
 - **Type** — `--font-display`, `--font-body`, `--font-mono`; the size scale keeps Tailwind's
   default `--text-*` steps.

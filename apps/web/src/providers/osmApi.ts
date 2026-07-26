@@ -33,6 +33,33 @@ function representativePoint(
   return { lat, lng };
 }
 
+const WIKIMEDIA_HOSTS = new Set(["commons.wikimedia.org", "upload.wikimedia.org"]);
+
+/**
+ * A place photo comes only from the element's tags, and only Wikimedia-hosted
+ * (spec/src/data-model.md §Normative rules): the CSP stays tight and the
+ * credit link is a licensing click-through. An `image` tag is accepted as-is
+ * when its host is Wikimedia; a `wikimedia_commons` `File:` tag maps to the
+ * Special:FilePath thumbnail URL. Anything else is ignored.
+ */
+function imageUrlOf(tags: Record<string, string>): string | undefined {
+  const image = tags.image;
+  if (image !== undefined) {
+    try {
+      const url = new URL(image);
+      if (url.protocol === "https:" && WIKIMEDIA_HOSTS.has(url.hostname)) return image;
+    } catch {
+      // not an absolute URL — fall through to wikimedia_commons
+    }
+  }
+  const commons = tags.wikimedia_commons;
+  if (commons?.startsWith("File:")) {
+    const name = encodeURIComponent(commons.slice("File:".length));
+    return `https://commons.wikimedia.org/wiki/Special:FilePath/${name}?width=640`;
+  }
+  return undefined;
+}
+
 function addressOf(tags: Record<string, string>): string | undefined {
   const address = [
     [tags["addr:street"], tags["addr:housenumber"]].filter(Boolean).join(" "),
@@ -68,12 +95,14 @@ export class OsmApiGeocoder {
     if (!point) throw new Error("osm api: element carries no coordinates");
     const tags = target.tags ?? {};
     const address = addressOf(tags);
+    const imageUrl = imageUrlOf(tags);
     return {
       name: tags.name ?? tags["name:en"] ?? `${ref.type}/${ref.id}`,
       lat: point.lat,
       lng: point.lng,
       ...(address ? { address } : {}),
       osmRef: ref,
+      ...(imageUrl ? { imageUrl } : {}),
     };
   }
 }

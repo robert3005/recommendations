@@ -42,7 +42,8 @@ DESKTOP — every route renders notebook + canvas      MOBILE — sheet over can
   Settings is a notebook route like any other: library-archive export and import
   ([Local Storage](./storage.md)) and provider and privacy information
   ([Map Data & Providers](./data-sources.md)) live there, and the canvas keeps its viewport.
-- **Selection is bidirectional.** Tap a pin → its place card rises in the notebook or sheet;
+- **Selection is bidirectional.** Tap a pin → its place card opens — a column beside the
+  notebook on desktop, a bottom sheet over the canvas on mobile;
   select in the notebook → the canvas highlights and flies (instant under
   `prefers-reduced-motion`). The notebook is the map's synchronised non-map equivalent for
   accessibility.
@@ -74,13 +75,19 @@ individual lists on and off — all on by default, the state persisted in the `s
 
 ## The list page (`/list/:id`)
 
-The canvas shows the list's places with the rest of the library dimmed. The notebook shows the
-entries and the **posts sidebar** — the section listing this list's posts, with **New post**,
-which creates a list post and opens the editor; selecting a post navigates to its reading view.
-**Edit mode** is where curation lives: reorder entries, rename the list, remove entries, and
-change the marker (swapping within free shape + colour pairs). The share/publish
-([Sharing & Publishing](./sharing.md)) and export ([Import & Export](./interop.md)) entry points
-live on the list page too.
+The canvas shows the list's places with the rest of the library dimmed. The entries are the
+visual centre of the notebook page: full-width rows with room to breathe, and the **whole row is
+one selection target** — activating it (pointer or keyboard) selects the place, so the canvas
+highlights and flies (selection is bidirectional). The secondary controls share one compact
+header row beside the title: the **Edit mode** toggle and **Export** — a single menu button
+opening an accessible menu of every artefact download plus the My Maps and uMap guided handoffs
+([Import & Export](./interop.md)). **Edit mode** is where curation lives: reorder entries,
+rename the list, remove entries, and change the marker (swapping within free shape + colour
+pairs); its per-row controls are separate targets that never steal the row's selection. The
+share/publish entry point ([Sharing & Publishing](./sharing.md)) keeps its own place on the
+page, and the **posts sidebar** — the section listing this list's posts, with **New post**,
+which creates a list post and opens the editor; selecting a post navigates to its reading
+view — follows the entries.
 
 ## Reading a post (`/post/:id`)
 
@@ -99,7 +106,11 @@ toggle renders the sanitised article in place ([Posts](./posts.md)).
 
 ## The place card
 
-The card shows the place's facts — name, category, address, coordinates — and its ways out and in:
+On desktop the card is its own column beside the notebook; on mobile it is a bottom sheet. It
+shows the place's facts — name, category, address, coordinates — and its ways out and in. A
+photo tops the card when the place carries one (Wikimedia-hosted, from its OSM element — captured
+at paste-time lookup, or by one best-effort lookup after adding a search pick), with a small
+Wikimedia Commons credit link; a failed load hides the photo block.
 
 - Deep links out: **Open in Google Maps** (the retained `googleUrl` when one exists, else a
   coordinate/name search URL), **Open in Apple Maps**, and **View on OpenStreetMap** when the

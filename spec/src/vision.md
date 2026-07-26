@@ -43,8 +43,8 @@ A responsive web app with:
   places; tapping a pin inserts a mention at the cursor.
 - **The list page's posts sidebar** — a list displays on the map, its posts sit in a sidebar,
   and selecting one opens it split-view with the map.
-- **Visual direction** — instrument-panel retrofuturism: warm paper, eight bright accents,
-  clean lines. See [Visual Design](./design.md).
+- **Visual direction** — instrument-panel retrofuturism: the deep-green console around a light
+  map plate, eight bright accents, clean lines. See [Visual Design](./design.md).
 - **Read-only share links** — publish a list or post to a named public page. Nothing leaves the
   device until the owner presses Publish, and the page changes only on an explicit publish
   update. See [Sharing & Publishing](./sharing.md).
@@ -58,7 +58,7 @@ A responsive web app with:
   data, and URLs the user pastes, is portability; fetching a vendor's pages is not.
 - No turn-by-turn navigation or routing.
 - No media: posts are text plus places.
-- No dark mode: v1 is light-only.
+- One theme: the deep-green console. A light theme is a listed future.
 - No ambient POI discovery: the map never suggests places; the library grows only when the user
   searches, pastes a link, or imports.
 
@@ -67,7 +67,7 @@ A responsive web app with:
 Deliberately deferred, one line each:
 
 - Images in posts.
-- Dark mode (and a dark basemap twin).
+- A light theme (light chrome around the same light map plate).
 - A native client.
 - Collaborative editing of lists and posts.
 - Routing.

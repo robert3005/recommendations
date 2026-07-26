@@ -3,6 +3,11 @@
  * facts — name, category, address, coordinates — its deep links out, Add to
  * list, and its posts with Write a post. Facts are the user's copy; wrong
  * upstream facts are corrected on OpenStreetMap itself via the OSM link.
+ *
+ * The card is position-agnostic: the composer supplies geometry via
+ * `className`. PlaceSheet wraps it as the mobile bottom sheet (dialog
+ * semantics); RootLayout composes the desktop column — an <aside> vertical in
+ * the shell's row, beside the notebook (spec/src/map-view.md §The grammar).
  */
 import type { Post } from "@placemarks/domain";
 import { useNavigate } from "@tanstack/react-router";
@@ -12,8 +17,19 @@ import { useRepo } from "../../data/RepoContext";
 import { useSelectionStore } from "../../state/projection";
 import { AddToList } from "./AddToList";
 import { NavLinks } from "./NavLinks";
+import { PlaceImage } from "./PlaceImage";
 
-export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
+export function PlaceDetailsSheet({
+  placeId,
+  variant,
+  className,
+}: {
+  placeId: string;
+  /** "sheet": the mobile dialog. "column": the desktop aside in the shell row. */
+  variant: "sheet" | "column";
+  /** Geometry from the composer; the card owns only content, focus, close. */
+  className: string;
+}) {
   const repo = useRepo();
   const navigate = useNavigate();
   const clearSelection = useSelectionStore((s) => s.clearSelection);
@@ -23,7 +39,7 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
   const memberListIds = view?.listIds;
   const posts = usePostsFor({ kind: "place", placeId });
 
-  // Modal focus: enter the sheet once it has actually rendered (the place
+  // Managed focus: enter the card once it has actually rendered (the place
   // resolves asynchronously), return to the invoker on close
   // (spec/src/map-view.md §Accessibility and failure).
   const sheetRef = useRef<HTMLElement>(null);
@@ -47,23 +63,30 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
     });
   };
 
+  // Dialog semantics belong to the mobile sheet only; the desktop column is a
+  // labelled aside in the layout, not a modal (spec/src/map-view.md
+  // §Accessibility and failure).
+  const Wrapper = variant === "sheet" ? "section" : "aside";
   return (
-    <section
+    <Wrapper
       ref={sheetRef}
       tabIndex={-1}
-      role="dialog"
+      role={variant === "sheet" ? "dialog" : undefined}
       aria-label={place.name}
-      className="absolute inset-x-0 bottom-0 z-40 max-h-[70%] overflow-y-auto rounded-t-crisp border border-hairline bg-paper p-4 md:inset-x-auto md:right-4 md:bottom-4 md:w-96 md:rounded-crisp"
+      className={`overflow-y-auto bg-paper p-4 ${className}`}
       data-testid="place-details"
     >
       <button
         type="button"
         onClick={clearSelection}
         aria-label="Close"
-        className="absolute top-2 right-3 rounded-crisp p-1 text-ink/60 hover:bg-ink/10 hover:text-ink"
+        className="absolute top-2 right-3 rounded-crisp bg-paper/70 p-1 text-ink/60 hover:bg-ink/10 hover:text-ink"
       >
         ✕
       </button>
+
+      {/* The photo tops the card when the place carries one (spec/src/map-view.md §The place card). */}
+      {place.imageUrl !== undefined ? <PlaceImage url={place.imageUrl} name={place.name} /> : null}
 
       {/* Flat facts (spec/src/data-model.md): the user's copy. */}
       <h2 className="pr-8 font-display text-base font-semibold text-ink" data-testid="place-name">
@@ -132,6 +155,6 @@ export function PlaceDetailsSheet({ placeId }: { placeId: string }) {
           </ul>
         ) : null}
       </div>
-    </section>
+    </Wrapper>
   );
 }
