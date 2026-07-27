@@ -2,7 +2,7 @@
  * Thin MapLibre adapter (spec/src/tech-stack.md: no wrapper library — we own
  * this boundary). Renders the basemap with required OSM attribution, library
  * pins wearing their list's marker shape (clustered), labelled import-review
- * marks, the selection ring, and reports gestures upward. No domain logic
+ * marks, and reports gestures upward. No domain logic
  * lives here.
  */
 import type { BBox, ListMarker, MarkerShape } from "@placemarks/domain";
@@ -84,7 +84,7 @@ const PIN_LAYER_IDS = ["saved-pins", "saved-clusters", "mark-pins"] as const;
 /**
  * The basemap stays the LIGHT plate while the app chrome is the deep-green
  * console (spec/src/design.md §Map styling). Everything painted INTO the map
- * scene — pin outlines, cluster discs, mark labels, the selection ring —
+ * scene — pin outlines, cluster discs, mark labels —
  * contrasts against that light plate, so these are fixed plate values, not
  * the (dark) chrome tokens.
  */
@@ -355,9 +355,10 @@ export function MapView({
         filter: ["!", ["has", "point_count"]],
         layout: {
           "icon-image": ["get", "iconId"],
-          // The selected pin is unmistakable next to its list-mates: half
-          // again as large, never dimmed, stacked above (source order).
-          "icon-size": ["case", ["==", ["get", "selected"], 1], 0.78, 0.5],
+          // Prominent by default, and the selected pin unmistakable next to
+          // its list-mates: half again as large, never dimmed, stacked above
+          // (source order).
+          "icon-size": ["case", ["==", ["get", "selected"], 1], 0.95, 0.62],
           // Drops anchor at the tail tip: the tip IS the coordinate.
           "icon-anchor": "bottom",
           "icon-allow-overlap": true,
@@ -414,24 +415,10 @@ export function MapView({
             : [],
         },
       });
-      map.addLayer(
-        {
-          id: "selection-ring",
-          type: "circle",
-          source: "selection",
-          paint: {
-            // A ground ring at the drop's tip — the coordinate itself — under
-            // the enlarged selected drop.
-            "circle-radius": 10,
-            "circle-color": PLATE,
-            "circle-opacity": 0.55,
-            "circle-stroke-width": 3.5,
-            "circle-stroke-color": PLATE_INK,
-          },
-        },
-        // Under the pins: the ring marks the ground the drop stands on.
-        "saved-pins",
-      );
+      // No ring layer: the enlarged, undimmed, stacked-on-top drop IS the
+      // selection signal. The "selection" source stays — it drives the
+      // observable data-selection state and the basemap-recovery guard's
+      // our-sources allowlist.
       if (container) {
         container.dataset.pins = String(placePinsRef.current.length);
         container.dataset.marks = String(markPinsRef.current.length);

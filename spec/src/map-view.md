@@ -55,7 +55,7 @@ DESKTOP — every route renders notebook + canvas      MOBILE — sheet over can
   the notebook → the same. Either way the canvas centres the place with one camera move (instant
   under `prefers-reduced-motion`), and the requested zoom is a floor — centring never zooms the
   user out of a closer view. The selected pin is unmistakable beside its list-mates: enlarged,
-  never dimmed, stacked above its neighbours, and wearing the ink selection ring. The notebook
+  never dimmed, stacked above its neighbours. The notebook
   is the map's synchronised non-map equivalent for accessibility.
 
 Pins are anchored drops in the list's accent, tail tip on the exact spot, the list's shape

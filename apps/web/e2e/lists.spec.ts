@@ -114,7 +114,9 @@ test("Edit mode reorders, renames, re-marks, and removes; reading stays read-onl
   await expect(items.nth(0)).toContainText("Café do Rio");
 
   await page.getByTestId("list-name-input").fill("Curated Lisbon");
-  // The radio itself is sr-only; its swatch label is the click target.
+  // The picker is shape first, then colour (spec/src/data-model.md §Markers);
+  // radios are sr-only, so the swatch labels are the click targets.
+  await page.locator('label:has([data-testid="marker-shape-diamond"])').click();
   await page.locator(`label:has([data-testid="marker-${SECOND_PAIR}"])`).click();
   await expect(page.getByTestId(`marker-${SECOND_PAIR}`)).toBeChecked();
   await page.getByTestId("edit-list").click(); // Done

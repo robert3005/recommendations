@@ -72,14 +72,14 @@ stays the flat solid shape.
 
 Assignment follows the model rules (see [Data Model](./data-model.md) for the invariant):
 auto-assign the first free pair on list creation; imports take the nearest colour to the source
-style, then the first free pair; manual change in list edit mode swaps within free pairs.
+style, then the first free pair; manual change in list edit mode picks SHAPE FIRST, THEN COLOUR —
+a row of the eight shapes, then the chosen shape in each accent — swapping within free pairs.
 Uniqueness is enforced across live lists up to 64; beyond that, pairs repeat with a small numeral
 badge as the deterministic variant and the UI says so.
 
 A place on multiple visible lists wears a deterministic stacked/badged variant of its markers;
 tapping it names the lists it belongs to. The selected place is the loudest pin on the plate:
-half again as large, never dimmed, above its neighbours, with an ink ground ring at the drop's
-tip — the coordinate itself.
+half again as large, never dimmed, above its neighbours — the size is the signal; no ring.
 
 ## Map styling
 
@@ -91,7 +91,7 @@ chart, and the map reads as the bright instrument in the panel rather than disso
 Two consequences follow. Every control floating over the map — the list-toggle chips, the
 reopen affordance, the unavailable banner, attribution — reads as a deep console chip: solid
 paper, hairline border, ink text. And everything painted *into* the map scene (pin outlines,
-cluster discs, the selection ring) contrasts against the light plate, not the dark chrome — those
+cluster discs) contrasts against the light plate, not the dark chrome — those
 are fixed plate values, not the chrome tokens. Attribution is always visible.
 
 ## Motion

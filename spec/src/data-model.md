@@ -171,8 +171,8 @@ report in [Import & Export](./interop.md).
   fragments. Same parser and sanitizer everywhere.
 - **Markers**: `shape` is one of the eight named shapes; with the eight accent colours the pair
   space is 64. Auto-assign the first free pair on list creation; imports take the nearest
-  colour to the source style, then the first free pair; manual change in list edit mode swaps
-  within free pairs. Uniqueness is enforced across live lists up to 64; beyond that, pairs
+  colour to the source style, then the first free pair; manual change in list edit mode picks shape
+  first, then colour, swapping within free pairs. Uniqueness is enforced across live lists up to 64; beyond that, pairs
   repeat with a small numeral badge as the deterministic variant and the UI says so. On the map
   a pin renders as an anchored drop carrying the shape; in the notebook the marker is the flat
   shape itself. The accents and the drop treatment are in [Visual Design](./design.md).
