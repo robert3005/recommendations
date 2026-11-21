@@ -11,7 +11,7 @@ import type { FeatureCollection } from "geojson";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import { OSM_ATTRIBUTION, VIEWPORT_DEBOUNCE_MS } from "../config";
-import { PLATE_SCENE, type PlateScheme } from "./basemapStyle";
+import { PLATE_SCENE, type PlateScene, type PlateScheme } from "./basemapStyle";
 
 export interface PlacePinFeature {
   placeId: string;
@@ -103,7 +103,7 @@ const PIN_LAYER_IDS = ["saved-pins", "saved-clusters", "mark-pins"] as const;
  * styling). The plate follows the theme, so the scene does too. One canvas
  * per page, so the sprite painter reads the current scene from here.
  */
-let scene: { outline: string; ink: string } = PLATE_SCENE.paper;
+let scene: PlateScene = PLATE_SCENE.paper;
 
 /** Import-review marks are labelled light-on-vermilion in either theme. */
 const MARK_LABEL = "#FCFCF9";
@@ -125,7 +125,7 @@ function markerImageId(pin: PlacePinFeature): string {
  * icon at the bottom, so the tip IS the coordinate.
  */
 function paintMarkerImage(id: string): ImageData | undefined {
-  const [, shape = "circle", color = scene.ink, shape2 = "-", color2 = "-", countRaw = "1"] =
+  const [, shape = "circle", color = scene.disc, shape2 = "-", color2 = "-", countRaw = "1"] =
     id.split("|");
   const count = Number.parseInt(countRaw, 10) || 1;
   if (typeof document === "undefined" || typeof Path2D === "undefined") return undefined;
@@ -162,7 +162,7 @@ function paintMarkerImage(id: string): ImageData | undefined {
     ctx.save();
     ctx.translate(cx - 15 * px, cy - 15 * px);
     ctx.scale(px, px);
-    ctx.fillStyle = scene.outline;
+    ctx.fillStyle = scene.stamp;
     ctx.fill(new Path2D(d));
     ctx.restore();
   };
@@ -177,12 +177,12 @@ function paintMarkerImage(id: string): ImageData | undefined {
   if (count > 2) {
     ctx.beginPath();
     ctx.arc(52, 12, 11, 0, Math.PI * 2);
-    ctx.fillStyle = scene.ink;
+    ctx.fillStyle = scene.disc;
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = scene.outline;
     ctx.stroke();
-    ctx.fillStyle = scene.outline;
+    ctx.fillStyle = scene.discText;
     ctx.font = "bold 14px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -359,7 +359,7 @@ export function MapView({
         source: "saved",
         filter: ["has", "point_count"],
         paint: {
-          "circle-color": scene.ink,
+          "circle-color": scene.disc,
           "circle-radius": ["step", ["get", "point_count"], 14, 10, 18, 50, 24],
           "circle-stroke-width": 2,
           "circle-stroke-color": scene.outline,
@@ -375,7 +375,7 @@ export function MapView({
           "text-size": 12,
           ...overlayFontLayout(),
         },
-        paint: { "text-color": scene.outline },
+        paint: { "text-color": scene.discText },
       });
       map.addLayer({
         id: "saved-pins",
@@ -553,9 +553,9 @@ export function MapView({
     const map = mapRef.current;
     if (!map) return;
     const apply = () => {
-      map.setPaintProperty("saved-clusters", "circle-color", scene.ink);
+      map.setPaintProperty("saved-clusters", "circle-color", scene.disc);
       map.setPaintProperty("saved-clusters", "circle-stroke-color", scene.outline);
-      map.setPaintProperty("saved-cluster-count", "text-color", scene.outline);
+      map.setPaintProperty("saved-cluster-count", "text-color", scene.discText);
       map.setPaintProperty("mark-pins", "circle-stroke-color", scene.outline);
       for (const id of map.listImages()) {
         if (id.startsWith("pm|")) map.removeImage(id);

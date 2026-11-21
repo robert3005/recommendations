@@ -97,9 +97,21 @@ const PALETTES: Record<PlateScheme, PlatePalette> = {
  * Colours painted INTO the map scene for the user's pins and clusters: they
  * contrast against the plate, not the chrome (design.md §Map styling).
  */
-export const PLATE_SCENE: Record<PlateScheme, { outline: string; ink: string }> = {
-  paper: { outline: "#FCFCF9", ink: "#171716" },
-  night: { outline: "#171716", ink: "#F3F3EF" },
+export interface PlateScene {
+  /** The ring around pins, cluster discs and marks — separates them from the plate. */
+  outline: string;
+  /** The list's shape stamped inside a pin head (paper-on-accent). */
+  stamp: string;
+  /** Cluster disc fill and the 3+-lists badge. */
+  disc: string;
+  /** Counts written on a disc. */
+  discText: string;
+}
+
+export const PLATE_SCENE: Record<PlateScheme, PlateScene> = {
+  paper: { outline: "#FCFCF9", stamp: "#FCFCF9", disc: "#171716", discText: "#FCFCF9" },
+  // A soft light ring: a dark one vanished into the dark streets.
+  night: { outline: "#C9C9C3", stamp: "#F3F3EF", disc: "#F3F3EF", discText: "#171716" },
 };
 
 /** The plate flavor: Protomaps' light/dark flavor, recoloured to the plate. */

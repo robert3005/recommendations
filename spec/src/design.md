@@ -133,8 +133,8 @@ Two consequences follow. Every control floating over the map — the list-toggle
 reopen affordance, the map's own zoom and locate buttons, the unavailable banner, attribution —
 reads as a lifted paper pill: solid paper, hairline border, the lift shadow. And everything
 painted *into* the map scene (pin outlines, cluster discs) contrasts against the plate, not the
-chrome — those are plate values, not the chrome tokens, with a Paper and a Night pair (outline
-paper-on-accent in Paper, night-ground in Night). Attribution is always visible.
+chrome — those are plate values, not the chrome tokens, with a Paper and a Night pair: a paper ring in Paper, a soft light ring in Night so pins stay
+separated from the dark streets; the stamped shape is paper-on-accent in both. Attribution is always visible.
 
 ## Motion
 

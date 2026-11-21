@@ -96,9 +96,8 @@
 /*
  * Night — the dark theme, followed from the device setting. Only token values
  * change: the same roles on a neutral charcoal ground. The -deep accents flip
- * to their lightened form so small text stays readable. The basemap plate
- * stays light in both themes (design.md §Map styling), so at night the chrome
- * frames a lit chart.
+ * to their lightened form so small text stays readable. The basemap follows
+ * with its own dark plate (design.md §Map styling).
  */
 @media (prefers-color-scheme: dark) {
   :root {
@@ -126,6 +125,12 @@
   /* MapLibre draws its control icons in black; flip them for the dark pill. */
   .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
     filter: invert(1);
+  }
+
+  /* On the dark plate the paper ground would vanish into the map: controls
+     take the raised panel surface so their edge reads. */
+  .maplibregl-ctrl-group {
+    background: var(--color-panel);
   }
 }
 
@@ -204,6 +209,21 @@ button,
 /* Article bodies and summaries read in the text face. */
 .prose {
   font-family: var(--font-body);
+}
+
+/* MapLibre's default control divider and attribution are fixed light greys;
+   both join the chrome so they theme with it. */
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--color-hairline);
+}
+
+.maplibregl-ctrl.maplibregl-ctrl-attrib {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+.maplibregl-ctrl-attrib a {
+  color: var(--color-ink);
 }
 
 /* The map's own controls join the chrome: pills that lift off the plate. */
