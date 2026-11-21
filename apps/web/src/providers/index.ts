@@ -17,7 +17,7 @@ import {
   OSM_ATTRIBUTION,
   PELIAS_URL,
 } from "../config";
-import { plateStyle } from "../map/basemapStyle";
+import { PLATE_OVERLAY_FONT, plateStyle } from "../map/basemapStyle";
 import { OsmApiGeocoder } from "./osmApi";
 import { PeliasGeocoder } from "./pelias";
 import { PhotonGeocoder } from "./photon";
@@ -75,8 +75,14 @@ function basemapStyle(): string | StyleSpecification {
 }
 
 export const mapStyleProvider = {
-  style: (): { style: string | StyleSpecification; attribution: string } => ({
+  style: (): {
+    style: string | StyleSpecification;
+    overlayFont: string | undefined;
+    attribution: string;
+  } => ({
     style: basemapStyle(),
+    // The plate's glyph server holds one font per folder (no combined stacks).
+    overlayFont: MAP_PMTILES_URL ? PLATE_OVERLAY_FONT : undefined,
     attribution: OSM_ATTRIBUTION,
   }),
 };

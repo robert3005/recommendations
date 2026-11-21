@@ -182,6 +182,7 @@ export function MapCanvas() {
         covered={covered}
         layoutKey={layoutKey}
         styleUrl={mapStyleProvider.style().style}
+        overlayFont={mapStyleProvider.style().overlayFont}
         initialCenter={{ lat: startViewport.lat, lng: startViewport.lng }}
         initialZoom={startViewport.zoom}
         placePins={placePins}

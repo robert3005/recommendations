@@ -40,6 +40,12 @@ export interface MapViewProps {
   /** A style URL, or a complete style object (our own plate). */
   styleUrl: string | maplibregl.StyleSpecification;
   /**
+   * The font our own labels (cluster counts, mark labels) use. Glyph servers
+   * that serve one font per folder cannot answer MapLibre's default combined
+   * stack, so the basemap names a font its glyph server actually has.
+   */
+  overlayFont?: string;
+  /**
    * The mobile sheet fully covers the canvas: retain the scene, apply nothing.
    * Projections apply lazily on reveal — every projection effect is gated on
    * this flag and re-runs against current values when it clears.
@@ -216,6 +222,7 @@ function marksToGeoJSON(pins: MarkPinFeature[]): FeatureCollection {
 
 export function MapView({
   styleUrl,
+  overlayFont,
   covered = false,
   layoutKey,
   initialCenter,
@@ -249,6 +256,13 @@ export function MapView({
   // A basemap that never establishes itself is a designed state, not a blank
   // canvas (spec/src/map-view.md §Accessibility and failure).
   const [unavailable, setUnavailable] = useState(false);
+  const overlayFontLayout = () => (overlayFont ? { "text-font": [overlayFont] } : {});
+  // The selection the camera keeps centred until the user moves the map.
+  const centreAnchorRef = useRef<{
+    center: [number, number];
+    zoom: number;
+    offset: [number, number];
+  } | null>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the initial camera/style apply once at singleton creation; later changes reconcile in effects below without recreating the map.
   useEffect(() => {
@@ -346,6 +360,7 @@ export function MapView({
         layout: {
           "text-field": ["get", "point_count_abbreviated"],
           "text-size": 12,
+          ...overlayFontLayout(),
         },
         paint: { "text-color": PLATE },
       });
@@ -394,7 +409,7 @@ export function MapView({
         id: "mark-labels",
         type: "symbol",
         source: "marks",
-        layout: { "text-field": ["get", "label"], "text-size": 11 },
+        layout: { "text-field": ["get", "label"], "text-size": 11, ...overlayFontLayout() },
         paint: { "text-color": PLATE },
       });
 
@@ -464,6 +479,12 @@ export function MapView({
         if (hits.length > 0) return;
       }
       callbacksRef.current.onMapClick({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+    });
+
+    // Only a user gesture releases a selection's centre anchor; the app's own
+    // camera moves carry no originalEvent.
+    map.on("movestart", (event: { originalEvent?: unknown }) => {
+      if (event.originalEvent) centreAnchorRef.current = null;
     });
 
     // Debounced viewport reporting — the persisted camera, not discovery.
@@ -586,6 +607,32 @@ export function MapView({
   // a route projection were both deferred while covered, the newer direct
   // selection wins and consumes the fit key: reveal still performs one move.
   const appliedFlyTo = useRef<MapViewProps["flyTo"] | null>(null);
+
+  // The canvas's box changes with sibling geometry (the desktop place column
+  // opening or closing). Remeasure, and keep a selection centred in the map
+  // the user can actually see unless they have since moved the camera.
+  useEffect(() => {
+    const map = mapRef.current;
+    const container = containerRef.current;
+    if (!map || !container || typeof ResizeObserver === "undefined") return;
+    let width = container.clientWidth;
+    let height = container.clientHeight;
+    const observer = new ResizeObserver(() => {
+      if (container.clientWidth === width && container.clientHeight === height) return;
+      width = container.clientWidth;
+      height = container.clientHeight;
+      if (coveredRef.current) return;
+      map.resize();
+      const anchor = centreAnchorRef.current;
+      if (!anchor) return;
+      const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+      map.easeTo({ ...anchor, duration: reduceMotion ? 0 : 250 });
+    });
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
   const appliedFitKey = useRef<string | null>(null);
   useEffect(() => {
     if (covered) return;
@@ -595,26 +642,27 @@ export function MapView({
     if (flyTo && appliedFlyTo.current !== flyTo) {
       appliedFlyTo.current = flyTo;
       if (fitTo) appliedFitKey.current = fitTo.key;
-      // A selection can open the desktop place column in the same commit,
-      // shrinking the canvas's box. MapLibre's own ResizeObserver catches up
-      // a frame later — too late for a flight planned against the old width,
-      // which then lands off-centre. Remeasure first so the move centres in
-      // the canvas the user actually sees.
-      map.resize();
-      map.flyTo({
-        center: [flyTo.lng, flyTo.lat],
+      const camera = {
+        center: [flyTo.lng, flyTo.lat] as [number, number],
         // The requested zoom is a floor: centring a selection never zooms the
         // user OUT of a closer view they already have.
         zoom: Math.max(map.getZoom(), flyTo.zoom ?? 17),
-        duration: reduceMotion ? 0 : 700,
         // Keep the target clear of the mobile bottom sheet; the desktop place
         // card is a column beside the canvas, so there it centres exactly.
-        offset: layoutKey?.startsWith("desktop") ? [0, 0] : [0, -120],
-      });
+        offset: (layoutKey?.startsWith("desktop") ? [0, 0] : [0, -120]) as [number, number],
+      };
+      // The selection stays the camera's anchor until the user moves the map:
+      // the desktop place column usually mounts a moment AFTER this flight
+      // starts (its contents load asynchronously), shrinking the canvas, and
+      // the container observer below re-centres on the anchor when it does.
+      centreAnchorRef.current = camera;
+      map.resize();
+      map.flyTo({ ...camera, duration: reduceMotion ? 0 : 700 });
       return;
     }
     if (!fitTo || appliedFitKey.current === fitTo.key) return;
     appliedFitKey.current = fitTo.key;
+    centreAnchorRef.current = null;
     map.fitBounds(
       [
         [fitTo.bounds.west, fitTo.bounds.south],

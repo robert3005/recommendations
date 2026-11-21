@@ -137,6 +137,9 @@ export function plateFlavor(): Flavor {
   };
 }
 
+/** A font the plate's glyph server serves, for the app's own map labels. */
+export const PLATE_OVERLAY_FONT = "Noto Sans Medium";
+
 /** Layers that would compete with the user's pins. */
 const DROPPED_LAYER_IDS = new Set(["pois", "roads_shields"]);
 
