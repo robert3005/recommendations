@@ -10,6 +10,7 @@
 - [Posts](./posts.md)
 - [Import & Export](./interop.md)
 - [Review Harvest](./harvest.md)
+- [Review Insights](./reviews.md)
 - [Sharing & Publishing](./sharing.md)
 - [Local Storage](./storage.md)
 - [Map Data & Providers](./data-sources.md)

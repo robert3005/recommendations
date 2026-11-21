@@ -11,7 +11,8 @@
     "storybook": "pnpm --filter @placemarks/web storybook",
     "typecheck": "pnpm -r typecheck",
     "lint": "biome check .",
-    "format": "biome format --write ."
+    "format": "biome format --write .",
+    "classify": "pnpm --filter @placemarks/classify classify"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",
