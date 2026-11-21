@@ -37,9 +37,17 @@ export function isoFromMicros(micros: number | undefined): string | undefined {
   return year >= 2005 && year <= 2100 ? date.toISOString() : undefined;
 }
 
-export function nonEmpty(value: string | undefined | null): string | undefined {
-  const trimmed = value?.trim();
+/** A trimmed non-empty string, or undefined for anything else (including non-strings). */
+export function nonEmpty(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
+}
+
+/** A string or a list of strings (providers vary) → the non-empty strings. */
+export function stringList(value: unknown): string[] {
+  const items = Array.isArray(value) ? value : [value];
+  return items.map(nonEmpty).filter((v): v is string => v !== undefined);
 }
 
 export function isHttpUrl(value: string | undefined): value is string {
