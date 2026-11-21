@@ -10,6 +10,8 @@
  *   engine=google_maps&type=place&data=!4m5!3m4!1s<data_id>!8m2!3d<lat>!4d<lng>
  *   engine=google_maps_reviews&data_id=…&sort_by=newestFirst&next_page_token=…
  */
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { parsePastedLink } from "@placemarks/domain";
 import {
   type HarvestPhoto,
@@ -18,7 +20,15 @@ import {
   placeSnapshotSchema,
   sourcePlaceKeySchema,
 } from "@placemarks/schemas";
-import { isHttpUrl, nonEmpty, priceLevelFromText, reviewContentHash, stableId } from "../normalize";
+import {
+  isHttpUrl,
+  nonEmpty,
+  priceLevelFromText,
+  reviewContentHash,
+  sha256,
+  stableId,
+  stringList,
+} from "../normalize";
 import type {
   HarvestedPlace,
   HarvestInput,
@@ -29,6 +39,7 @@ import type {
 } from "./types";
 
 const ENDPOINT = "https://serpapi.com/search.json";
+const CACHE_MAX_AGE_MS = 7 * 86_400_000;
 
 // ---------- SerpApi response shapes (the fields we read) ----------
 
@@ -42,7 +53,8 @@ export interface SerpPlace {
   rating?: number;
   reviews?: number;
   price?: string;
-  type?: string;
+  /** A string in search results, a list in place results. */
+  type?: string | string[];
   types?: string[];
   website?: string;
   phone?: string;
@@ -146,16 +158,17 @@ export function normalizeSerpPlace(
   fetchedAt: string,
 ): { place: PlaceSnapshot; photos: HarvestPhoto[] } | { error: string } {
   const sourcePlaceKey = sourcePlaceKeyOfSerp(raw);
-  if (!sourcePlaceKey) return { error: `no Google id for "${raw.title ?? "?"}"` };
+  const title = nonEmpty(raw.title);
+  if (!sourcePlaceKey) return { error: `no Google id for "${title ?? "?"}"` };
   const lat = raw.gps_coordinates?.latitude;
   const lng = raw.gps_coordinates?.longitude;
-  if (!raw.title || lat === undefined || lng === undefined) {
+  if (!title || typeof lat !== "number" || typeof lng !== "number") {
     return { error: `no name or coordinates for ${sourcePlaceKey}` };
   }
   const priceText = nonEmpty(raw.price);
   const priceLevel = priceLevelFromText(priceText);
   const description =
-    typeof raw.description === "string" ? raw.description : raw.description?.snippet;
+    typeof raw.description === "string" ? raw.description : nonEmpty(raw.description?.snippet);
   const expected = raw.reviews;
   const googleUrl = raw.place_id
     ? `https://www.google.com/maps/place/?q=place_id:${raw.place_id}`
@@ -168,7 +181,7 @@ export function normalizeSerpPlace(
     ...(nonEmpty(raw.place_id) ? { googlePlaceId: nonEmpty(raw.place_id) } : {}),
     ...(raw.data_cid && /^\d+$/.test(raw.data_cid) ? { cid: raw.data_cid } : {}),
     ...(googleUrl ? { googleUrl } : {}),
-    name: raw.title.trim(),
+    name: title,
     lat,
     lng,
     ...(nonEmpty(raw.address) ? { address: nonEmpty(raw.address) } : {}),
@@ -176,14 +189,13 @@ export function normalizeSerpPlace(
     ...(expected !== undefined ? { ratingCount: expected } : {}),
     ...(histogram(raw) ? { ratingHistogram: histogram(raw) } : {}),
     ...(priceLevel ? { priceLevel } : priceText ? { priceText } : {}),
-    types: [...new Set([...(raw.types ?? []), raw.type ?? ""].filter((t) => t.trim()))],
+    types: [...new Set([...stringList(raw.types), ...stringList(raw.type)])],
     ...(nonEmpty(raw.website) ? { website: nonEmpty(raw.website) } : {}),
     ...(nonEmpty(raw.phone) ? { phone: nonEmpty(raw.phone) } : {}),
     ...(openingHours(raw) ? { openingHours: openingHours(raw) } : {}),
     ...(nonEmpty(description) ? { description: nonEmpty(description) } : {}),
-    ...(/closed/i.test(raw.open_state ?? "") &&
-    /permanently|temporarily/i.test(raw.open_state ?? "")
-      ? { businessStatus: raw.open_state }
+    ...(/(permanently|temporarily) closed/i.test(nonEmpty(raw.open_state) ?? "")
+      ? { businessStatus: nonEmpty(raw.open_state) }
       : {}),
     reviewCollection: {
       status:
@@ -317,24 +329,46 @@ export function serpApiProvider(config: SerpApiConfig): Provider {
   const log = config.log ?? (() => {});
   let credits = 0;
 
-  async function call(params: Record<string, string>, signal?: AbortSignal): Promise<SerpResponse> {
+  /**
+   * One SerpApi request. Successful responses are cached on disk for a week
+   * (keyed by the request parameters, never the API key), so a re-run after a
+   * crash or a normalization bug costs no credits for what was already fetched.
+   */
+  async function call(
+    params: Record<string, string>,
+    options: Pick<HarvestOptions, "signal" | "workDir">,
+  ): Promise<SerpResponse> {
+    const cacheFile = path.join(
+      options.workDir,
+      "serpapi-cache",
+      `${sha256(JSON.stringify(Object.entries(params).sort()))}.json`,
+    );
+    const cached = await stat(cacheFile).catch(() => undefined);
+    if (cached && Date.now() - cached.mtimeMs < CACHE_MAX_AGE_MS) {
+      return JSON.parse(await readFile(cacheFile, "utf8")) as SerpResponse;
+    }
+
     const url = new URL(ENDPOINT);
     for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
     url.searchParams.set("api_key", config.apiKey);
     credits++;
-    const response = await doFetch(url.toString(), signal ? { signal } : undefined);
+    const response = await doFetch(
+      url.toString(),
+      options.signal ? { signal: options.signal } : undefined,
+    );
     const body = (await response.json().catch(() => ({}))) as SerpResponse;
     // SerpApi reports "no results" as an error string; that is an empty answer, not a failure.
     if (body.error && /hasn't returned any results/i.test(body.error)) return {};
     if (!response.ok || body.error) {
       throw new Error(`SerpApi ${params.engine}: ${body.error ?? `HTTP ${response.status}`}`);
     }
+    await mkdir(path.dirname(cacheFile), { recursive: true });
+    await writeFile(cacheFile, JSON.stringify(body));
     return body;
   }
 
   /** The places one input names: a single place for a URL, the result list for a search. */
   async function placesFor(input: HarvestInput, options: HarvestOptions): Promise<SerpPlace[]> {
-    const signal = options.signal;
     if (input.kind === "url") {
       const link = parsePastedLink(input.query);
       const google: Extract<NonNullable<typeof link>, { kind: "google" }> | undefined =
@@ -348,7 +382,7 @@ export function serpApiProvider(config: SerpApiConfig): Provider {
             data: `!4m5!3m4!1s${dataId}!8m2!3d${google.lat}!4d${google.lng}`,
             hl: options.language,
           },
-          signal,
+          options,
         );
         if (body.place_results) return [body.place_results];
       }
@@ -356,7 +390,7 @@ export function serpApiProvider(config: SerpApiConfig): Provider {
       const q = searchTextFromUrl(input.query) ?? google?.name ?? input.title ?? input.query;
       const body = await call(
         { engine: "google_maps", type: "search", q, hl: options.language },
-        signal,
+        options,
       );
       if (body.place_results) return [body.place_results];
       const results = body.local_results ?? [];
@@ -378,7 +412,7 @@ export function serpApiProvider(config: SerpApiConfig): Provider {
           ...(ll ? { ll } : {}),
           ...(page > 0 ? { start: String(page * 20) } : {}),
         },
-        signal,
+        options,
       );
       if (body.place_results) return [body.place_results];
       const results = body.local_results ?? [];
@@ -401,7 +435,7 @@ export function serpApiProvider(config: SerpApiConfig): Provider {
           hl: options.language,
           ...(token ? { next_page_token: token, num: "20" } : {}),
         },
-        options.signal,
+        options,
       );
       raw.push(...(body.reviews ?? []));
       token = body.serpapi_pagination?.next_page_token;

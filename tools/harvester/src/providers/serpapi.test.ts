@@ -1,5 +1,8 @@
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { harvestPhotoSchema, harvestReviewSchema } from "@placemarks/schemas";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   type Fetch,
   llParam,
@@ -7,6 +10,7 @@ import {
   type SerpPlace,
   serpApiProvider,
 } from "./serpapi";
+import type { HarvestOptions } from "./types";
 
 const DATA_ID = "0x89c2598f7ff4aa09:0x313547e757cb8cea";
 const katz: SerpPlace = {
@@ -53,7 +57,15 @@ function fakeFetch(route: (params: URLSearchParams) => unknown) {
   return { fetchImpl, requests };
 }
 
-const options = { extraReviews: true, depth: 1, language: "en", workDir: "/tmp/unused" };
+let options: HarvestOptions;
+beforeEach(async () => {
+  options = {
+    extraReviews: true,
+    depth: 1,
+    language: "en",
+    workDir: await mkdtemp(path.join(os.tmpdir(), "serp-")),
+  };
+});
 
 describe("SerpApi provider", () => {
   it("looks a URL up by data id + coordinates and pages reviews to the end", async () => {
@@ -161,6 +173,37 @@ describe("SerpApi provider", () => {
     expect(result.places).toHaveLength(2);
     expect(requests).toHaveLength(1);
     expect(requests[0]?.get("ll")).toBe("@40.72,-73.98,1000m");
+  });
+
+  it("accepts place results whose type is a list, and reuses cached responses on a re-run", async () => {
+    const { fetchImpl, requests } = fakeFetch((p) =>
+      p.get("engine") === "google_maps"
+        ? {
+            place_results: {
+              ...katz,
+              type: ["Deli", "Sandwich shop"],
+              types: undefined,
+              title: "  Katz's  ",
+            },
+          }
+        : { reviews: [review("a", "Good")] },
+    );
+    const provider = serpApiProvider({ apiKey: "k", maxReviews: 10, fetch: fetchImpl });
+    const input = [
+      {
+        query: `https://www.google.com/maps/place/K/data=!1s${DATA_ID}!3d40.7!4d-73.9`,
+        kind: "url" as const,
+      },
+    ];
+    const first = await provider.harvest(input, options);
+    expect(first.failures).toEqual([]);
+    expect(first.places[0]?.place).toMatchObject({
+      name: "Katz's",
+      types: ["Deli", "Sandwich shop"],
+    });
+    expect(requests).toHaveLength(2);
+    await provider.harvest(input, options);
+    expect(requests).toHaveLength(2); // served from the on-disk cache: no new credits
   });
 
   it("records a per-input failure, but throws on an auth or quota error", async () => {
