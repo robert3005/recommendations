@@ -86,7 +86,9 @@ async function main(argv: string[]) {
     for (const folder of await folders(data, values.place, log)) {
       log(`${folder.name ?? folder.sourcePlaceKey}: ${folder.reviews.length} reviews`);
       const r = await analysePlace(folder, classifier, { summarise: !values["no-summary"], log });
-      log(`  analysed ${r.analysed}, up to date ${r.skipped}, failed ${r.failed}`);
+      log(
+        `  analysed ${r.analysed}, already done ${r.skipped}, rating only ${r.noText}, failed ${r.failed}`,
+      );
     }
     return;
   }

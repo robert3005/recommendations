@@ -142,7 +142,7 @@ describe("buildPlaceProfile", () => {
       { aspect: "food", score: 1.5, mentions: 2 },
       { aspect: "service", score: -2, mentions: 1 },
     ]);
-    expect(p.dishes[0]).toMatchObject({ name: "Cacio e pepe", mentions: 2, score: 1.5 });
+    expect(p.dishes[0]).toMatchObject({ name: "cacio e pepe", mentions: 2, score: 1.5 });
     expect(p.price).toEqual({ signal: "moderate", mentions: 2 });
     // cozy reaches the 3-mention floor; loud's other mentions are not useful or stale.
     expect(p.tags).toEqual([{ kind: "vibe", tag: "cozy", mentions: 3 }]);
