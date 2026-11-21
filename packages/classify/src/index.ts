@@ -1,4 +1,5 @@
 export * from "./classifiers/anthropic";
+export * from "./classifiers/claude-cli";
 export * from "./classifiers/codex";
 export * from "./classifiers/types";
 export * from "./classifiers/typesafe";

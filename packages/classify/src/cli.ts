@@ -6,7 +6,7 @@
  *   pnpm classify compare [--data DIR] [--place KEY] --with haiku,luna [--model-a ID] [--model-b ID] [--no-run]
  *
  * --data defaults to $PLACEMARKS_DATA or ~/placemarks-data. Credentials:
- * haiku uses ANTHROPIC_API_KEY (or an `ant auth login` profile), jev uses
+ * haiku uses ANTHROPIC_API_KEY when set, otherwise your local Claude Code login (`claude -p`); jev uses
  * TYPESAFE_API_KEY, luna uses your Codex CLI login.
  */
 import { homedir } from "node:os";
@@ -14,6 +14,7 @@ import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { ReviewAnalysis } from "@placemarks/domain";
 import { AnthropicClassifier } from "./classifiers/anthropic";
+import { ClaudeCliClassifier } from "./classifiers/claude-cli";
 import { CodexClassifier } from "./classifiers/codex";
 import type { ReviewClassifier } from "./classifiers/types";
 import { TypesafeClassifier } from "./classifiers/typesafe";
@@ -24,8 +25,16 @@ import { analysePlace, classifierSlug, listPlaceDirs, loadPlaceFolder, readJsonl
 export function makeClassifier(name: string, model?: string): ReviewClassifier {
   switch (name) {
     case "haiku":
+      // The API when a key is set, otherwise the local Claude Code login.
+      return process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN
+        ? new AnthropicClassifier({ model })
+        : new ClaudeCliClassifier({ model });
     case "anthropic":
+    case "haiku-api":
       return new AnthropicClassifier({ model });
+    case "claude":
+    case "haiku-cli":
+      return new ClaudeCliClassifier({ model });
     case "jev":
     case "typesafe":
       return new TypesafeClassifier({ model });

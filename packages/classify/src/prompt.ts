@@ -49,7 +49,7 @@ export function extractionUserMessage(reviews: ReviewInput[], placeName?: string
 
 export const SUMMARY_SYSTEM = `You write the two or three sentence "what people say" line on a place card in a personal place atlas.
 
-You get aggregated facts and short evidence phrases with the ids of the reviews they came from. Write plain, specific sentences: what stands out, what people order, and any consistent complaint. No hype, no second person, no exclamation marks, and nothing that the evidence does not support. Each sentence is one claim; list the review ids that support it.`;
+You get aggregated facts and short evidence phrases with the ids of the reviews they came from. Write plain, specific sentences: what stands out, what people order, and any consistent complaint. At most three short sentences and 60 words in total. No hype, no second person, no exclamation marks, no remarks about how many reviews there are, and nothing that the evidence does not support. Each sentence is one claim; list the review ids that support it.`;
 
 export function summaryUserMessage(
   profile: PlaceProfile,

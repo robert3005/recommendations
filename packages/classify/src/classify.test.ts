@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ReviewAnalysis, ReviewInput } from "@placemarks/domain";
 import { describe, expect, it } from "vitest";
 import { AnthropicClassifier } from "./classifiers/anthropic";
+import { ClaudeCliClassifier, type CliRunner } from "./classifiers/claude-cli";
 import { CodexClassifier, type Runner } from "./classifiers/codex";
 import { ClassifierError, type ReviewClassifier } from "./classifiers/types";
 import { fromJevAnswers, jevQuestions, TypesafeClassifier } from "./classifiers/typesafe";
@@ -162,6 +163,46 @@ describe("Codex", () => {
   it("reports a failed run", async () => {
     const c = new CodexClassifier({ run: async () => ({ code: 1, stderr: "not logged in" }) });
     await expect(c.classify([review("a", "x")], {})).rejects.toThrow(/not logged in/);
+  });
+});
+
+describe("Claude Code CLI", () => {
+  it("runs claude -p with no tools and a schema, outside the project", async () => {
+    let seen: { args: string[]; stdin: string; cwd: string } | undefined;
+    const run: CliRunner = async (_cmd, args, stdin, cwd) => {
+      seen = { args, stdin, cwd };
+      const schema = JSON.parse(args[args.indexOf("--json-schema") + 1] ?? "{}");
+      expect(schema.additionalProperties).toBe(false);
+      return {
+        code: 0,
+        stderr: "",
+        stdout: JSON.stringify({
+          type: "result",
+          is_error: false,
+          structured_output: { reviews: [extraction("a")] },
+        }),
+      };
+    };
+    const c = new ClaudeCliClassifier({ run });
+    const out = await c.classify([review("a", "great")], { placeName: "Tasca" });
+    expect(out[0]?.id).toBe("a");
+    expect(c.id).toBe("anthropic:claude-haiku-5-5");
+    expect(seen?.args).toEqual(
+      expect.arrayContaining(["-p", "--model", "claude-haiku-5-5", "--tools", ""]),
+    );
+    expect(seen?.stdin).toContain("Place: Tasca");
+    expect(seen?.cwd).toContain("placemarks-claude-");
+  });
+
+  it("surfaces an error result", async () => {
+    const c = new ClaudeCliClassifier({
+      run: async () => ({
+        code: 1,
+        stderr: "",
+        stdout: JSON.stringify({ is_error: true, result: "Not logged in" }),
+      }),
+    });
+    await expect(c.classify([review("a", "x")], {})).rejects.toThrow(/Not logged in/);
   });
 });
 

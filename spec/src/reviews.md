@@ -34,9 +34,11 @@ review photos.
 
 One `ReviewClassifier` interface, three implementations:
 
-- **Claude Haiku 5.5** (`claude-haiku-5-5`), the default: structured outputs, low effort, about 20
-  reviews per request, a byte-stable cached system prompt. Credentials: `ANTHROPIC_API_KEY` or an
-  `ant auth login` profile.
+- **Claude Haiku 5.5** (`claude-haiku-5-5`), the default: about 20 reviews per request with a
+  strict output schema. With `ANTHROPIC_API_KEY` set it calls the API (structured outputs, low
+  effort, a cached system prompt); without one it runs the local Claude Code CLI (`claude -p`, no
+  tools, no MCP servers, no saved session) on the owner's own login. `--with haiku-api` and
+  `--with haiku-cli` force one or the other.
 - **Jev** (TypeSafe, `jev-latest`): answers fixed questions with calibrated probabilities, one
   review per request. It fills the fixed vocabulary only: no dishes, no quotes, no summary.
   Credentials: `TYPESAFE_API_KEY`.
