@@ -254,6 +254,9 @@ export async function analysePlace(
         if (previous?.summary) profile.summary = previous.summary;
       }
     }
+  } else if (previous?.summary) {
+    // Summaries off (e.g. a compare run): keep the one already written.
+    profile.summary = previous.summary;
   }
 
   const json = `${JSON.stringify(profile, null, 2)}\n`;
