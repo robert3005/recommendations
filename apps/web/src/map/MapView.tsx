@@ -37,7 +37,8 @@ export interface MarkPinFeature {
 }
 
 export interface MapViewProps {
-  styleUrl: string;
+  /** A style URL, or a complete style object (our own plate). */
+  styleUrl: string | maplibregl.StyleSpecification;
   /**
    * The mobile sheet fully covers the canvas: retain the scene, apply nothing.
    * Projections apply lazily on reveal — every projection effect is gated on
@@ -594,14 +595,21 @@ export function MapView({
     if (flyTo && appliedFlyTo.current !== flyTo) {
       appliedFlyTo.current = flyTo;
       if (fitTo) appliedFitKey.current = fitTo.key;
+      // A selection can open the desktop place column in the same commit,
+      // shrinking the canvas's box. MapLibre's own ResizeObserver catches up
+      // a frame later — too late for a flight planned against the old width,
+      // which then lands off-centre. Remeasure first so the move centres in
+      // the canvas the user actually sees.
+      map.resize();
       map.flyTo({
         center: [flyTo.lng, flyTo.lat],
         // The requested zoom is a floor: centring a selection never zooms the
         // user OUT of a closer view they already have.
         zoom: Math.max(map.getZoom(), flyTo.zoom ?? 17),
         duration: reduceMotion ? 0 : 700,
-        // Keep the target clear of the bottom sheet.
-        offset: [0, -120],
+        // Keep the target clear of the mobile bottom sheet; the desktop place
+        // card is a column beside the canvas, so there it centres exactly.
+        offset: layoutKey?.startsWith("desktop") ? [0, 0] : [0, -120],
       });
       return;
     }
@@ -615,7 +623,7 @@ export function MapView({
       { padding: 72, maxZoom: 16, duration: reduceMotion ? 0 : 700 },
     );
     if (containerRef.current) containerRef.current.dataset.fitKey = fitTo.key;
-  }, [fitTo, flyTo, covered]);
+  }, [fitTo, flyTo, covered, layoutKey]);
 
   return (
     <div className="relative h-full w-full">

@@ -17,6 +17,7 @@
   "dependencies": {
     "@placemarks/domain": "workspace:*",
     "@placemarks/schemas": "workspace:*",
+    "@protomaps/basemaps": "5.7.2",
     "@tanstack/react-query": "^5.62.0",
     "@tanstack/react-router": "^1.95.0",
     "@tmcw/togeojson": "^7.1.2",
@@ -25,6 +26,7 @@
     "fflate": "^0.8.2",
     "maplibre-gl": "^5.0.0",
     "papaparse": "^5.5.4",
+    "pmtiles": "4.5.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.0.0",

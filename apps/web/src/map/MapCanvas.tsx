@@ -181,7 +181,7 @@ export function MapCanvas() {
       <MapView
         covered={covered}
         layoutKey={layoutKey}
-        styleUrl={mapStyleProvider.style().styleUrl}
+        styleUrl={mapStyleProvider.style().style}
         initialCenter={{ lat: startViewport.lat, lng: startViewport.lng }}
         initialZoom={startViewport.zoom}
         placePins={placePins}

@@ -8,18 +8,23 @@ URLs, and it fails politely offline (nothing queues; retry online).
 
 ## Map tiles
 
-MapLibre GL JS renders hosted OSM-derived vector tiles — crisp zoom, rotation, and runtime
-styling. Production uses a contracted provider with an explicit browser-use contract, quota, and
-attribution requirement. The basemap is restyled to the neutral, desaturated light palette of
-[Visual Design](./design.md) so accent pins are the loudest thing on the canvas; the linked OSM
-attribution control is always visible.
+MapLibre GL JS renders OSM-derived vector tiles — crisp zoom, rotation, and runtime styling.
+The basemap is **our own plate**: a MapLibre style built in code (`src/map/basemapStyle.ts`) with
+`@protomaps/basemaps`, recoloured to the neutral, desaturated light palette of
+[Visual Design](./design.md) so accent pins are the loudest thing on the canvas. POI icons and
+road shields are dropped — the only points of interest on the map are the user's own places.
+The linked OSM attribution control is always visible.
 
-Development builds may point `VITE_MAP_STYLE_URL` at a keyless host — OpenFreeMap (the default),
-VersaTiles, Stadia Maps on localhost, or MapLibre demotiles for smoke tests — while e2e keeps a
-local style fixture. The independence path is a [Protomaps](https://protomaps.com/) PMTiles
-extract served from static storage, which doubles as the fully offline development option.
-Application overlays depend on no basemap layer schema, so switching providers is a configuration
-change.
+Production reads one Protomaps-schema **PMTiles** archive by HTTP range request from static
+storage (Cloudflare R2), with the plate's glyphs and sprite self-hosted beside it:
+`VITE_MAP_PMTILES_URL`, `VITE_MAP_GLYPHS_URL`, `VITE_MAP_SPRITE_URL`. No per-view metering, no
+tile vendor in the request path, and the same archive doubles as the fully offline development
+option. A production build fails closed when the plate's assets point at development hosts.
+
+Without a PMTiles archive, `VITE_MAP_STYLE_URL` selects a hosted style instead. Development
+defaults to OpenFreeMap Positron (keyless); VersaTiles, Stadia Maps on localhost, or MapLibre
+demotiles serve smoke tests, while e2e keeps a local style fixture. Application overlays depend
+on no basemap layer schema, so switching providers is a configuration change.
 
 ## Geocoder
 

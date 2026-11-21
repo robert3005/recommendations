@@ -44,6 +44,6 @@ so the visual system is reviewed as a system rather than page by page.
 
 ## Independence
 
-Every vendor has a cheap exit: Protomaps PMTiles replaces hosted tiles, and self-hosted Photon or
+Every vendor has a cheap exit: tiles are already a self-hosted Protomaps PMTiles archive, and self-hosted Photon or
 Nominatim replaces the geocoder ([Map Data & Providers](./data-sources.md)). The share service is
 plain Hono and runs unchanged on Node + Postgres behind the same contract.

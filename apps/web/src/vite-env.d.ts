@@ -2,6 +2,9 @@
 
 interface ImportMetaEnv {
   readonly VITE_MAP_STYLE_URL?: string;
+  readonly VITE_MAP_PMTILES_URL?: string;
+  readonly VITE_MAP_GLYPHS_URL?: string;
+  readonly VITE_MAP_SPRITE_URL?: string;
   readonly VITE_PHOTON_URL?: string;
   readonly VITE_OSM_API_URL?: string;
   readonly VITE_SHARE_API_URL?: string;

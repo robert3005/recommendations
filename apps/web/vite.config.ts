@@ -9,7 +9,17 @@ import { VitePWA } from "vite-plugin-pwa";
  * Search accepts either geocoder kind — VITE_PHOTON_URL by default, or
  * VITE_GEOCODER=pelias with VITE_PELIAS_URL.
  */
-const BASE_REQUIRED_PROVIDER_VARS = ["VITE_MAP_STYLE_URL", "VITE_OSM_API_URL"] as const;
+const BASE_REQUIRED_PROVIDER_VARS = ["VITE_OSM_API_URL"] as const;
+
+/**
+ * The basemap is either our own plate over a self-hosted PMTiles archive —
+ * which then also needs self-hosted glyphs and sprite — or a hosted style URL.
+ */
+const PLATE_PROVIDER_VARS = [
+  "VITE_MAP_PMTILES_URL",
+  "VITE_MAP_GLYPHS_URL",
+  "VITE_MAP_SPRITE_URL",
+] as const;
 
 /** The community/demo hosts the spec designates development-only. */
 const DEVELOPMENT_ONLY_HOSTS = [
@@ -19,6 +29,7 @@ const DEVELOPMENT_ONLY_HOSTS = [
   "master.apis.dev.openstreetmap.org",
   "tiles.openfreemap.org",
   "demotiles.maplibre.org",
+  "protomaps.github.io",
 ] as const;
 
 export default defineConfig(({ command, mode }) => {
@@ -31,7 +42,10 @@ export default defineConfig(({ command, mode }) => {
     // public demo, so VITE_GEOCODER=pelias demands VITE_PELIAS_URL.
     const searchVar =
       providerValue("VITE_GEOCODER") === "pelias" ? "VITE_PELIAS_URL" : "VITE_PHOTON_URL";
-    const requiredProviderVars = [...BASE_REQUIRED_PROVIDER_VARS, searchVar];
+    const basemapVars = providerValue("VITE_MAP_PMTILES_URL")
+      ? PLATE_PROVIDER_VARS
+      : (["VITE_MAP_STYLE_URL"] as const);
+    const requiredProviderVars = [...basemapVars, ...BASE_REQUIRED_PROVIDER_VARS, searchVar];
     const missing = requiredProviderVars.filter((key) => !providerValue(key));
     if (missing.length > 0) {
       throw new Error(
