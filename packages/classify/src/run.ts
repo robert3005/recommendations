@@ -156,6 +156,8 @@ export interface AnalyseResult {
   sourcePlaceKey: string;
   analysed: number;
   skipped: number;
+  /** Rating-only reviews: nothing to classify. */
+  noText: number;
   failed: number;
   profile: PlaceProfile;
 }
@@ -171,6 +173,8 @@ export async function analysePlace(
   const existing = await readJsonl<ReviewAnalysis>(analysesPath);
   const todo = reviewsNeedingAnalysis(folder.reviews, existing, classifier.id, PROMPT_VERSION);
   const byId = new Map(folder.reviews.map((r) => [r.id, r]));
+  const noText = folder.reviews.filter((r) => r.text.trim() === "").length;
+  const skipped = folder.reviews.length - noText - todo.length;
 
   const fresh: ReviewAnalysis[] = [];
   let failed = 0;
@@ -230,7 +234,8 @@ export async function analysePlace(
     return {
       sourcePlaceKey: folder.sourcePlaceKey,
       analysed: 0,
-      skipped: folder.reviews.length - todo.length,
+      skipped,
+      noText,
       failed,
       profile,
     };
@@ -266,7 +271,8 @@ export async function analysePlace(
   return {
     sourcePlaceKey: folder.sourcePlaceKey,
     analysed: fresh.length,
-    skipped: folder.reviews.length - todo.length,
+    skipped,
+    noText,
     failed,
     profile,
   };

@@ -68,7 +68,7 @@ stamp is missing or stale.
 
 Per place, code (not a model) builds the profile: recency-weighted mean sentiment per aspect (a
 review's weight halves every year), dishes grouped by normalized name, the most common price
-signal, tags reaching at least 3 mentions and 15% of useful reviews, and warnings with at least 2
+signal, tags reaching at least 3 mentions and 10% of useful reviews, and warnings with at least 2
 mentions in the last 18 months. One last model call writes the two or three sentence summary from
 those facts and their evidence, citing review ids.
 

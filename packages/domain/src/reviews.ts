@@ -180,7 +180,7 @@ function singular(word: string): string {
 /**
  * Dish names fold together on lowercase, accents stripped, punctuation and
  * articles dropped, plurals singular. The key groups dishes; the display name
- * stays the most common spelling reviewers used.
+ * is the most common plain-English name the classifier gave.
  */
 export function normalizeDish(name: string): string {
   return name
@@ -208,7 +208,7 @@ export function recencyWeight(publishedAt: string | undefined, now: string): num
 }
 
 export const TAG_MIN_MENTIONS = 3;
-export const TAG_MIN_SHARE = 0.15;
+export const TAG_MIN_SHARE = 0.1;
 export const WARNING_MIN_MENTIONS = 2;
 export const WARNING_WINDOW_DAYS = 548; // ~18 months
 
@@ -275,13 +275,14 @@ export function buildPlaceProfile(
       };
       if (!g.reviewIds.has(a.reviewId)) g.pairs.push({ value: d.sentiment, weight: weightOf(a) });
       g.reviewIds.add(a.reviewId);
-      g.names.set(d.name, (g.names.get(d.name) ?? 0) + 1);
+      const label = (d.normalized || d.name).trim().toLowerCase();
+      g.names.set(label, (g.names.get(label) ?? 0) + 1);
       dishGroups.set(key, g);
     }
   }
   const dishes = [...dishGroups.values()]
     .map((g) => ({
-      // Display the most common spelling the reviewers used.
+      // Display the most common plain-English name, so spellings and languages fold.
       name:
         [...g.names.entries()].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]))[0]?.[0] ??
         "",
