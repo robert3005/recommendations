@@ -80,6 +80,9 @@ describe("helpers", () => {
   it("normalizes dish names", () => {
     expect(normalizeDish("The Pastéis de Nata!")).toBe("pasteis de nata");
     expect(normalizeDish("cacio-e-pepe")).toBe("cacio e pepe");
+    expect(normalizeDish("Pickles")).toBe(normalizeDish("pickle"));
+    expect(normalizeDish("fries")).toBe("fry");
+    expect(normalizeDish("hummus")).toBe("hummus");
   });
 
   it("halves the weight of a review every year", () => {

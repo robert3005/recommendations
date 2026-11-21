@@ -169,16 +169,30 @@ export function clampSentiment(n: number): Sentiment {
   return Math.max(-2, Math.min(2, r)) as Sentiment;
 }
 
-/** Dish names fold together on lowercase, accents stripped, punctuation and articles dropped. */
+/** Plural to singular for grouping only ("pickles" → "pickle", "fries" → "fry"). */
+function singular(word: string): string {
+  if (word.length <= 3) return word;
+  if (word.endsWith("ies")) return `${word.slice(0, -3)}y`;
+  if (/(ss|us|is)$/.test(word)) return word;
+  return word.endsWith("s") ? word.slice(0, -1) : word;
+}
+
+/**
+ * Dish names fold together on lowercase, accents stripped, punctuation and
+ * articles dropped, plurals singular. The key groups dishes; the display name
+ * stays the most common spelling reviewers used.
+ */
 export function normalizeDish(name: string): string {
   return name
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9 ]+/g, " ")
     .replace(/\b(the|a|an|their|our)\b/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(singular)
+    .join(" ");
 }
 
 // ── Aggregation ──────────────────────────────────────────────────────────────

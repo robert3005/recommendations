@@ -14,7 +14,7 @@ import {
   VIBES,
 } from "@placemarks/domain";
 
-export const PROMPT_VERSION = "2026-11-21.1";
+export const PROMPT_VERSION = "2026-11-21.2";
 
 /** Byte-stable across calls so prompt caching can apply. */
 export const EXTRACTION_SYSTEM = `You read restaurant and venue reviews and extract structured facts for a personal place atlas.
@@ -31,7 +31,7 @@ Rules:
 - vibes (${VIBES.join(", ")}): only when the review describes the atmosphere that way.
 - practical: reservation_advised, wait_minutes (a typical wait the reviewer reports) and cash_only, or null when not mentioned.
 - red_flags (${RED_FLAGS.join(", ")}): only for concrete reports, not mild complaints.
-- Every quote must be a short phrase copied exactly from the review text, at most 12 words. Use an empty string if no phrase fits.
+- Every quote must be a short phrase copied exactly from the review text, at most 12 words, that is specifically about that aspect, dish or flag. A dish quote must name or clearly describe that dish; generic praise like "every dish was delicious" is not a quote for any one dish. Use an empty string if no phrase fits.
 - useful is false for spam, empty, one-word or off-topic reviews; still fill the other fields as best you can.
 - Return empty arrays when nothing applies.`;
 

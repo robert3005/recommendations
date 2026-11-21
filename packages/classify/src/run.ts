@@ -225,6 +225,16 @@ export async function analysePlace(
   );
 
   const perClassifierPath = join(folder.dir, `profile.${classifierSlug(classifier.id)}.json`);
+  // Nothing analysed (every call failed, or no review text): leave existing profiles alone.
+  if (analyses.length === 0) {
+    return {
+      sourcePlaceKey: folder.sourcePlaceKey,
+      analysed: 0,
+      skipped: folder.reviews.length - todo.length,
+      failed,
+      profile,
+    };
+  }
   const previous = await readJson<PlaceProfile>(perClassifierPath);
   const summarise = classifier.summarise?.bind(classifier);
   if (opts.summarise !== false && summarise && profile.usefulCount > 0) {

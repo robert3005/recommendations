@@ -25,7 +25,11 @@ import {
 } from "../schema";
 import { ClassifierError, type ReviewClassifier } from "./types";
 
-export const DEFAULT_CODEX_MODEL = "luna";
+/**
+ * Codex model slug. "Luna" is the gpt-*-luna family; pass --model to use
+ * another slug (the one in ~/.codex/config.toml, for instance).
+ */
+export const DEFAULT_CODEX_MODEL = "gpt-6-luna";
 
 export type Runner = (
   cmd: string,

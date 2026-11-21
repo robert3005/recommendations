@@ -40,7 +40,7 @@ One `ReviewClassifier` interface, three implementations:
 - **Jev** (TypeSafe, `jev-latest`): answers fixed questions with calibrated probabilities, one
   review per request. It fills the fixed vocabulary only: no dishes, no quotes, no summary.
   Credentials: `TYPESAFE_API_KEY`.
-- **Luna** through the Codex CLI (`codex exec` with a strict output schema) and the owner's own
+- **Luna** (`gpt-6-luna` by default; `--model` takes any Codex slug) through the Codex CLI (`codex exec` with a strict output schema) and the owner's own
   ChatGPT login. Slow per call; meant for comparison runs.
 
 `compare` runs two classifiers on the same reviews and reports agreement per field (usefulness,

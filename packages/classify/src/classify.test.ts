@@ -284,6 +284,21 @@ describe("analysePlace", () => {
     expect(again.profile.summary?.text).toBe("Cozy.");
   });
 
+  it("leaves profiles untouched when every call fails", async () => {
+    const dir = await folderWith(["a"]);
+    const failing: ReviewClassifier = {
+      id: "broken:model",
+      chunkSize: 5,
+      classify: async () => {
+        throw new ClassifierError("model not supported");
+      },
+    };
+    const r = await analysePlace((await loadPlaceFolder(dir))!, failing, { now: () => NOW });
+    expect(r.failed).toBe(1);
+    await expect(readFile(join(dir, "profile.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(join(dir, "profile.broken_model.json"), "utf8")).rejects.toThrow();
+  });
+
   it("does not write profile.json for comparison runs", async () => {
     const dir = await folderWith(["a"]);
     await analysePlace((await loadPlaceFolder(dir))!, fake(), {
