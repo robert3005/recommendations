@@ -206,7 +206,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
         aria-controls={listboxId}
         aria-autocomplete="list"
         aria-label="Add a place"
-        placeholder="Paste a map link, or search for a place…"
+        placeholder="Search, or paste a map link"
         value={query}
         onChange={(e) => {
           const next = e.target.value;
