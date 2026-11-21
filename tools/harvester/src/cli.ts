@@ -10,11 +10,13 @@
  *   pnpm harvest status
  */
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
 import { type RunSettings, runHarvest, summarize } from "./harvest";
 import { DEFAULT_GOSOM_IMAGE, gosomProvider } from "./providers/gosom";
-import type { HarvestInput, HarvestOptions, SearchArea } from "./providers/types";
+import { serpApiProvider } from "./providers/serpapi";
+import type { HarvestInput, HarvestOptions, Provider, SearchArea } from "./providers/types";
 import { defaultDataDir, HarvestStore } from "./store";
 import { inputsFromTakeoutFile } from "./takeout";
 
@@ -29,6 +31,9 @@ Commands:
   status                 Show what the dataset holds
 
 Options:
+  --provider <name>      gosom (default: free, self-hosted, ~5 reviews per place) or
+                         serpapi (paid: pages through full review history)
+  --max-reviews <n>      serpapi: most reviews per place, default 50 (~1 credit per 20)
   --data-dir <dir>       Dataset location (default: $PLACEMARKS_DATA or ~/placemarks-data)
   --geo <lat,lng>        Search around this point            (search)
   --radius <meters>      Search radius, default 2000           (search)
@@ -44,7 +49,18 @@ Options:
   --gosom-image <image>  Docker image, default ${DEFAULT_GOSOM_IMAGE}
   --dry-run              Show what would be fetched, fetch nothing
   -h, --help
+
+SerpApi key: $SERPAPI_KEY, or the file ~/.config/placemarks/serpapi-key (keep it chmod 600).
 `;
+
+async function serpApiKey(): Promise<string> {
+  const fromEnv = process.env.SERPAPI_KEY?.trim();
+  if (fromEnv) return fromEnv;
+  const file = path.join(os.homedir(), ".config", "placemarks", "serpapi-key");
+  const fromFile = (await readFile(file, "utf8").catch(() => "")).trim();
+  if (!fromFile) fail(`--provider serpapi needs $SERPAPI_KEY or a key in ${file}`);
+  return fromFile;
+}
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n\n${USAGE}`);
@@ -71,6 +87,8 @@ async function main(argv: string[]): Promise<void> {
     args: argv,
     allowPositionals: true,
     options: {
+      provider: { type: "string" },
+      "max-reviews": { type: "string" },
       "data-dir": { type: "string" },
       geo: { type: "string" },
       radius: { type: "string" },
@@ -191,10 +209,22 @@ async function main(argv: string[]): Promise<void> {
     workDir: path.join(store.dataDir, ".work"),
     signal: controller.signal,
   };
-  const provider = gosomProvider({
-    image: values["gosom-image"] ?? DEFAULT_GOSOM_IMAGE,
-    ...(values["gosom-bin"] ? { binary: values["gosom-bin"] } : {}),
-  });
+  const providerName = values.provider ?? "gosom";
+  let provider: Provider;
+  if (providerName === "serpapi") {
+    provider = serpApiProvider({
+      apiKey: await serpApiKey(),
+      maxReviews: Math.max(1, numberOption(values["max-reviews"], "max-reviews", 50)),
+      log,
+    });
+  } else if (providerName === "gosom") {
+    provider = gosomProvider({
+      image: values["gosom-image"] ?? DEFAULT_GOSOM_IMAGE,
+      ...(values["gosom-bin"] ? { binary: values["gosom-bin"] } : {}),
+    });
+  } else {
+    fail(`unknown provider "${providerName}" (gosom or serpapi)`);
+  }
 
   const outcome = await runHarvest(store, provider, inputs, options, {
     kind,

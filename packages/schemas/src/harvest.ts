@@ -44,7 +44,7 @@ export const placeSnapshotSchema = z.object({
   rating: z.number().min(0).max(5).optional(),
   ratingCount: z.number().int().nonnegative().optional(),
   /** Count of reviews per star, when the provider has it. */
-  ratingHistogram: z.record(z.enum(["1", "2", "3", "4", "5"]), z.number().int()).optional(),
+  ratingHistogram: z.partialRecord(z.enum(["1", "2", "3", "4", "5"]), z.number().int()).optional(),
   priceLevel: z.number().int().min(1).max(4).optional(),
   /** The provider's raw price text ("$$", "€10–20"), kept when it isn't a plain level. */
   priceText: z.string().optional(),
