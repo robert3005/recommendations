@@ -106,13 +106,15 @@ poison trust in the front door.
 
 ### Explicit non-goals
 
-- **No Google API calls, ever** — no Places API, no geocoding through Google. Importing is
-  parsing files the user exported of their own data: portability, not integration.
+- **No Google calls from the web app** — no Places API, no geocoding through Google. Importing
+  is parsing files the user exported of their own data: portability, not integration. Reviews
+  and richer place facts come from the separate local harvester, which runs on the owner's
+  machine and writes a dataset to disk ([Review Harvest](./harvest.md)).
 - **No fetching pasted URLs.** Link paste reads the string and nothing more.
-- **No shared-list scraping.** Pasting a Google *list* link will not import it: that would
-  require scraping Google's app markup. A link to a *single place* is different and is
-  supported, because the URL string itself carries the coordinates. The supported answer for
-  lists is "run Takeout, drop the archive here."
+- **No shared-list import yet.** Pasting a Google *list* link will not import it. A link to a
+  *single place* is supported, because the URL string itself carries the coordinates. The
+  supported answer for lists is "run Takeout, drop the archive here"; the harvester can then
+  fetch facts and reviews for every place in it.
 - **No live two-way sync with Google Maps.** Import and export stay explicit, file-shaped,
   repeatable actions.
 

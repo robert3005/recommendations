@@ -1,9 +1,10 @@
 # Map Data & Providers
 
 Placemarks reads geographic facts from OpenStreetMap and OSM-derived services, and stores the
-user's own copy of those facts on their places. It builds no second public POI database, calls no
-proprietary API, and scrapes nothing: pasted Google and Apple Maps URLs are parsed locally and
-never fetched. The one network call at paste time is the geocoder `lookup(osmRef)` for OSM element
+user's own copy of those facts on their places. It builds no second public POI database, and the
+web app calls no proprietary API: pasted Google and Apple Maps URLs are parsed locally and never
+fetched. Google Maps reviews are downloaded only by the local harvester, outside the web app, as
+private input for classification ([Review Harvest](./harvest.md)). The one network call at paste time is the geocoder `lookup(osmRef)` for OSM element
 URLs, and it fails politely offline (nothing queues; retry online).
 
 ## Map tiles
@@ -70,6 +71,9 @@ Each provider observes exactly one slice of activity:
   names, or anything the user wrote;
 - the share service sees the documents the owner explicitly publishes
   ([Sharing & Publishing](./sharing.md)).
+- Google sees the harvester's anonymous browsing of the places and searches the owner asks it to
+  fetch, from the owner's machine ([Review Harvest](./harvest.md)); the web app sends Google
+  nothing.
 
 Nothing else leaves the device. Post bodies and list names never go to map or search providers.
 

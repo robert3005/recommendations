@@ -1,0 +1,28 @@
+{
+  "name": "@placemarks/harvester",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Local CLI that downloads Google Maps place facts and reviews into the on-disk harvest dataset (spec/src/harvest.md).",
+  "bin": {
+    "placemarks-harvest": "./src/cli.ts"
+  },
+  "scripts": {
+    "harvest": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@placemarks/domain": "workspace:*",
+    "@placemarks/schemas": "workspace:*",
+    "fflate": "^0.8.2",
+    "papaparse": "^5.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/papaparse": "^5.5.2",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
