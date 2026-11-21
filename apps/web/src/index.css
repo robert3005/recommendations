@@ -129,8 +129,9 @@
 
   /* On the dark plate the paper ground would vanish into the map: controls
      take the raised panel surface so their edge reads. */
-  .maplibregl-ctrl-group {
-    background: var(--color-panel);
+  :root {
+    --map-control-ground: var(--color-panel);
+    --map-control-ring: #4a4a46;
   }
 }
 
@@ -226,12 +227,14 @@ button,
   color: var(--color-ink);
 }
 
-/* The map's own controls join the chrome: pills that lift off the plate. */
-.maplibregl-ctrl-group {
+/* The map's own controls join the chrome: pills that lift off the plate.
+   Specific enough to beat MapLibre's own `.maplibregl-ctrl-group:not(:empty)`
+   ring, whatever order the stylesheets load in. */
+.maplibregl-ctrl.maplibregl-ctrl-group:not(:empty) {
   overflow: hidden;
   border-radius: var(--radius-pill);
-  background: var(--color-paper);
+  background: var(--map-control-ground, var(--color-paper));
   box-shadow:
     var(--shadow-lift),
-    0 0 0 1px var(--color-hairline);
+    0 0 0 1px var(--map-control-ring, var(--color-hairline));
 }
