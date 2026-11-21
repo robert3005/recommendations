@@ -22,11 +22,16 @@ import { useLists, usePlaceView, usePostsFor } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import { geocoder } from "../../providers";
 import { useSelectionStore } from "../../state/projection";
+import { usePhotoUrls, usePlaceInsights } from "../insights/hooks";
+import { type GalleryPhoto, PhotoGallery } from "../insights/PhotoGallery";
+import { PlaceInsightsPanel } from "../insights/PlaceInsightsPanel";
 import { AddToList } from "./AddToList";
 import { enrichPlace } from "./enrichment";
 import { NavLinks } from "./NavLinks";
 import { PlaceFacts } from "./PlaceFacts";
 import { PlaceImage } from "./PlaceImage";
+
+const NO_PHOTOS: never[] = [];
 
 export function PlaceDetailsSheet({
   placeId,
@@ -47,6 +52,10 @@ export function PlaceDetailsSheet({
   const lists = useLists();
   const memberListIds = view?.listIds;
   const posts = usePostsFor({ kind: "place", placeId });
+  // Classified review insights and harvested photos (spec/src/reviews.md),
+  // from the separate insights store; null when the place has none.
+  const insights = usePlaceInsights(place);
+  const photoUrls = usePhotoUrls(insights?.photos ?? NO_PHOTOS);
 
   // Managed focus: enter the card once it has actually rendered (the place
   // resolves asynchronously), return to the invoker on close
@@ -73,6 +82,19 @@ export function PlaceDetailsSheet({
   }, [repo, place]);
 
   if (!place) return null;
+
+  const gallery: GalleryPhoto[] = (insights?.photos ?? []).map((p) => ({
+    id: p.id,
+    src: photoUrls.get(p.id) ?? p.url,
+    credit: { label: `Photo: ${p.attribution.name}`, href: p.attribution.url },
+  }));
+  if (place.imageUrl !== undefined) {
+    gallery.push({
+      id: "wikimedia",
+      src: place.imageUrl,
+      credit: { label: "Wikimedia Commons", href: place.imageUrl },
+    });
+  }
 
   const writePost = () => {
     void repo.createPost({ kind: "place", placeId: place.id }, place.name).then((post) => {
@@ -104,7 +126,11 @@ export function PlaceDetailsSheet({
       </button>
 
       {/* The photo tops the card when the place carries one (spec/src/map-view.md §The place card). */}
-      {place.imageUrl !== undefined ? <PlaceImage url={place.imageUrl} name={place.name} /> : null}
+      {gallery.length > 1 || (insights?.photos.length ?? 0) > 0 ? (
+        <PhotoGallery photos={gallery} name={place.name} />
+      ) : place.imageUrl !== undefined ? (
+        <PlaceImage url={place.imageUrl} name={place.name} />
+      ) : null}
 
       {/* The listing (spec/src/map-view.md §The place card): name, one muted
           category · cuisine line, then the shared fact block — description,
@@ -118,6 +144,7 @@ export function PlaceDetailsSheet({
           {[place.category, place.cuisine].filter(Boolean).join(" · ")}
         </p>
       ) : null}
+      {insights ? <PlaceInsightsPanel source={insights.source} profile={insights.profile} /> : null}
       <PlaceFacts
         description={place.description}
         wikipediaUrl={place.wikipediaUrl}

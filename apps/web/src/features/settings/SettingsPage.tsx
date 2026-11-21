@@ -14,6 +14,7 @@ import {
   lastArchiveExportAt,
   shouldRemindArchiveExport,
 } from "../archive/archive";
+import { InsightsSection } from "../insights/InsightsSection";
 import { ImportSection } from "../interop/ImportSection";
 
 export function SettingsPage() {
@@ -146,6 +147,8 @@ export function SettingsPage() {
         </p>
       </section>
 
+      <InsightsSection />
+
       <section className="mt-6">
         <h2 className="text-sm font-semibold text-ink/70">Storage</h2>
         <p className="mt-1 text-xs text-ink/60">
@@ -190,6 +193,11 @@ export function SettingsPage() {
             <strong>Geocoding:</strong> your typed search text — and, during an import, a row's
             Title and Address — go to the geocoder. Pasted map links are parsed on this device and
             never fetched; only an OSM element link triggers a lookup of that element.
+          </li>
+          <li>
+            <strong>Review photos:</strong> photos loaded with review insights are fetched from the
+            host that serves them, which sees ordinary network metadata. Reviews are classified on
+            your computer by the classify command, not by this app.
           </li>
           <li>
             <strong>Publishing:</strong> the share service receives exactly the documents you

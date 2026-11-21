@@ -53,11 +53,13 @@ A responsive web app with:
 
 - No multi-device sync and no accounts. Two devices are two libraries; the library archive
   ([Import & Export](./interop.md)) moves one to the other.
-- No social graph, feeds, reviews, or ratings.
+- No social graph or feeds, and no reviews written in the app. Other people's reviews are
+  classification input only, never displayed ([Review Insights](./reviews.md)).
 - No proprietary API calls and no link scraping. Parsing files the user exported of their own
   data, and URLs the user pastes, is portability; fetching a vendor's pages is not.
 - No turn-by-turn navigation or routing.
-- No media: posts are text plus places.
+- No media in posts: posts are text plus places. Place cards show harvested photos with credits
+  ([Review Insights](./reviews.md)).
 - One theme: the deep-green console. A light theme is a listed future.
 - No ambient POI discovery: the map never suggests places; the library grows only when the user
   searches, pastes a link, or imports.
