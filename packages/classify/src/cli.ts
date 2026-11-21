@@ -101,7 +101,7 @@ async function main(argv: string[]) {
         all[i]?.push(...rows.filter((r) => r.promptVersion === PROMPT_VERSION));
       }
     }
-    console.log(formatAgreement(compareAnalyses(all[0] ?? [], all[1] ?? [])));
+    console.log(formatAgreement(compareAnalyses(all[0] ?? [], all[1] ?? [], { a: a.id, b: b.id })));
     return;
   }
 

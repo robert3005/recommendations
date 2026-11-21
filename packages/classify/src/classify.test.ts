@@ -348,5 +348,7 @@ describe("compare", () => {
     expect(ag.aspectSentiment).toBe(1);
     expect(ag.disagreements).toEqual([{ reviewId: "2", fields: ["useful", "sentimentWithinOne"] }]);
     expect(formatAgreement(ag)).toContain("| A vs B | |");
+    const none = compareAnalyses([], [], { a: "codex:x", b: "codex:y" });
+    expect(formatAgreement(none)).toMatch(/^codex:x vs codex:y: no reviews analysed by both/);
   });
 });

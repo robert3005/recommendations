@@ -34,7 +34,11 @@ function jaccard(x: string[], y: string[]): number {
 
 const mean = (xs: number[]) => (xs.length === 0 ? 1 : xs.reduce((s, x) => s + x, 0) / xs.length);
 
-export function compareAnalyses(left: ReviewAnalysis[], right: ReviewAnalysis[]): Agreement {
+export function compareAnalyses(
+  left: ReviewAnalysis[],
+  right: ReviewAnalysis[],
+  names: { a?: string; b?: string } = {},
+): Agreement {
   const rightById = new Map(right.map((r) => [r.reviewId, r]));
   const pairs = left.flatMap((l) => {
     const r = rightById.get(l.reviewId);
@@ -97,8 +101,8 @@ export function compareAnalyses(left: ReviewAnalysis[], right: ReviewAnalysis[])
   }
   disagreements.sort((x, y) => y.fields.length - x.fields.length);
   return {
-    a: left[0]?.classifier ?? "a",
-    b: right[0]?.classifier ?? "b",
+    a: names.a ?? left[0]?.classifier ?? "a",
+    b: names.b ?? right[0]?.classifier ?? "b",
     shared: pairs.length,
     useful: mean(m.useful ?? []),
     sentimentExact: mean(m.sentimentExact ?? []),
@@ -116,6 +120,9 @@ export function compareAnalyses(left: ReviewAnalysis[], right: ReviewAnalysis[])
 }
 
 export function formatAgreement(ag: Agreement): string {
+  if (ag.shared === 0) {
+    return `${ag.a} vs ${ag.b}: no reviews analysed by both at the current prompt version. Run compare without --no-run.\n`;
+  }
   const pct = (x: number) => `${Math.round(x * 100)}%`;
   const rows: [string, string][] = [
     ["Reviews compared", String(ag.shared)],
