@@ -156,7 +156,7 @@ describe("PlaceInsightsPanel", () => {
     );
     expect(screen.getByTestId("insights-summary")).toHaveTextContent(/custard tarts/);
     expect(screen.getAllByTestId("aspect-meter")).toHaveLength(5);
-    expect(screen.getByRole("meter", { name: "Food: Excellent" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Food: Excellent, 151 mentions" })).toBeInTheDocument();
     expect(screen.getByTestId("insights-dishes")).toHaveTextContent("Pastel de nata 58");
     expect(screen.getByTestId("insights-tags-occasion")).toHaveTextContent(
       "Quick bite · Solo · Brunch",
