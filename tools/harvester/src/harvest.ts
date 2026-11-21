@@ -7,7 +7,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { googleFeatureId } from "@placemarks/domain";
 import type { HarvestRun, HarvestRunItem } from "@placemarks/schemas";
-import type { HarvestInput, HarvestOptions, Provider } from "./providers/types";
+import type { HarvestInput, HarvestOptions, Provider, ProviderResult } from "./providers/types";
 import type { HarvestStore } from "./store";
 
 export interface RunSettings {
@@ -94,7 +94,7 @@ export async function runHarvest(
     settings.log(
       `Batch ${start / settings.batchSize + 1}: ${batch.length} input(s) via ${provider.name}…`,
     );
-    let result: Awaited<ReturnType<Provider["harvest"]>>;
+    let result: ProviderResult;
     try {
       result = await provider.harvest(batch, options);
     } catch (error) {
@@ -105,6 +105,7 @@ export async function runHarvest(
       break;
     }
 
+    result = onlyTopMatchForUrls(batch, result);
     batch.forEach((input, index) => {
       const places = result.places.filter((p) => p.inputIndex === index);
       const failure = result.failures.find((f) => f.inputIndex === index);
@@ -144,6 +145,24 @@ export async function runHarvest(
   run.finishedAt = now().toISOString();
   await store.appendRun(run);
   return { run, deferred, planned };
+}
+
+/**
+ * A URL input names one place, but a search-style URL can match several
+ * (two branches of one restaurant). Keep the provider's first, top match;
+ * search inputs keep every result.
+ */
+export function onlyTopMatchForUrls(batch: HarvestInput[], result: ProviderResult): ProviderResult {
+  const seen = new Set<number>();
+  return {
+    ...result,
+    places: result.places.filter((place) => {
+      if (batch[place.inputIndex]?.kind !== "url") return true;
+      if (seen.has(place.inputIndex)) return false;
+      seen.add(place.inputIndex);
+      return true;
+    }),
+  };
 }
 
 function item(

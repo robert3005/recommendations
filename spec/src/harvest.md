@@ -33,6 +33,9 @@ the same file-shaped way it imports Takeout. Review text stays on disk.
 | `urls <file>` | Google Maps place URLs, one per line. |
 | `refresh` | Places already in the dataset whose snapshot is older than `--max-age`. |
 
+A URL input names one place, so only the provider's top match is kept for it, even when a
+search-style URL matches several branches. A search input keeps every result.
+
 Harvesting does not add anything to the library. A place still enters the library only through a
 list ([Data Model](./data-model.md) §Membership is existence); the dataset joins to it by the
 Google feature id the library already keeps in `googleUrl`.
@@ -41,12 +44,13 @@ Google feature id the library already keeps in `googleUrl`.
 
 The first provider is the self-hosted [gosom/google-maps-scraper](https://github.com/gosom/google-maps-scraper)
 (MIT), run through Docker at a pinned image tag, or as a local binary. It browses Google Maps
-anonymously and, with extra reviews on, collects what Google shows an anonymous visitor: often a
-few hundred reviews, sometimes a deliberately limited sample. Each snapshot records how complete
+anonymously and collects what Google shows an anonymous visitor. In practice (first real run,
+November 2026) that is a **limited view of about five reviews per place**, whatever the total:
+5 of 56,858 for one deli. Place facts, rating histograms and photos come through in full. Each snapshot records how complete
 the download was (`reviewCollection`: complete, limited or partial, collected against expected).
 
-A paid scraping API (Apify or SerpApi) is the planned fallback for when Google blocks the home
-connection. Providers sit behind one batch-shaped interface, so adding one changes no dataset
+A paid scraping API (Apify or SerpApi) is therefore the route to review volume, not only the
+fallback for when Google blocks the home connection. Providers sit behind one batch-shaped interface, so adding one changes no dataset
 shape.
 
 The harvester is deliberately slow: one browser page at a time, small batches, a jittered pause

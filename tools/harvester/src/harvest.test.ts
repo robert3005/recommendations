@@ -153,6 +153,39 @@ describe("a harvest run", () => {
     ]);
   });
 
+  it("keeps only the top match for a URL input, but every result for a search", async () => {
+    const provider: Provider = {
+      name: "gosom",
+      async harvest(inputs) {
+        const t = new Date().toISOString();
+        return {
+          places: inputs.flatMap((_, inputIndex) => [
+            { inputIndex, place: place(KEY_A, "Branch 1", t), reviews: [], photos: [] },
+            { inputIndex, place: place(KEY_B, "Branch 2", t), reviews: [], photos: [] },
+          ]),
+          failures: [],
+        };
+      },
+    };
+    const url = await runHarvest(
+      store,
+      provider,
+      [{ query: "https://www.google.com/maps/search/Bar+Douro", kind: "url" }],
+      options(),
+      settings(),
+    );
+    expect(url.run.items[0]?.sourcePlaceKeys).toEqual([KEY_A]);
+    expect(await store.readPlace(KEY_B)).toBeUndefined();
+    const search = await runHarvest(
+      store,
+      provider,
+      [{ query: "Bar Douro", kind: "search" }],
+      options(),
+      settings({ kind: "search", maxAgeDays: 0 }),
+    );
+    expect(search.run.items[0]?.sourcePlaceKeys).toEqual([KEY_A, KEY_B]);
+  });
+
   it("skips fresh places without calling the provider", async () => {
     const { provider, calls } = fakeProvider({
       [KEY_A]: (t) => ({ place: place(KEY_A, "A", t), reviews: [], photos: [] }),

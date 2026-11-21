@@ -92,6 +92,15 @@ describe("normalizing scraper output", () => {
     });
   });
 
+  it("treats gosom's status as an editorial blurb unless it reports a closure", () => {
+    expect(normalized.place.editorialSummary).toBe("Lively Portuguese small plates");
+    expect(normalized.place.businessStatus).toBeUndefined();
+    const closed = normalizeGosomEntry({ ...first, status: "Permanently closed" }, fetchedAt);
+    if ("error" in closed) throw new Error(closed.error);
+    expect(closed.place.businessStatus).toBe("Permanently closed");
+    expect(closed.place.editorialSummary).toBeUndefined();
+  });
+
   it("records how complete the review download was", () => {
     expect(normalized.place.reviewCollection).toEqual({
       status: "limited",

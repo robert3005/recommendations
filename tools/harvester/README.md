@@ -36,7 +36,8 @@ batch stops the run instead of retrying into a block.
 
 ## Completeness
 
-Google shows anonymous visitors a sample of reviews, sometimes a deliberately limited one. Each
+Google shows anonymous visitors a limited view: in the first real run that was about 5 reviews
+per place, however many exist. Place facts, rating histograms and photos come through in full. Each
 `place.json` records `reviewCollection`: `complete`, `limited` or `partial`, with collected and
 expected counts.
 

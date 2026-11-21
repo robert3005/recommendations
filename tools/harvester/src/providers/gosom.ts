@@ -139,6 +139,9 @@ export function buildScraperArgs(
 
 // ---------- Normalization ----------
 
+const isClosure = (status: string | undefined) =>
+  /\b(permanently|temporarily) closed\b|^closed$/i.test(status?.trim() ?? "");
+
 export function sourcePlaceKeyOf(entry: GosomEntry): string | undefined {
   const candidates = [
     entry.data_id?.toLowerCase(),
@@ -317,7 +320,12 @@ export function normalizeGosomEntry(
       ? { openingHours: openingHoursLines(entry.open_hours ?? undefined) }
       : {}),
     ...(nonEmpty(entry.description) ? { description: nonEmpty(entry.description) } : {}),
-    ...(nonEmpty(entry.status) ? { businessStatus: nonEmpty(entry.status) } : {}),
+    // gosom's `status` is usually Google's editorial subtitle; only closures are a status.
+    ...(nonEmpty(entry.status)
+      ? isClosure(entry.status)
+        ? { businessStatus: nonEmpty(entry.status) }
+        : { editorialSummary: nonEmpty(entry.status) }
+      : {}),
     ...(nonEmpty(entry.timezone) ? { timezone: nonEmpty(entry.timezone) } : {}),
     reviewCollection: {
       status: collection ? collectionStatus(collection.status) : "unknown",

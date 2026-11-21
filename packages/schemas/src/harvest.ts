@@ -53,7 +53,10 @@ export const placeSnapshotSchema = z.object({
   phone: z.string().optional(),
   openingHours: z.array(z.string()).optional(), // "Monday: 9 AM–5 PM"
   description: z.string().optional(),
+  /** Open/closed state when the provider reports one ("Permanently closed"). */
   businessStatus: z.string().optional(),
+  /** Google's one-line editorial blurb ("Iconic Jewish deli for classic eats"). */
+  editorialSummary: z.string().optional(),
   timezone: z.string().optional(),
   /** How complete the review download was (see HarvestReviewCollection). */
   reviewCollection: z
