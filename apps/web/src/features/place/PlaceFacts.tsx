@@ -76,7 +76,7 @@ export function PlaceFacts({
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Text from Wikipedia, licensed CC BY-SA"
-                className="text-[11px] whitespace-nowrap text-ink/55 underline"
+                className="text-[11px] whitespace-nowrap text-ink/60 underline"
                 data-testid="place-description-credit"
               >
                 Wikipedia

@@ -83,7 +83,7 @@ export function BlockerDialog({
         <div className="mt-4 flex justify-end">
           <button
             type="button"
-            className="rounded-crisp bg-ink px-3 py-1.5 text-sm font-medium text-paper"
+            className="rounded-pill bg-ink px-3 py-1.5 text-sm font-medium text-paper"
             onClick={onClose}
             data-testid="blocker-dialog-close"
           >

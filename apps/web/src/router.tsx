@@ -118,7 +118,7 @@ function RootLayout() {
             type="button"
             data-testid="pane-reopen"
             onClick={() => setDesktop("split")}
-            className="absolute bottom-16 left-3 z-10 hidden rounded-crisp border border-hairline bg-paper px-3 py-1.5 text-sm font-medium text-ink md:block"
+            className="absolute bottom-16 left-3 z-10 hidden rounded-pill border border-hairline bg-paper px-3.5 py-1.5 text-sm font-medium text-ink shadow-lift md:block"
           >
             {readOnly ? "⟩ Shared page" : "⟩ Lists"}
           </button>
@@ -142,7 +142,7 @@ function RootLayout() {
             wordmark home affordance, the add-a-place field filling the rest,
             and — only while an import batch is reviewing — the review pill.
             There is no persistent nav; Settings hides behind the gear chip. */}
-        <header className="flex shrink-0 items-center gap-2 border-b border-hairline px-3 py-2">
+        <header className="flex shrink-0 items-center gap-2.5 border-b border-hairline px-4 py-2.5">
           {readOnly ? (
             <div
               className="min-w-0 flex-1 font-display text-sm font-medium text-ink"
@@ -155,7 +155,7 @@ function RootLayout() {
               <Link
                 to="/"
                 data-testid="home-link"
-                className="shrink-0 font-display text-sm font-semibold tracking-tight text-ink"
+                className="shrink-0 font-display text-[15px] font-semibold tracking-tight text-ink"
               >
                 Placemarks
               </Link>
@@ -182,7 +182,7 @@ function RootLayout() {
             data-testid="pane-collapse"
             disabled={atMapEnd}
             onClick={collapse}
-            className="rounded-crisp px-2 py-1 text-sm text-ink hover:bg-ink/10 disabled:opacity-30"
+            className="rounded-pill px-2 py-1 text-sm text-ink hover:bg-ink/10 disabled:opacity-30"
           >
             ⟨
           </button>
@@ -193,7 +193,7 @@ function RootLayout() {
             data-testid="pane-expand"
             disabled={atContentEnd}
             onClick={expand}
-            className="rounded-crisp px-2 py-1 text-sm text-ink hover:bg-ink/10 disabled:opacity-30"
+            className="rounded-pill px-2 py-1 text-sm text-ink hover:bg-ink/10 disabled:opacity-30"
           >
             ⟩
           </button>
@@ -225,7 +225,7 @@ function RootLayout() {
           aria-pressed={onSettings}
           data-testid="settings-gear"
           onClick={toggleSettings}
-          className={`absolute bottom-3 left-3 z-30 rounded-crisp border border-hairline px-2.5 py-1.5 text-sm ${
+          className={`absolute bottom-3 left-3 z-30 rounded-pill border border-hairline px-2.5 py-1.5 text-sm shadow-lift ${
             onSettings ? "bg-ink text-paper" : "bg-paper text-ink"
           }`}
         >

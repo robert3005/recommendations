@@ -148,7 +148,7 @@ export function ExportMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        className="rounded-crisp border border-hairline px-3 py-1 text-sm font-medium text-ink hover:bg-ink/5"
+        className="rounded-pill border border-hairline px-3 py-1 text-sm font-medium text-ink hover:bg-ink/5"
         data-testid="export-menu"
         onClick={() => {
           if (open) close(false);
@@ -171,7 +171,7 @@ export function ExportMenu({
           id={menuId}
           role="menu"
           aria-label="Export"
-          className="absolute top-full right-0 z-30 mt-1 w-56 rounded-crisp border border-hairline bg-paper py-1"
+          className="absolute top-full right-0 z-30 mt-1 w-56 rounded-crisp border border-hairline bg-panel py-1 shadow-lift"
           onKeyDown={onMenuKeyDown}
         >
           {artefacts.map((item, index) => menuItem(item, index))}
@@ -181,10 +181,7 @@ export function ExportMenu({
             aria-labelledby={handoffLabelId}
             className="mt-1 border-t border-hairline pt-1"
           >
-            <p
-              id={handoffLabelId}
-              className="px-3 pt-1 pb-0.5 text-[10px] font-medium tracking-wide text-ink/50 uppercase"
-            >
+            <p id={handoffLabelId} className="label-mono px-3 pt-1 pb-0.5 text-ink/60">
               Guided handoffs
             </p>
             {handoffs.map((item, index) => menuItem(item, artefacts.length + index))}
@@ -218,7 +215,7 @@ export function ListViewToggle({
       className={
         view === key
           ? "text-ink underline decoration-hairline underline-offset-4"
-          : "text-ink/50 hover:text-ink"
+          : "text-ink/60 hover:text-ink"
       }
     >
       {label}
@@ -406,7 +403,7 @@ export function ListPage() {
               value={name ?? list.name}
               onChange={(e) => setName(e.target.value)}
               aria-label="List name"
-              className="w-full rounded-crisp border border-hairline bg-paper px-2 py-1 font-display text-lg font-semibold text-ink"
+              className="w-full rounded-pill border border-hairline bg-paper px-2 py-1 font-display text-lg font-semibold text-ink"
               data-testid="list-name-input"
             />
             {/* Marker change swaps within free pairs (spec/src/data-model.md §Markers). */}
@@ -418,7 +415,7 @@ export function ListPage() {
             />
           </div>
         ) : (
-          <h1 className="flex min-w-0 items-center gap-2 font-display text-xl font-semibold tracking-tight text-ink">
+          <h1 className="flex min-w-0 items-center gap-2 font-display text-[1.75rem] leading-tight font-medium tracking-tight text-ink">
             <span data-testid="list-marker" data-color={list.marker.color}>
               <MarkerGlyph marker={list.marker} size={18} />
             </span>
@@ -430,7 +427,7 @@ export function ListPage() {
           <ExportMenu artefacts={artefactItems} handoffs={handoffItems} />
           <button
             type="button"
-            className="rounded-crisp border border-hairline px-3 py-1 text-sm font-medium text-ink"
+            className="rounded-pill border border-hairline px-3 py-1 text-sm font-medium text-ink"
             data-testid="edit-list"
             onClick={() => {
               if (editing) {
@@ -495,7 +492,7 @@ export function ListPage() {
                   <button
                     type="button"
                     aria-label="Move up"
-                    className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
+                    className="rounded-pill px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
                     onClick={(e) => {
                       e.stopPropagation();
                       move(row, -1);
@@ -506,7 +503,7 @@ export function ListPage() {
                   <button
                     type="button"
                     aria-label="Move down"
-                    className="rounded-crisp px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
+                    className="rounded-pill px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
                     onClick={(e) => {
                       e.stopPropagation();
                       move(row, 1);
@@ -516,7 +513,7 @@ export function ListPage() {
                   </button>
                   <button
                     type="button"
-                    className="rounded-crisp px-1.5 py-0.5 text-xs text-accent-vermilion-deep hover:bg-ink/5"
+                    className="rounded-pill px-1.5 py-0.5 text-xs text-accent-vermilion-deep hover:bg-ink/5"
                     data-testid="remove-from-list"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -544,7 +541,7 @@ export function ListPage() {
         <div className="mt-6">
           <button
             type="button"
-            className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-accent-vermilion-deep hover:bg-ink/5"
+            className="rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-accent-vermilion-deep hover:bg-ink/5"
             data-testid="delete-list"
             onClick={() =>
               guarded("Can’t delete this list yet", () =>
@@ -568,7 +565,7 @@ export function ListPage() {
             <h2 className="font-display text-sm font-semibold text-ink">Posts</h2>
             <button
               type="button"
-              className="rounded-crisp border border-hairline px-2.5 py-1 text-xs font-medium text-ink"
+              className="rounded-pill border border-hairline px-2.5 py-1 text-xs font-medium text-ink"
               data-testid="new-post"
               onClick={newPost}
             >

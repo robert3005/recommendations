@@ -120,7 +120,7 @@ export function PlaceDetailsSheet({
         type="button"
         onClick={clearSelection}
         aria-label="Close"
-        className="absolute top-2 right-3 rounded-crisp bg-paper/70 p-1 text-ink/60 hover:bg-ink/10 hover:text-ink"
+        className="absolute top-2.5 right-2.5 z-10 flex size-7 items-center justify-center rounded-pill border border-hairline bg-paper text-xs text-ink/70 shadow-lift hover:text-ink"
       >
         ✕
       </button>
@@ -136,7 +136,10 @@ export function PlaceDetailsSheet({
           category · cuisine line, then the shared fact block — description,
           address, compact fact rows. No coordinates: the pin is the
           coordinate display. Facts are the user's copy (spec/src/data-model.md). */}
-      <h2 className="pr-8 font-display text-base font-semibold text-ink" data-testid="place-name">
+      <h2
+        className="pr-8 font-display text-2xl leading-tight font-medium tracking-tight text-ink"
+        data-testid="place-name"
+      >
         {place.name}
       </h2>
       {place.category || place.cuisine ? (
@@ -163,7 +166,7 @@ export function PlaceDetailsSheet({
       {/* Add to list — joining a list is how a place enters the library
           (membership is existence, spec/src/data-model.md). */}
       <div className="mt-4">
-        <h3 className="text-xs font-semibold tracking-wide text-ink/60 uppercase">Lists</h3>
+        <h3 className="eyebrow">Lists</h3>
         <AddToList
           source={{ kind: "existing", placeId: place.id }}
           lists={lists}
@@ -175,11 +178,11 @@ export function PlaceDetailsSheet({
       {/* The place's posts, plus Write a post (spec/src/posts.md §Creating). */}
       <div className="mt-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold tracking-wide text-ink/60 uppercase">Posts</h3>
+          <h3 className="eyebrow">Posts</h3>
           <button
             type="button"
             onClick={writePost}
-            className="rounded-crisp border border-hairline px-2 py-0.5 text-xs font-medium text-ink"
+            className="rounded-pill border border-hairline px-2 py-0.5 text-xs font-medium text-ink"
             data-testid="write-post"
           >
             ✍ Write a post

@@ -35,13 +35,15 @@ export function ListsPage() {
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="lists-page">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-xl font-semibold tracking-tight text-ink">Lists</h1>
+        <h1 className="font-display text-[1.75rem] leading-tight font-medium tracking-tight text-ink">
+          Lists
+        </h1>
         <div className="flex items-center gap-2">
           {creating ? null : (
             <button
               type="button"
               onClick={() => setCreating(true)}
-              className="rounded-crisp bg-ink px-3 py-1.5 text-sm font-medium text-paper"
+              className="rounded-pill bg-ink px-3.5 py-1.5 text-sm font-medium text-paper shadow-lift"
               data-testid="new-list"
             >
               + New list
@@ -50,7 +52,7 @@ export function ListsPage() {
           <Link
             to="/settings"
             hash="import"
-            className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-ink"
+            className="rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-ink"
             data-testid="import-entry"
           >
             ⤓ Import

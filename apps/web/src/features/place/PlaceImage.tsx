@@ -20,7 +20,7 @@ export function PlaceImage({ url, name }: { url: string; name: string }) {
         onError={() => setFailedUrl(url)}
         className="aspect-[3/2] w-full rounded-crisp border border-hairline object-cover"
       />
-      <figcaption className="mt-0.5 text-right text-[10px] text-ink/55">
+      <figcaption className="mt-0.5 text-right text-[10px] text-ink/60">
         <a
           href={url}
           target="_blank"

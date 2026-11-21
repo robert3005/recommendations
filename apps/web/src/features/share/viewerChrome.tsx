@@ -22,7 +22,7 @@ export function ViewerLoading({ docKey, label }: { docKey: string; label: string
   return (
     <>
       <EmptyPublishedDocProjection docKey={docKey} />
-      <p className="p-6 text-sm text-ink/55">{label}</p>
+      <p className="p-6 text-sm text-ink/60">{label}</p>
     </>
   );
 }
@@ -58,7 +58,7 @@ export function ViewerError({ docKey, error }: { docKey: string; error: unknown 
 export function OdblAttribution({ places }: { places: readonly PublishedPlace[] }) {
   if (!places.some((place) => place.osmRef !== undefined)) return null;
   return (
-    <p className="mt-6 text-[11px] text-ink/55" data-testid="odbl-attribution">
+    <p className="mt-6 text-[11px] text-ink/60" data-testid="odbl-attribution">
       Includes place data from{" "}
       <a
         href="https://www.openstreetmap.org/copyright"
@@ -81,7 +81,7 @@ export function OsmPlaceLink({ place }: { place: PublishedPlace }) {
       href={osmElementUrl(place.osmRef)}
       target="_blank"
       rel="noopener noreferrer"
-      className="text-[11px] text-ink/55 underline"
+      className="text-[11px] text-ink/60 underline"
     >
       OpenStreetMap
     </a>

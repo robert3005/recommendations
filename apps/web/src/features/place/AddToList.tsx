@@ -86,7 +86,7 @@ export function AddToList({
           {memberLists.map((list) => (
             <li
               key={list.id}
-              className="inline-flex items-center gap-1 rounded-crisp border border-hairline px-2 py-0.5"
+              className="inline-flex items-center gap-1 rounded-pill border border-hairline px-2 py-0.5"
             >
               <MarkerGlyph marker={list.marker} size={12} />
               {list.name}
@@ -123,7 +123,7 @@ export function AddToList({
             <button
               type="button"
               disabled={busy}
-              className="rounded-crisp bg-ink px-2 py-1 font-medium text-paper disabled:opacity-40"
+              className="rounded-pill bg-ink px-2 py-1 font-medium text-paper disabled:opacity-40"
               data-testid={`${idPrefix}-use-existing`}
               onClick={() =>
                 void add(
@@ -137,7 +137,7 @@ export function AddToList({
             <button
               type="button"
               disabled={busy}
-              className="rounded-crisp border border-hairline px-2 py-1 font-medium text-ink disabled:opacity-40"
+              className="rounded-pill border border-hairline px-2 py-1 font-medium text-ink disabled:opacity-40"
               data-testid={`${idPrefix}-force-new`}
               onClick={() => void add({ kind: "existing", listId: conflict.listId }, source, true)}
             >

@@ -62,7 +62,7 @@ export function ImportSection() {
           type="button"
           disabled={busy}
           onClick={() => fileRef.current?.click()}
-          className="rounded-crisp bg-ink px-3 py-1.5 text-sm font-medium text-paper disabled:opacity-40"
+          className="rounded-pill bg-ink px-3 py-1.5 text-sm font-medium text-paper disabled:opacity-40"
           data-testid="import-places"
         >
           {busy ? "Importing…" : "Import places…"}

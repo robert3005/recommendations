@@ -56,7 +56,7 @@ export function InsightsSection() {
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-ink/70"
+          className="rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-ink/70"
           data-testid="load-insights"
         >
           Load data folder…
@@ -64,7 +64,7 @@ export function InsightsSection() {
         <button
           type="button"
           onClick={() => void clearInsights().then(() => setMessage("Review insights cleared."))}
-          className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-ink/70"
+          className="rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-ink/70"
           data-testid="clear-insights"
         >
           Clear
@@ -73,7 +73,7 @@ export function InsightsSection() {
           <button
             type="button"
             onClick={() => void attachSamples()}
-            className="rounded-crisp border border-dashed border-hairline px-3 py-1.5 text-sm font-medium text-ink/60"
+            className="rounded-pill border border-dashed border-hairline px-3 py-1.5 text-sm font-medium text-ink/60"
             data-testid="attach-sample-insights"
           >
             Attach sample insights (dev)

@@ -48,7 +48,9 @@ export function PublishedPostContent({ slug }: { slug: string }) {
   return (
     <article className="p-4" data-testid="published-post">
       <header>
-        <h1 className="font-display text-xl text-ink">{document.title}</h1>
+        <h1 className="font-display text-[1.75rem] leading-tight font-medium tracking-tight text-ink">
+          {document.title}
+        </h1>
         {document.list ? (
           <p className="mt-1 text-xs text-ink/70" data-testid="published-post-list">
             From the list{" "}
@@ -75,7 +77,7 @@ export function PublishedPostContent({ slug }: { slug: string }) {
       </div>
       {document.places.length > 0 ? (
         <section className="mt-5" aria-label="Places in this post">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-ink/55">Places</h2>
+          <h2 className="eyebrow">Places</h2>
           <ul className="mt-1 space-y-1">
             {document.places.map((place) => (
               <li key={place.id} id={`place-${place.id}`} data-testid="published-place">
@@ -91,7 +93,7 @@ export function PublishedPostContent({ slug }: { slug: string }) {
                   onClick={() => select(place.id)}
                   aria-current={selectedId === place.id ? "true" : undefined}
                   data-selected={selectedId === place.id || undefined}
-                  className={`w-full rounded-crisp border px-2 py-1 text-left text-xs ${
+                  className={`w-full rounded-pill border px-2 py-1 text-left text-xs ${
                     selectedId === place.id ? "border-ink" : "border-hairline"
                   }`}
                 >
@@ -99,7 +101,7 @@ export function PublishedPostContent({ slug }: { slug: string }) {
                   {place.category || place.cuisine ? (
                     <>
                       {" "}
-                      <span className="capitalize text-ink/55">
+                      <span className="capitalize text-ink/60">
                         {[place.category, place.cuisine].filter(Boolean).join(" · ")}
                       </span>
                     </>

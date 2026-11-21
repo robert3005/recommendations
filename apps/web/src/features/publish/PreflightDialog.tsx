@@ -65,10 +65,10 @@ export function PreflightDialog({
           <li key={place.id} data-testid="preflight-place">
             <span className="font-medium text-ink">{place.name}</span> · {String(place.lat)},{" "}
             {String(place.lng)}
-            {place.address ? <span className="text-ink/55"> · {place.address}</span> : null}
+            {place.address ? <span className="text-ink/60"> · {place.address}</span> : null}
           </li>
         ))}
-        {places.length === 0 ? <li className="text-ink/55">No places.</li> : null}
+        {places.length === 0 ? <li className="text-ink/60">No places.</li> : null}
       </ul>
       {body !== undefined ? (
         <pre
@@ -95,7 +95,7 @@ export function PreflightDialog({
           ))}
         </fieldset>
       ) : null}
-      <p className="mt-2 text-[11px] text-ink/55">
+      <p className="mt-2 text-[11px] text-ink/60">
         Nothing leaves this device until you press Publish.
       </p>
       <div className="mt-2 flex gap-2">
@@ -103,7 +103,7 @@ export function PreflightDialog({
           type="button"
           disabled={busy}
           onClick={onConfirm}
-          className="rounded-crisp bg-ink px-2.5 py-1 font-medium text-paper disabled:opacity-40"
+          className="rounded-pill bg-ink px-2.5 py-1 font-medium text-paper disabled:opacity-40"
           data-testid={confirmTestId}
         >
           Publish
@@ -111,7 +111,7 @@ export function PreflightDialog({
         <button
           type="button"
           onClick={onCancel}
-          className="rounded-crisp px-2.5 py-1 text-ink/70 hover:bg-hairline"
+          className="rounded-pill px-2.5 py-1 text-ink/70 hover:bg-hairline"
         >
           Cancel
         </button>

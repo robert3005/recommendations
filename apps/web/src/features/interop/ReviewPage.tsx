@@ -173,7 +173,7 @@ export function ReviewPage() {
           <button
             type="button"
             disabled={busy}
-            className="rounded-crisp border border-hairline px-2 py-1 font-medium text-ink/70 disabled:opacity-40"
+            className="rounded-pill border border-hairline px-2 py-1 font-medium text-ink/70 disabled:opacity-40"
             data-testid="review-retry-geocoding"
             onClick={() => void retryGeocoding()}
           >
@@ -216,7 +216,7 @@ export function ReviewPage() {
                   {(item.candidates ?? []).length > 0 ? (
                     <div className="flex items-center gap-1">
                       <select
-                        className="rounded-crisp border border-hairline px-2 py-1 text-xs"
+                        className="rounded-pill border border-hairline px-2 py-1 text-xs"
                         value={candidateChoice}
                         aria-label={`Link ${item.raw.title} to a candidate`}
                         data-testid="review-candidates"
@@ -238,7 +238,7 @@ export function ReviewPage() {
                       </select>
                       <button
                         type="button"
-                        className="rounded-crisp border border-hairline px-2 py-1 text-xs font-medium text-ink/70 disabled:opacity-40"
+                        className="rounded-pill border border-hairline px-2 py-1 text-xs font-medium text-ink/70 disabled:opacity-40"
                         disabled={busy || candidateChoice === ""}
                         data-testid="review-try-candidate"
                         onClick={() =>
@@ -262,7 +262,7 @@ export function ReviewPage() {
                       onChange={(event) => setLatitude(event.target.value)}
                       aria-label={`Latitude for ${item.raw.title}`}
                       placeholder="Latitude"
-                      className="w-24 rounded-crisp border border-hairline px-2 py-1 text-xs"
+                      className="w-24 rounded-pill border border-hairline px-2 py-1 text-xs"
                     />
                     <input
                       type="number"
@@ -273,11 +273,11 @@ export function ReviewPage() {
                       onChange={(event) => setLongitude(event.target.value)}
                       aria-label={`Longitude for ${item.raw.title}`}
                       placeholder="Longitude"
-                      className="w-24 rounded-crisp border border-hairline px-2 py-1 text-xs"
+                      className="w-24 rounded-pill border border-hairline px-2 py-1 text-xs"
                     />
                     <button
                       type="button"
-                      className="rounded-crisp border border-hairline px-2 py-1 text-xs font-medium text-ink/70 disabled:opacity-40"
+                      className="rounded-pill border border-hairline px-2 py-1 text-xs font-medium text-ink/70 disabled:opacity-40"
                       disabled={busy || latitude.trim() === "" || longitude.trim() === ""}
                       data-testid="review-place-at-coordinates"
                       onClick={() =>
@@ -293,7 +293,7 @@ export function ReviewPage() {
                   </div>
                   <button
                     type="button"
-                    className="rounded-crisp border border-hairline px-2 py-1 text-xs font-medium text-ink/70"
+                    className="rounded-pill border border-hairline px-2 py-1 text-xs font-medium text-ink/70"
                     data-testid="review-place-on-map"
                     aria-pressed={placing}
                     onClick={() => {
@@ -313,7 +313,7 @@ export function ReviewPage() {
                   <button
                     type="button"
                     disabled={busy}
-                    className="rounded-crisp px-2 py-1 text-xs text-ink/60 hover:bg-ink/5 disabled:opacity-40"
+                    className="rounded-pill px-2 py-1 text-xs text-ink/60 hover:bg-ink/5 disabled:opacity-40"
                     data-testid="review-skip"
                     onClick={() => void resolve(item.id, { kind: "skip" })}
                   >
@@ -331,7 +331,7 @@ export function ReviewPage() {
                         <button
                           type="button"
                           disabled={busy}
-                          className="rounded-crisp border border-hairline px-2 py-1 font-medium text-ink/70 disabled:opacity-40"
+                          className="rounded-pill border border-hairline px-2 py-1 font-medium text-ink/70 disabled:opacity-40"
                           data-testid="review-conflict-use-existing"
                           onClick={() =>
                             void resolve(item.id, conflict.choice, {
@@ -345,7 +345,7 @@ export function ReviewPage() {
                         <button
                           type="button"
                           disabled={busy}
-                          className="rounded-crisp border border-hairline px-2 py-1 font-medium text-ink/70 disabled:opacity-40"
+                          className="rounded-pill border border-hairline px-2 py-1 font-medium text-ink/70 disabled:opacity-40"
                           data-testid="review-conflict-force-new"
                           onClick={() =>
                             void resolve(item.id, conflict.choice, { kind: "force-new" })

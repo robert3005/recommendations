@@ -32,7 +32,7 @@ export function NewListForm({ submitLabel, submitTestId, onCreate, onCancel }: N
             onCreate(name.trim());
           }
         }}
-        className="min-w-0 flex-1 rounded-crisp border border-hairline bg-paper px-2 py-1 text-sm text-ink"
+        className="min-w-0 flex-1 rounded-pill border border-hairline bg-paper px-2 py-1 text-sm text-ink"
       />
       <button
         type="button"
@@ -43,7 +43,7 @@ export function NewListForm({ submitLabel, submitTestId, onCreate, onCancel }: N
           setName("");
           onCreate(trimmed);
         }}
-        className="shrink-0 rounded-crisp bg-ink px-2 py-1 text-xs font-medium text-paper disabled:opacity-40"
+        className="shrink-0 rounded-pill bg-ink px-2 py-1 text-xs font-medium text-paper disabled:opacity-40"
         data-testid={submitTestId}
       >
         {submitLabel}
@@ -51,7 +51,7 @@ export function NewListForm({ submitLabel, submitTestId, onCreate, onCancel }: N
       <button
         type="button"
         onClick={onCancel}
-        className="shrink-0 rounded-crisp px-2 py-1 text-xs text-ink hover:bg-ink/10"
+        className="shrink-0 rounded-pill px-2 py-1 text-xs text-ink hover:bg-ink/10"
       >
         Cancel
       </button>

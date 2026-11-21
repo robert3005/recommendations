@@ -56,11 +56,13 @@ export function PublishedListContent({ slug }: { slug: string }) {
     <article className="p-4" data-testid="published-list">
       <header className="flex items-center gap-2">
         <MarkerGlyph marker={document.marker} />
-        <h1 className="font-display text-xl text-ink">{document.title}</h1>
+        <h1 className="font-display text-[1.75rem] leading-tight font-medium tracking-tight text-ink">
+          {document.title}
+        </h1>
       </header>
       {document.posts && document.posts.length > 0 ? (
         <nav aria-label="Posts about this list" className="mt-3">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-ink/55">Posts</h2>
+          <h2 className="eyebrow">Posts</h2>
           <ul className="mt-1 space-y-1">
             {document.posts.map((post) => (
               <li key={post.url}>
@@ -119,7 +121,7 @@ export function PublishedListContent({ slug }: { slug: string }) {
         ))}
       </ul>
       {document.places.length === 0 ? (
-        <p className="mt-4 text-sm text-ink/55">This list was published empty.</p>
+        <p className="mt-4 text-sm text-ink/60">This list was published empty.</p>
       ) : null}
       <OdblAttribution places={document.places} />
     </article>

@@ -84,7 +84,7 @@ export function PhotoGallery({ photos, name }: { photos: GalleryPhoto[]; name: s
         </div>
       ) : null}
       <figcaption
-        className="mt-0.5 text-right text-[10px] text-ink/55"
+        className="mt-0.5 text-right text-[10px] text-ink/60"
         data-testid="place-gallery-credit"
       >
         <Credit credit={hero.credit} />
@@ -138,7 +138,7 @@ function Lightbox({
   if (!photo) return null;
 
   const navClass =
-    "rounded-crisp border border-hairline bg-paper px-3 py-1.5 text-sm text-ink hover:bg-ink/10";
+    "rounded-pill border border-hairline bg-paper px-3 py-1.5 text-sm text-ink hover:bg-ink/10";
   // Portalled to <body> so no ancestor's overflow or stacking context clips it.
   return createPortal(
     <div

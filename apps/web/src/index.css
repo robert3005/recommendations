@@ -1,67 +1,117 @@
 @import "tailwindcss";
 @import "maplibre-gl/dist/maplibre-gl.css";
+@import "./fonts.css";
 @plugin "@tailwindcss/typography";
 
 /**
- * The visual system (spec/src/design.md): instrument-panel retrofuturism.
- * The deep-green console: a dark forest ground, warm off-white ink, 1px
- * hairlines, one sharp 2px radius, and the eight accent colours — the
- * list-marker palette — as the only hues in the app. The basemap stays the
- * light plate, so the console frames a lit chart. One theme; a LIGHT theme
- * is a listed future.
+ * The visual system (spec/src/design.md): the quiet paper. A warm off-white
+ * ground, near-black ink, 1px hairlines, and the eight accent colours — the
+ * list-marker palette — as the only loud hues in the app. The chrome is light
+ * like the basemap plate, so notebook and map read as one surface and the
+ * pins carry the colour. One theme; a dark theme is a listed future.
  *
  * These are Tailwind `@theme` tokens, so they generate real utilities:
- * `bg-paper`, `text-ink`, `border-hairline`, `bg-accent-orange`,
- * `text-accent-cobalt-deep`, `rounded-crisp`. Components use those names —
- * never a raw hex.
+ * `bg-paper`, `text-ink`, `border-hairline`, `bg-wash`, `bg-signal`,
+ * `text-accent-cobalt-deep`, `rounded-crisp`, `rounded-pill`, `shadow-lift`.
+ * Components use those names — never a raw hex.
  */
 @theme {
-  /* Paper and ink — the one background (deep forest, not black), and the
-     full-strength foreground (warm off-white). */
-  --color-paper: #223129;
-  --color-ink: #e9efe9;
+  /* Paper and ink — the one background (warm off-white, not pure white) and
+     the full-strength foreground (warm near-black). */
+  --color-paper: #fcfcf9;
+  --color-ink: #171716;
 
   /* Panel — the one raised surface, for popups and menus that must sit
      above the ground. Everything else stays on paper. */
-  --color-panel: #2b3c33;
+  --color-panel: #ffffff;
+
+  /* Wash — the quiet fill behind section labels and status chips. */
+  --color-wash: #ebebe8;
 
   /* Hairline — every rule and border, at 1px. */
-  --color-hairline: #41544a;
+  --color-hairline: #dfdfdd;
+
+  /* Signal — the one colour for data marks (meter fills, the label square)
+     and focus. It is the cobalt accent, named for its role. */
+  --color-signal: #2457e6;
 
   /*
    * The eight accents. Bright fills are for markers, toggles, and large type;
    * the -deep variants are the text-safe form — small text on paper (≈4.5:1)
-   * — so on the dark ground they are LIGHTENED, not darkened. The canonical
-   * fills live in @placemarks/domain ACCENT_COLORS; these tokens mirror them.
+   * — darkened against the light ground. The canonical fills live in
+   * @placemarks/domain ACCENT_COLORS; these tokens mirror them.
    */
   --color-accent-orange: #f97316;
-  --color-accent-orange-deep: #fba45c;
+  --color-accent-orange-deep: #b4500c;
   --color-accent-cobalt: #2457e6;
-  --color-accent-cobalt-deep: #7fa0f5;
+  --color-accent-cobalt-deep: #1d44c4;
   --color-accent-green: #17a34a;
-  --color-accent-green-deep: #5ccb8a;
+  --color-accent-green-deep: #0f7a36;
   --color-accent-magenta: #d6219c;
-  --color-accent-magenta-deep: #ec72c4;
+  --color-accent-magenta-deep: #ad1a7e;
   --color-accent-cyan: #08aece;
-  --color-accent-cyan-deep: #5bcfe6;
+  --color-accent-cyan-deep: #067a91;
   --color-accent-gold: #f0b100;
-  --color-accent-gold-deep: #f5cb4d;
+  --color-accent-gold-deep: #8a6500;
   --color-accent-vermilion: #e43d1f;
-  --color-accent-vermilion-deep: #f58063;
+  --color-accent-vermilion-deep: #c2331a;
   --color-accent-violet: #7c3aed;
-  --color-accent-violet-deep: #ad8bf7;
+  --color-accent-violet-deep: #6a2fd0;
 
-  /* Corners take one sharp radius everywhere. */
+  /* Two radii, by role: surfaces (cards, images, menus) are crisp; anything
+     pressed or typed into (buttons, fields, chips, meters) is a full pill. */
   --radius-crisp: 2px;
+  --radius-pill: 9999px;
+
+  /* The one shadow: a wide, soft lift for controls floating over the map and
+     for the primary action. Structure is still drawn with hairlines. */
+  --shadow-lift: 0 8px 24px rgb(23 23 22 / 0.08);
 
   /*
-   * Type roles: a geometric sans (Space Grotesk-class) for display and UI, a
-   * readable text face for article bodies, and a monospaced accent style for
-   * coordinates, counts, and slugs — used sparingly.
+   * Type roles: a grotesk for display (headings, buttons), a plain sans for
+   * UI and article text, and a mono for labels, coordinates, counts, and
+   * slugs. All three are self-hosted (src/fonts.css).
    */
-  --font-display: "Space Grotesk", "Avenir Next", "Century Gothic", "Trebuchet MS", sans-serif;
-  --font-body: "Iowan Old Style", Charter, "Palatino Linotype", Georgia, serif;
-  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --font-display:
+    "Schibsted Grotesk Variable", "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+  --font-body: "Inter Variable", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/*
+ * Night — the dark theme, followed from the device setting. Only token values
+ * change: the same roles on a neutral charcoal ground. The -deep accents flip
+ * to their lightened form so small text stays readable. The basemap plate
+ * stays light in both themes (design.md §Map styling), so at night the chrome
+ * frames a lit chart.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-paper: #171716;
+    --color-ink: #f3f3ef;
+    --color-panel: #222220;
+    --color-wash: #2b2b29;
+    --color-hairline: #343431;
+    --color-signal: #7fa0f5;
+    --color-accent-orange-deep: #fba45c;
+    --color-accent-cobalt-deep: #7fa0f5;
+    --color-accent-green-deep: #5ccb8a;
+    --color-accent-magenta-deep: #ec72c4;
+    --color-accent-cyan-deep: #5bcfe6;
+    --color-accent-gold-deep: #f5cb4d;
+    --color-accent-vermilion-deep: #f58063;
+    --color-accent-violet-deep: #ad8bf7;
+    --shadow-lift: 0 8px 24px rgb(0 0 0 / 0.35);
+  }
+
+  /* MapLibre draws its control icons in black; flip them for the dark pill. */
+  .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+    filter: invert(1);
+  }
+}
+
+:root {
+  color-scheme: light dark;
 }
 
 html,
@@ -74,9 +124,21 @@ body,
 body {
   background: var(--color-paper);
   color: var(--color-ink);
-  font-family: var(--font-display);
-  /* Counts and coordinates hold their columns like dial readouts. */
+  font-family: var(--font-body);
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Counts and coordinates hold their columns. */
   font-variant-numeric: tabular-nums;
+}
+
+/* Headings and anything pressed speak in the display face. */
+h1,
+h2,
+button,
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.015em;
 }
 
 /* Selection inverts paper and ink — signal without introducing a new hue. */
@@ -85,16 +147,62 @@ body {
   color: var(--color-paper);
 }
 
-/* One visible focus treatment everywhere, in cobalt so it never reads as an
-   error — the deep (lightened) variant, which carries the contrast on the
-   dark ground. */
+/* One visible focus treatment everywhere, in the signal colour so it never
+   reads as an error. The outline follows each control's own radius. */
 :where(a, button, input, textarea, select, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-accent-cobalt-deep);
+  outline: 2px solid var(--color-signal);
   outline-offset: 2px;
-  border-radius: var(--radius-crisp);
 }
 
-/* Article bodies get the reading face; chrome stays geometric. */
+/*
+ * The section label: small uppercase mono on a wash chip, led by a signal
+ * square. It names a block of content (WHAT PEOPLE SAY, LISTS, POSTS) and is
+ * the one recurring ornament in the notebook.
+ */
+@utility eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: var(--radius-crisp);
+  background: var(--color-wash);
+  padding: 0.1875rem 0.4375rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  line-height: 1rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-ink) 80%, transparent);
+
+  &::before {
+    content: "";
+    width: 0.3125rem;
+    height: 0.3125rem;
+    flex: none;
+    background: var(--color-signal);
+  }
+}
+
+/* The same voice without the chip — for labels inside menus. */
+@utility label-mono {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Article bodies and summaries read in the text face. */
 .prose {
   font-family: var(--font-body);
+}
+
+/* The map's own controls join the chrome: pills that lift off the plate. */
+.maplibregl-ctrl-group {
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  box-shadow:
+    var(--shadow-lift),
+    0 0 0 1px var(--color-hairline);
 }

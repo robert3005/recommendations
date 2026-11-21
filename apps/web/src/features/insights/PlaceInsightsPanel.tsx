@@ -50,7 +50,7 @@ const PRICE_LABEL: Record<string, string> = {
 const PRICE_LEVELS = ["cheap", "moderate", "pricey", "very_expensive"];
 
 function SectionTitle({ children }: { children: string }) {
-  return <h3 className="text-xs font-semibold tracking-wide text-ink/60 uppercase">{children}</h3>;
+  return <h3 className="eyebrow">{children}</h3>;
 }
 
 function Meter({ label, score, mentions }: { label: string; score: number; mentions: number }) {
@@ -62,17 +62,17 @@ function Meter({ label, score, mentions }: { label: string; score: number; menti
     >
       <span className="text-ink/80">{label}</span>
       <span
-        className="relative h-1.5 rounded-crisp border border-hairline"
+        className="relative h-1 rounded-pill bg-hairline"
         role="img"
         aria-label={`${label}: ${aspectWord(score)}, ${mentions} mentions`}
       >
         <span
-          className="absolute inset-y-0 left-0 rounded-crisp bg-ink/80"
+          className="absolute inset-y-0 left-0 rounded-pill bg-signal"
           style={{ width: `${fill * 100}%` }}
         />
       </span>
       <span className="w-24 text-right text-xs text-ink/70">
-        {aspectWord(score)} <span className="font-mono text-ink/45">·{mentions}</span>
+        {aspectWord(score)} <span className="font-mono text-ink/60">·{mentions}</span>
       </span>
     </div>
   );
@@ -161,10 +161,10 @@ export function PlaceInsightsPanel({
             {profile.dishes.slice(0, 6).map((d) => (
               <li
                 key={d.name}
-                className="rounded-crisp border border-hairline px-2 py-0.5 text-xs text-ink"
+                className="rounded-pill border border-hairline bg-panel px-2.5 py-0.5 text-xs text-ink"
                 title={`${d.mentions} mentions, ${aspectWord(d.score).toLowerCase()}`}
               >
-                {d.name} <span className="font-mono text-ink/50">{d.mentions}</span>
+                {d.name} <span className="font-mono text-ink/60">{d.mentions}</span>
               </li>
             ))}
           </ul>
@@ -190,7 +190,7 @@ export function PlaceInsightsPanel({
         </p>
       ) : null}
 
-      <p className="text-[11px] text-ink/50" data-testid="insights-provenance">
+      <p className="text-[11px] text-ink/60" data-testid="insights-provenance">
         Classified from {nf.format(profile.usefulCount)} of {nf.format(profile.reviewCount)} reviews
         by {profile.classifiers.map(classifierLabel).join(" and ") || "an unknown model"}
         {" · "}

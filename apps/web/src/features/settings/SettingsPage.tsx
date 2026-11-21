@@ -92,7 +92,7 @@ export function SettingsPage() {
           <button
             type="button"
             onClick={() => void doExport()}
-            className="rounded-crisp bg-ink px-3 py-1.5 text-sm font-medium text-paper"
+            className="rounded-pill bg-ink px-3 py-1.5 text-sm font-medium text-paper"
             data-testid="export-archive"
           >
             Export archive
@@ -100,7 +100,7 @@ export function SettingsPage() {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-ink/70"
+            className="rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-ink/70"
             data-testid="import-archive"
           >
             Import archive…
@@ -158,7 +158,7 @@ export function SettingsPage() {
         <button
           type="button"
           onClick={() => void requestPersistence()}
-          className="mt-2 rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-ink/70"
+          className="mt-2 rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-ink/70"
         >
           Request persistent storage
         </button>

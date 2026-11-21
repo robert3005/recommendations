@@ -103,7 +103,7 @@ export function ListPublishControls({ listId }: { listId: string }) {
         <>
           {publication?.revokedAt ? (
             <span
-              className="rounded-crisp bg-hairline px-2 py-0.5 font-medium text-ink/70"
+              className="rounded-pill bg-wash px-2 py-0.5 font-medium text-ink/70"
               data-testid="publication-status"
               data-status="revoked"
             >
@@ -114,7 +114,7 @@ export function ListPublishControls({ listId }: { listId: string }) {
             type="button"
             disabled={busy}
             onClick={() => openPreflight()}
-            className="rounded-crisp border border-hairline px-2.5 py-1 font-medium text-ink/70 disabled:opacity-40"
+            className="rounded-pill border border-hairline px-2.5 py-1 font-medium text-ink/70 disabled:opacity-40"
             data-testid="publish-list"
           >
             Publish…
@@ -123,7 +123,7 @@ export function ListPublishControls({ listId }: { listId: string }) {
       ) : (
         <>
           <span
-            className={`rounded-crisp px-2 py-0.5 font-medium ${
+            className={`rounded-pill px-2 py-0.5 font-medium ${
               unpublishedChanges ? "bg-hairline text-ink/70" : "bg-paper text-ink/70"
             }`}
             data-testid="publication-status"
@@ -148,7 +148,7 @@ export function ListPublishControls({ listId }: { listId: string }) {
                 type="button"
                 disabled={busy}
                 onClick={() => openPreflight()}
-                className="rounded-crisp border border-hairline px-2 py-0.5 font-medium text-ink/70 disabled:opacity-40"
+                className="rounded-pill border border-hairline px-2 py-0.5 font-medium text-ink/70 disabled:opacity-40"
                 data-testid="publish-update"
               >
                 Publish update…
@@ -157,7 +157,7 @@ export function ListPublishControls({ listId }: { listId: string }) {
                 type="button"
                 disabled={busy}
                 onClick={runUnpublish}
-                className="rounded-crisp px-2 py-0.5 font-medium text-ink/70 hover:bg-hairline disabled:opacity-40"
+                className="rounded-pill px-2 py-0.5 font-medium text-ink/70 hover:bg-hairline disabled:opacity-40"
                 data-testid="unpublish"
               >
                 Unpublish
@@ -166,7 +166,7 @@ export function ListPublishControls({ listId }: { listId: string }) {
           ) : (
             <>
               {/* Token loss is permanent (spec/src/sharing.md §The editor token). */}
-              <span className="w-full text-[11px] text-ink/55" data-testid="token-missing">
+              <span className="w-full text-[11px] text-ink/60" data-testid="token-missing">
                 This page's editor token is missing — it cannot be updated or unpublished from this
                 device. Publishing as a new page creates a new link; the old page is removed via the
                 service's takedown contact.
@@ -175,14 +175,14 @@ export function ListPublishControls({ listId }: { listId: string }) {
                 type="button"
                 disabled={busy}
                 onClick={() => openPreflight(true)}
-                className="rounded-crisp border border-hairline px-2.5 py-1 font-medium text-ink/70 disabled:opacity-40"
+                className="rounded-pill border border-hairline px-2.5 py-1 font-medium text-ink/70 disabled:opacity-40"
                 data-testid="publish-as-new"
               >
                 Publish as a new page…
               </button>
             </>
           )}
-          <span className="w-full text-[11px] text-ink/55">
+          <span className="w-full text-[11px] text-ink/60">
             Unpublishing removes the public page, but copies already downloaded and third-party
             caches cannot be remotely erased.
           </span>

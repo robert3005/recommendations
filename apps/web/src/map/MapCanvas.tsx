@@ -230,7 +230,7 @@ export function MapCanvas() {
                 title={list.name}
                 onClick={() => toggleList(list.id)}
                 data-testid={`list-toggle-${list.id}`}
-                className={`rounded-crisp border border-hairline bg-paper/95 p-0.5 ${hidden ? "opacity-40" : ""}`}
+                className={`rounded-pill border border-hairline bg-paper p-1 shadow-lift ${hidden ? "opacity-40" : ""}`}
               >
                 <MarkerGlyph marker={list.marker} size={22} />
               </button>

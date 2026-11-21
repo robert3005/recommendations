@@ -146,12 +146,12 @@ export function ListCombobox({
         // A click on the already-focused input reopens after Escape/outside.
         onClick={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        className="mt-1 w-full rounded-crisp border border-hairline bg-paper px-2 py-1.5 text-sm text-ink focus:border-ink focus:outline-none disabled:opacity-40"
+        className="mt-1 w-full rounded-pill border border-hairline bg-paper px-2 py-1.5 text-sm text-ink focus:border-ink focus:outline-none disabled:opacity-40"
         data-testid={`${idPrefix}-list-choice`}
       />
 
       {popupVisible ? (
-        <div className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-crisp border border-hairline bg-panel">
+        <div className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-crisp border border-hairline bg-panel shadow-lift">
           {statusText !== undefined ? (
             <p className="px-3 py-2 text-sm text-ink/60">{statusText}</p>
           ) : (

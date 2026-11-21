@@ -182,9 +182,7 @@ export function PostEditorPage() {
   const pickerGroup = (label: string, posts: Post[]) =>
     posts.length > 0 ? (
       <>
-        <p className="px-2 pt-2 pb-1 text-xs font-semibold tracking-wide text-ink/60 uppercase">
-          {label}
-        </p>
+        <p className="px-2 pt-2 pb-1 eyebrow">{label}</p>
         <ul>
           {posts.map((p) => (
             <li key={p.id}>
@@ -216,7 +214,7 @@ export function PostEditorPage() {
           setTitle(undefined);
         }}
         aria-label="Post title"
-        className="w-full rounded-crisp border border-hairline px-2 py-1 font-display text-xl font-semibold"
+        className="w-full rounded-pill border border-hairline px-2 py-1 font-display text-xl font-semibold"
         data-testid="post-title-input"
       />
       <p className="mt-1 text-xs text-ink/60">
@@ -226,7 +224,7 @@ export function PostEditorPage() {
       <div className="relative mt-3 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-ink"
+          className="rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-ink"
           data-testid="insert-post-link"
           aria-expanded={pickerOpen}
           onClick={() => setPickerOpen((open) => !open)}
@@ -235,7 +233,7 @@ export function PostEditorPage() {
         </button>
         <button
           type="button"
-          className="rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-ink aria-pressed:bg-ink aria-pressed:text-paper"
+          className="rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-ink aria-pressed:bg-ink aria-pressed:text-paper"
           data-testid="toggle-preview"
           aria-pressed={preview}
           onClick={() => setPreview((value) => !value)}
@@ -244,7 +242,7 @@ export function PostEditorPage() {
         </button>
         <button
           type="button"
-          className="ml-auto rounded-crisp bg-ink px-3 py-1.5 text-sm font-medium text-paper"
+          className="ml-auto rounded-pill bg-ink px-3 py-1.5 text-sm font-medium text-paper"
           data-testid="done-editing-post"
           onClick={() => void finishEditing()}
         >
@@ -253,7 +251,7 @@ export function PostEditorPage() {
 
         {pickerOpen ? (
           <div
-            className="absolute top-full left-0 z-10 mt-1 max-h-64 w-72 overflow-y-auto rounded-crisp border border-hairline bg-panel"
+            className="absolute top-full left-0 z-10 mt-1 max-h-64 w-72 overflow-y-auto rounded-crisp border border-hairline bg-panel shadow-lift"
             data-testid="post-link-picker"
           >
             {pickerGroups &&
@@ -294,7 +292,7 @@ export function PostEditorPage() {
 
       <button
         type="button"
-        className="mt-6 rounded-crisp border border-hairline px-3 py-1.5 text-sm font-medium text-ink"
+        className="mt-6 rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-ink"
         data-testid="delete-post"
         onClick={deletePost}
       >

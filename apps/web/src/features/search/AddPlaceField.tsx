@@ -223,13 +223,13 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        className="w-full rounded-crisp border border-hairline bg-paper px-3 py-1.5 text-sm text-ink focus:border-ink focus:outline-none"
+        className="w-full rounded-pill border border-hairline bg-paper px-3 py-1.5 text-sm text-ink focus:border-ink focus:outline-none"
       />
 
       {open && debouncedQuery.length >= 2 && pending === undefined ? (
         searchQuery.isPending || searchQuery.isError || results.length === 0 ? (
           <output
-            className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel px-3 py-2 text-sm"
+            className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel shadow-lift px-3 py-2 text-sm"
             data-testid="search-status"
           >
             {searchQuery.isPending ? (
@@ -246,7 +246,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
             // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: ul[role=listbox] with option children is the standard ARIA combobox pattern
             role="listbox"
             aria-label="Search results"
-            className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-crisp border border-hairline bg-panel"
+            className="absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-crisp border border-hairline bg-panel shadow-lift"
           >
             {results.map((candidate, index) => (
               <li key={`${index.toString()}-${candidate.lat}-${candidate.lng}`} role="presentation">
@@ -276,7 +276,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
           reads over whatever the notebook is showing. */}
       {pending?.mode === "notice" ? (
         <output
-          className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel p-2 text-xs text-ink"
+          className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel shadow-lift p-2 text-xs text-ink"
           data-testid="link-notice"
         >
           {pending.text}
@@ -293,7 +293,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
 
       {pending?.mode === "lookup" ? (
         <output
-          className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel p-2 text-xs text-ink/60"
+          className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel shadow-lift p-2 text-xs text-ink/60"
           data-testid="osm-lookup-pending"
         >
           Looking this up on OpenStreetMap…
@@ -302,7 +302,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
 
       {pending?.mode === "lookup-error" ? (
         <output
-          className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel p-2 text-xs text-ink"
+          className="absolute top-full right-0 left-0 z-30 mt-1 block rounded-crisp border border-hairline bg-panel shadow-lift p-2 text-xs text-ink"
           data-testid="osm-lookup-error"
         >
           {pending.message}
@@ -324,7 +324,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
 
       {pending?.mode === "confirm" ? (
         <div
-          className="absolute top-full right-0 left-0 z-30 mt-1 rounded-crisp border border-hairline bg-panel p-3"
+          className="absolute top-full right-0 left-0 z-30 mt-1 rounded-crisp border border-hairline bg-panel shadow-lift p-3"
           data-testid="add-place-confirm"
         >
           <div className="flex items-start justify-between gap-2">
@@ -335,7 +335,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={pending.suggestedName ? "Confirm or override" : "Name this place"}
-                className="mt-1 w-full rounded-crisp border border-hairline bg-paper px-2 py-1.5 text-sm text-ink"
+                className="mt-1 w-full rounded-pill border border-hairline bg-paper px-2 py-1.5 text-sm text-ink"
                 data-testid="confirm-name"
               />
             </label>
@@ -343,7 +343,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
               type="button"
               onClick={reset}
               aria-label="Cancel"
-              className="rounded-crisp p-1 text-ink/60 hover:bg-ink/10"
+              className="rounded-pill p-1 text-ink/60 hover:bg-ink/10"
             >
               ✕
             </button>
