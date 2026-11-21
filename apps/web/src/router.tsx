@@ -142,7 +142,7 @@ function RootLayout() {
             wordmark home affordance, the add-a-place field filling the rest,
             and — only while an import batch is reviewing — the review pill.
             There is no persistent nav; Settings hides behind the gear chip. */}
-        <header className="flex shrink-0 items-center gap-2.5 border-b border-hairline px-4 py-2.5">
+        <header className="flex shrink-0 items-center gap-2 border-b border-hairline px-4 py-2.5">
           {readOnly ? (
             <div
               className="min-w-0 flex-1 font-display text-sm font-medium text-ink"
@@ -182,7 +182,7 @@ function RootLayout() {
             data-testid="pane-collapse"
             disabled={atMapEnd}
             onClick={collapse}
-            className="rounded-pill px-2 py-1 text-sm text-ink hover:bg-hover disabled:opacity-30"
+            className="flex size-7 shrink-0 items-center justify-center rounded-pill border border-hairline text-xs text-ink hover:bg-hover disabled:opacity-30"
           >
             ⟨
           </button>
@@ -193,12 +193,14 @@ function RootLayout() {
             data-testid="pane-expand"
             disabled={atContentEnd}
             onClick={expand}
-            className="rounded-pill px-2 py-1 text-sm text-ink hover:bg-hover disabled:opacity-30"
+            className="flex size-7 shrink-0 items-center justify-center rounded-pill border border-hairline text-xs text-ink hover:bg-hover disabled:opacity-30"
           >
             ⟩
           </button>
         </header>
-        <main className="min-h-0 flex-1 overflow-y-auto" data-testid="pane-outlet">
+        {/* Bottom padding keeps the last line of a page clear of the floating
+            settings gear. */}
+        <main className="min-h-0 flex-1 overflow-y-auto pb-14" data-testid="pane-outlet">
           <Outlet />
         </main>
       </div>
