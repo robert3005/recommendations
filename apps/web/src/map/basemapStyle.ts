@@ -1,8 +1,9 @@
 /**
- * The basemap plate (spec/src/design.md §Map styling): a neutral, desaturated,
- * light map built in code from Protomaps vector tiles, so the eight list
- * accents are the loudest thing on the canvas. The plate carries no hue of its
- * own beyond a faint green-grey cast that sits quietly beside the chrome.
+ * The basemap plate (spec/src/design.md §Map styling): a neutral, desaturated
+ * map built in code from Protomaps vector tiles, so the eight list accents are
+ * the loudest thing on the canvas. It follows the chrome's two themes: warm
+ * light greys beside Paper (#FCFCF9), and a dark plate around Night (#171716)
+ * with hairline-level roads and labels at reduced strength.
  *
  * Built with @protomaps/basemaps: the layer schema is theirs, the colours are
  * ours. POI icons and road shields are dropped — the only points of interest
@@ -21,31 +22,90 @@ function ensurePmtilesProtocol() {
   maplibregl.addProtocol("pmtiles", new Protocol().tile);
 }
 
-/** Plate colours — fixed scene values, not chrome tokens (design.md §Map styling). */
-const PLATE = {
-  earth: "#F3F4F1",
-  background: "#ECEEEA",
-  water: "#CBD6D8",
-  park: "#E2E9E0",
-  wood: "#DCE4DA",
-  landuse: "#ECEDE9",
-  buildings: "#E3E5E0",
-  roadCasing: "#E1E3DE",
-  road: "#FFFFFF",
-  minorRoad: "#FAFAF8",
-  tunnel: "#E6E8E4",
-  railway: "#C9CEC9",
-  boundaries: "#B9BFB9",
-  label: "#6F7A73",
-  labelStrong: "#3F4A44",
-  labelMuted: "#9AA39C",
-  halo: "#F3F4F1",
-  waterLabel: "#7E9296",
-} as const;
+/** The chrome theme the plate sits beside. */
+export type PlateScheme = "paper" | "night";
 
-/** The plate flavor: Protomaps' light flavor, recoloured to the plate. */
-export function plateFlavor(): Flavor {
-  const base = namedFlavor("light");
+interface PlatePalette {
+  earth: string;
+  background: string;
+  water: string;
+  park: string;
+  wood: string;
+  landuse: string;
+  buildings: string;
+  roadCasing: string;
+  road: string;
+  minorRoad: string;
+  tunnel: string;
+  railway: string;
+  boundaries: string;
+  label: string;
+  labelStrong: string;
+  labelMuted: string;
+  halo: string;
+  waterLabel: string;
+}
+
+/** Plate colours — fixed scene values, not chrome tokens (design.md §Map styling). */
+const PALETTES: Record<PlateScheme, PlatePalette> = {
+  // Warm neutral greys that read as one surface with the Paper chrome.
+  paper: {
+    earth: "#F6F5F1",
+    background: "#F0EFEA",
+    water: "#DCDDD9",
+    park: "#ECEBE4",
+    wood: "#E6E5DD",
+    landuse: "#F1F0EB",
+    buildings: "#E8E7E1",
+    roadCasing: "#E2E1DB",
+    road: "#FFFFFF",
+    minorRoad: "#FCFCF9",
+    tunnel: "#EBEAE5",
+    railway: "#CFCEC8",
+    boundaries: "#BDBCB5",
+    label: "#75746E",
+    labelStrong: "#3A3935",
+    labelMuted: "#A3A29B",
+    halo: "#F6F5F1",
+    waterLabel: "#8A8B87",
+  },
+  // Night: land at the chrome's ground, roads at hairline strength, labels
+  // toward the ink but held back so the pins stay the loudest thing.
+  night: {
+    earth: "#1C1C1B",
+    background: "#171716",
+    water: "#121211",
+    park: "#1F201E",
+    wood: "#21221F",
+    landuse: "#1E1E1C",
+    buildings: "#252523",
+    roadCasing: "#1C1C1B",
+    road: "#343431",
+    minorRoad: "#2A2A28",
+    tunnel: "#262624",
+    railway: "#3A3A37",
+    boundaries: "#4A4A46",
+    label: "#A3A39D",
+    labelStrong: "#CFCFC9",
+    labelMuted: "#74746F",
+    halo: "#171716",
+    waterLabel: "#6C6C67",
+  },
+};
+
+/**
+ * Colours painted INTO the map scene for the user's pins and clusters: they
+ * contrast against the plate, not the chrome (design.md §Map styling).
+ */
+export const PLATE_SCENE: Record<PlateScheme, { outline: string; ink: string }> = {
+  paper: { outline: "#FCFCF9", ink: "#171716" },
+  night: { outline: "#171716", ink: "#F3F3EF" },
+};
+
+/** The plate flavor: Protomaps' light/dark flavor, recoloured to the plate. */
+export function plateFlavor(scheme: PlateScheme = "paper"): Flavor {
+  const base = namedFlavor(scheme === "night" ? "dark" : "light");
+  const PLATE = PALETTES[scheme];
   return {
     ...base,
     background: PLATE.background,
@@ -151,7 +211,24 @@ export interface PlateStyleOptions {
   /** MapLibre sprite base URL (one-way arrows, town dots). */
   spriteUrl: string;
   attribution: string;
+  scheme?: PlateScheme;
   lang?: string;
+}
+
+/**
+ * The plate's layers for one scheme. Both schemes share layer ids and layouts,
+ * so switching theme only repaints these — the map keeps its sources, our own
+ * layers, and the camera.
+ */
+export function plateLayers(scheme: PlateScheme, lang = "en"): StyleSpecification["layers"] {
+  return layers("protomaps", plateFlavor(scheme), { lang })
+    .filter((layer) => !DROPPED_LAYER_IDS.has(layer.id))
+    .map((layer) =>
+      // The sprite is the light one; one-way arrows recede on the dark plate.
+      scheme === "night" && layer.id === "roads_oneway"
+        ? { ...layer, paint: { ...layer.paint, "icon-opacity": 0.3 } }
+        : layer,
+    ) as StyleSpecification["layers"];
 }
 
 /** The complete MapLibre style for the plate, sourced from a PMTiles archive. */
@@ -160,6 +237,7 @@ export function plateStyle({
   glyphsUrl,
   spriteUrl,
   attribution,
+  scheme = "paper",
   lang = "en",
 }: PlateStyleOptions): StyleSpecification {
   ensurePmtilesProtocol();
@@ -174,8 +252,6 @@ export function plateStyle({
         attribution,
       },
     },
-    layers: layers("protomaps", plateFlavor(), { lang }).filter(
-      (layer) => !DROPPED_LAYER_IDS.has(layer.id),
-    ) as StyleSpecification["layers"],
+    layers: plateLayers(scheme, lang),
   };
 }

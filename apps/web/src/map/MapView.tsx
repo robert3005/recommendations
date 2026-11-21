@@ -11,6 +11,7 @@ import type { FeatureCollection } from "geojson";
 import maplibregl from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import { OSM_ATTRIBUTION, VIEWPORT_DEBOUNCE_MS } from "../config";
+import { PLATE_SCENE, type PlateScheme } from "./basemapStyle";
 
 export interface PlacePinFeature {
   placeId: string;
@@ -45,6 +46,14 @@ export interface MapViewProps {
    * stack, so the basemap names a font its glyph server actually has.
    */
   overlayFont?: string;
+  /** The chrome theme the scene's own paint (pin outlines, clusters) follows. */
+  scheme?: PlateScheme;
+  /**
+   * The basemap's layers for the current theme, when the basemap is our plate.
+   * A change repaints those layers in place — same ids, new colours — so the
+   * singleton never reloads its style or loses our sources and layers.
+   */
+  basemapLayers?: maplibregl.StyleSpecification["layers"];
   /**
    * The mobile sheet fully covers the canvas: retain the scene, apply nothing.
    * Projections apply lazily on reveal — every projection effect is gated on
@@ -89,14 +98,15 @@ export const OUR_SOURCE_IDS = ["saved", "marks", "selection"] as const;
 const PIN_LAYER_IDS = ["saved-pins", "saved-clusters", "mark-pins"] as const;
 
 /**
- * The basemap stays the LIGHT plate in both chrome themes
- * (spec/src/design.md §Map styling). Everything painted INTO the map
- * scene — pin outlines, cluster discs, mark labels —
- * contrasts against that light plate, so these are fixed plate values, not
- * the chrome tokens.
+ * Everything painted INTO the map scene — pin outlines, cluster discs —
+ * contrasts against the plate, not the chrome (spec/src/design.md §Map
+ * styling). The plate follows the theme, so the scene does too. One canvas
+ * per page, so the sprite painter reads the current scene from here.
  */
-const PLATE = "#FAF7F2";
-const PLATE_INK = "#221D16";
+let scene: { outline: string; ink: string } = PLATE_SCENE.paper;
+
+/** Import-review marks are labelled light-on-vermilion in either theme. */
+const MARK_LABEL = "#FCFCF9";
 
 /** Sprite id for a marker variant — parsed back by the sprite painter. */
 function markerImageId(pin: PlacePinFeature): string {
@@ -115,7 +125,7 @@ function markerImageId(pin: PlacePinFeature): string {
  * icon at the bottom, so the tip IS the coordinate.
  */
 function paintMarkerImage(id: string): ImageData | undefined {
-  const [, shape = "circle", color = PLATE_INK, shape2 = "-", color2 = "-", countRaw = "1"] =
+  const [, shape = "circle", color = scene.ink, shape2 = "-", color2 = "-", countRaw = "1"] =
     id.split("|");
   const count = Number.parseInt(countRaw, 10) || 1;
   if (typeof document === "undefined" || typeof Path2D === "undefined") return undefined;
@@ -141,7 +151,7 @@ function paintMarkerImage(id: string): ImageData | undefined {
     ctx.fillStyle = fill;
     ctx.fill(path);
     ctx.lineWidth = 2.5;
-    ctx.strokeStyle = PLATE;
+    ctx.strokeStyle = scene.outline;
     ctx.stroke(path);
   };
 
@@ -152,7 +162,7 @@ function paintMarkerImage(id: string): ImageData | undefined {
     ctx.save();
     ctx.translate(cx - 15 * px, cy - 15 * px);
     ctx.scale(px, px);
-    ctx.fillStyle = PLATE;
+    ctx.fillStyle = scene.outline;
     ctx.fill(new Path2D(d));
     ctx.restore();
   };
@@ -167,12 +177,12 @@ function paintMarkerImage(id: string): ImageData | undefined {
   if (count > 2) {
     ctx.beginPath();
     ctx.arc(52, 12, 11, 0, Math.PI * 2);
-    ctx.fillStyle = PLATE_INK;
+    ctx.fillStyle = scene.ink;
     ctx.fill();
     ctx.lineWidth = 2;
-    ctx.strokeStyle = PLATE;
+    ctx.strokeStyle = scene.outline;
     ctx.stroke();
-    ctx.fillStyle = PLATE;
+    ctx.fillStyle = scene.outline;
     ctx.font = "bold 14px sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -223,6 +233,8 @@ function marksToGeoJSON(pins: MarkPinFeature[]): FeatureCollection {
 export function MapView({
   styleUrl,
   overlayFont,
+  scheme = "paper",
+  basemapLayers,
   covered = false,
   layoutKey,
   initialCenter,
@@ -267,6 +279,7 @@ export function MapView({
   // biome-ignore lint/correctness/useExhaustiveDependencies: the initial camera/style apply once at singleton creation; later changes reconcile in effects below without recreating the map.
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+    scene = PLATE_SCENE[scheme];
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: styleUrl,
@@ -346,10 +359,10 @@ export function MapView({
         source: "saved",
         filter: ["has", "point_count"],
         paint: {
-          "circle-color": PLATE_INK,
+          "circle-color": scene.ink,
           "circle-radius": ["step", ["get", "point_count"], 14, 10, 18, 50, 24],
           "circle-stroke-width": 2,
-          "circle-stroke-color": PLATE,
+          "circle-stroke-color": scene.outline,
         },
       });
       map.addLayer({
@@ -362,7 +375,7 @@ export function MapView({
           "text-size": 12,
           ...overlayFontLayout(),
         },
-        paint: { "text-color": PLATE },
+        paint: { "text-color": scene.outline },
       });
       map.addLayer({
         id: "saved-pins",
@@ -402,7 +415,7 @@ export function MapView({
           "circle-color": "#E43D1F",
           "circle-radius": 10,
           "circle-stroke-width": 2,
-          "circle-stroke-color": PLATE,
+          "circle-stroke-color": scene.outline,
         },
       });
       map.addLayer({
@@ -410,7 +423,7 @@ export function MapView({
         type: "symbol",
         source: "marks",
         layout: { "text-field": ["get", "label"], "text-size": 11, ...overlayFontLayout() },
-        paint: { "text-color": PLATE },
+        paint: { "text-color": MARK_LABEL },
       });
 
       map.addSource("selection", {
@@ -529,6 +542,56 @@ export function MapView({
     mapRef.current?.resize();
     mapRef.current?.triggerRepaint();
   }, [covered]);
+
+  // Theme change: repaint the scene's own layers and re-paint marker sprites
+  // in the new outline colour (they regenerate on demand once removed).
+  const appliedSchemeRef = useRef(scheme);
+  useEffect(() => {
+    if (appliedSchemeRef.current === scheme) return;
+    appliedSchemeRef.current = scheme;
+    scene = PLATE_SCENE[scheme];
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      map.setPaintProperty("saved-clusters", "circle-color", scene.ink);
+      map.setPaintProperty("saved-clusters", "circle-stroke-color", scene.outline);
+      map.setPaintProperty("saved-cluster-count", "text-color", scene.outline);
+      map.setPaintProperty("mark-pins", "circle-stroke-color", scene.outline);
+      for (const id of map.listImages()) {
+        if (id.startsWith("pm|")) map.removeImage(id);
+      }
+      map.triggerRepaint();
+    };
+    if (map.getLayer("saved-clusters")) apply();
+    else map.once("load", apply);
+  }, [scheme]);
+
+  // The plate's theme variant shares every layer id and layout, so a theme
+  // change repaints the basemap in place rather than reloading the style.
+  const appliedBasemapLayersRef = useRef(basemapLayers);
+  useEffect(() => {
+    const previous = appliedBasemapLayersRef.current;
+    if (!basemapLayers || previous === basemapLayers) return;
+    appliedBasemapLayersRef.current = basemapLayers;
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      const before = new Map((previous ?? []).map((layer) => [layer.id, layer]));
+      for (const layer of basemapLayers) {
+        if (!map.getLayer(layer.id)) continue;
+        const next = ("paint" in layer ? layer.paint : undefined) ?? {};
+        const old = before.get(layer.id);
+        const prev = (old && "paint" in old ? old.paint : undefined) ?? {};
+        const keys = new Set([...Object.keys(prev), ...Object.keys(next)]);
+        for (const key of keys) {
+          // A key absent from the new paint resets to the style default.
+          map.setPaintProperty(layer.id, key, (next as Record<string, unknown>)[key]);
+        }
+      }
+    };
+    if (map.isStyleLoaded()) apply();
+    else map.once("load", apply);
+  }, [basemapLayers]);
 
   // A style URL change reconciles in place — the singleton never remounts.
   const appliedStyleUrlRef = useRef(styleUrl);

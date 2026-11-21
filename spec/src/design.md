@@ -123,15 +123,18 @@ half again as large, never dimmed, above its neighbours — the size is the sign
 
 The basemap is neutral and desaturated — a quiet plate restyled from the provider's default (see
 [Map Data & Providers](./data-sources.md)) so that accent pins are the loudest thing on the
-canvas. The plate follows the chrome: its greys are chosen to sit beside the paper as one
-surface. Today the plate is light in both themes; a dark plate for Night is planned, and until
-it lands Night frames a lit chart.
+canvas. The plate follows the chrome theme: in Paper it is warm light greys chosen to sit beside
+the paper as one surface; in Night it is a dark plate at the Night ground, with roads at hairline
+strength and labels toward the ink but held back. Both are one layer set with two palettes
+(`src/map/basemapStyle.ts`), so a theme change repaints the plate in place — the canvas never
+reloads its style. A hosted fallback style (`VITE_MAP_STYLE_URL`) has one look and stays light.
 
 Two consequences follow. Every control floating over the map — the list-toggle chips, the
 reopen affordance, the map's own zoom and locate buttons, the unavailable banner, attribution —
 reads as a lifted paper pill: solid paper, hairline border, the lift shadow. And everything
 painted *into* the map scene (pin outlines, cluster discs) contrasts against the plate, not the
-chrome — those are fixed plate values, not the chrome tokens. Attribution is always visible.
+chrome — those are plate values, not the chrome tokens, with a Paper and a Night pair (outline
+paper-on-accent in Paper, night-ground in Night). Attribution is always visible.
 
 ## Motion
 

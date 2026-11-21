@@ -18,6 +18,7 @@ import { useProjectionStore, useSelectionStore } from "../state/projection";
 import { useUiStore } from "../state/ui";
 import { MapView, type MarkPinFeature, type PlacePinFeature } from "./MapView";
 import { fitForProjection, importItemMarks, libraryPins, publishedPins } from "./projectionPins";
+import { useColorScheme } from "./useColorScheme";
 
 const VIEWPORT_KEY = "lastViewport";
 const HOME_TOGGLES_KEY = "homeListToggles";
@@ -61,6 +62,9 @@ export function MapCanvas() {
   const setHiddenListIds = useUiStore((s) => s.setHiddenListIds);
   const covered = usePaneStore(paneCovered);
   const layoutKey = usePaneStore(paneLayoutKey);
+  // The plate follows the chrome theme: Paper by default, Night under
+  // prefers-color-scheme: dark (spec/src/design.md §Map styling).
+  const basemap = mapStyleProvider.style(useColorScheme());
 
   const placeViews = useLiveQuery(() => repo.listPlaceViews(), [repo]);
   const lists = useLiveQuery(() => repo.listLists(), [repo]);
@@ -181,8 +185,10 @@ export function MapCanvas() {
       <MapView
         covered={covered}
         layoutKey={layoutKey}
-        styleUrl={mapStyleProvider.style().style}
-        overlayFont={mapStyleProvider.style().overlayFont}
+        styleUrl={basemap.style}
+        overlayFont={basemap.overlayFont}
+        scheme={basemap.scheme}
+        basemapLayers={basemap.basemapLayers}
         initialCenter={{ lat: startViewport.lat, lng: startViewport.lng }}
         initialZoom={startViewport.zoom}
         placePins={placePins}

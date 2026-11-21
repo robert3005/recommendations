@@ -17,7 +17,7 @@ import {
   OSM_ATTRIBUTION,
   PELIAS_URL,
 } from "../config";
-import { PLATE_OVERLAY_FONT, plateStyle } from "../map/basemapStyle";
+import { PLATE_OVERLAY_FONT, type PlateScheme, plateLayers, plateStyle } from "../map/basemapStyle";
 import { OsmApiGeocoder } from "./osmApi";
 import { PeliasGeocoder } from "./pelias";
 import { PhotonGeocoder } from "./photon";
@@ -52,13 +52,16 @@ export const geocoder: Geocoder = {
 /**
  * The canvas consumes the typed style capability, never a raw URL constant:
  * our own plate style when a PMTiles archive is configured, else a hosted
- * style URL.
+ * style URL. The plate follows the chrome theme; a hosted style has one look,
+ * so its scene stays the light plate's.
  */
 let cachedStyle: string | StyleSpecification | undefined;
+const cachedPlateLayers = new Map<PlateScheme, StyleSpecification["layers"]>();
 
-/** Built once: the canvas reconciles style changes by identity, so a fresh
- * object per render would re-apply the whole style every render. */
-function basemapStyle(): string | StyleSpecification {
+/** Built once, in the theme at first paint: the canvas reconciles style
+ * changes by identity, so a fresh object per render would reload the style.
+ * Later theme changes repaint the plate's layers instead (`basemapLayers`). */
+function basemapStyle(scheme: PlateScheme): string | StyleSpecification {
   if (cachedStyle === undefined) {
     cachedStyle = MAP_PMTILES_URL
       ? plateStyle({
@@ -68,21 +71,42 @@ function basemapStyle(): string | StyleSpecification {
           // The canvas's own linked OSM credit is always shown beside this, so
           // the source credits only the tile schema — no doubled OSM line.
           attribution: '<a href="https://protomaps.com">Protomaps</a>',
+          scheme,
         })
       : MAP_STYLE_URL;
   }
   return cachedStyle;
 }
 
+function basemapLayers(scheme: PlateScheme): StyleSpecification["layers"] | undefined {
+  if (!MAP_PMTILES_URL) return undefined;
+  let layers = cachedPlateLayers.get(scheme);
+  if (!layers) {
+    layers = plateLayers(scheme);
+    cachedPlateLayers.set(scheme, layers);
+  }
+  return layers;
+}
+
 export const mapStyleProvider = {
-  style: (): {
+  style: (
+    theme: PlateScheme = "paper",
+  ): {
     style: string | StyleSpecification;
+    /** The theme the map scene is actually painted in. */
+    scheme: PlateScheme;
+    basemapLayers: StyleSpecification["layers"] | undefined;
     overlayFont: string | undefined;
     attribution: string;
-  } => ({
-    style: basemapStyle(),
-    // The plate's glyph server holds one font per folder (no combined stacks).
-    overlayFont: MAP_PMTILES_URL ? PLATE_OVERLAY_FONT : undefined,
-    attribution: OSM_ATTRIBUTION,
-  }),
+  } => {
+    const scheme: PlateScheme = MAP_PMTILES_URL ? theme : "paper";
+    return {
+      style: basemapStyle(scheme),
+      scheme,
+      basemapLayers: basemapLayers(scheme),
+      // The plate's glyph server holds one font per folder (no combined stacks).
+      overlayFont: MAP_PMTILES_URL ? PLATE_OVERLAY_FONT : undefined,
+      attribution: OSM_ATTRIBUTION,
+    };
+  },
 };
