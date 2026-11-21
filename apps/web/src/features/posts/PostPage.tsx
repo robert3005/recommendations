@@ -94,7 +94,7 @@ export function PostPage() {
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="post-page">
       <div className="flex items-start justify-between gap-2">
-        <h1 className="font-display text-[2rem] leading-tight font-medium tracking-tight text-ink">
+        <h1 className="font-display text-[2.5rem] leading-none font-semibold tracking-tight text-ink">
           {post.title}
         </h1>
         <button

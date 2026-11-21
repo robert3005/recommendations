@@ -89,11 +89,11 @@ export const OUR_SOURCE_IDS = ["saved", "marks", "selection"] as const;
 const PIN_LAYER_IDS = ["saved-pins", "saved-clusters", "mark-pins"] as const;
 
 /**
- * The basemap stays the LIGHT plate while the app chrome is the deep-green
- * console (spec/src/design.md §Map styling). Everything painted INTO the map
+ * The basemap stays the LIGHT plate in both chrome themes
+ * (spec/src/design.md §Map styling). Everything painted INTO the map
  * scene — pin outlines, cluster discs, mark labels —
  * contrasts against that light plate, so these are fixed plate values, not
- * the (dark) chrome tokens.
+ * the chrome tokens.
  */
 const PLATE = "#FAF7F2";
 const PLATE_INK = "#221D16";
@@ -687,8 +687,8 @@ export function MapView({
       </a>
       {/* A top banner, not a full-bleed takeover: a tile or glyph failure can
           happen over a map that is otherwise drawn and usable, and covering it
-          hides information the user already has. Deep console chrome over the
-          light plate, like every control floating on the map. */}
+          hides information the user already has. Paper chrome over the plate, like every
+          control floating on the map. */}
       {unavailable ? (
         <div
           role="status"

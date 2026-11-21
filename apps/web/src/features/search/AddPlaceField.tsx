@@ -257,7 +257,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
                   onClick={() => pickCandidate(candidate)}
                   onMouseEnter={() => setActiveIndex(index)}
                   className={`block w-full px-3 py-2 text-left text-sm ${
-                    index === activeIndex ? "bg-ink/5" : ""
+                    index === activeIndex ? "bg-hover" : ""
                   }`}
                 >
                   <span className="font-medium text-ink">{candidate.name}</span>
@@ -343,7 +343,7 @@ export function AddPlaceField({ bias }: AddPlaceFieldProps) {
               type="button"
               onClick={reset}
               aria-label="Cancel"
-              className="rounded-pill p-1 text-ink/60 hover:bg-ink/10"
+              className="rounded-pill p-1 text-ink/60 hover:bg-hover"
             >
               ✕
             </button>

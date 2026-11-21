@@ -131,7 +131,7 @@ export function ExportMenu({
       type="button"
       role="menuitem"
       tabIndex={index === active ? 0 : -1}
-      className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-ink/5"
+      className="block w-full px-3 py-1.5 text-left text-sm text-ink hover:bg-hover"
       data-testid={item.testid}
       onClick={() => activate(item)}
       onMouseEnter={() => setActive(index)}
@@ -148,7 +148,7 @@ export function ExportMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        className="rounded-pill border border-hairline px-3 py-1 text-sm font-medium text-ink hover:bg-ink/5"
+        className="rounded-pill border border-hairline px-3 py-1 text-sm font-medium text-ink hover:bg-hover"
         data-testid="export-menu"
         onClick={() => {
           if (open) close(false);
@@ -415,7 +415,7 @@ export function ListPage() {
             />
           </div>
         ) : (
-          <h1 className="flex min-w-0 items-center gap-2 font-display text-[1.75rem] leading-tight font-medium tracking-tight text-ink">
+          <h1 className="flex min-w-0 items-center gap-2 font-display text-[2.25rem] leading-none font-semibold tracking-tight text-ink">
             <span data-testid="list-marker" data-color={list.marker.color}>
               <MarkerGlyph marker={list.marker} size={18} />
             </span>
@@ -475,7 +475,7 @@ export function ListPage() {
                 row in the notebook → the canvas highlights and flies. */}
               <button
                 type="button"
-                className="min-w-0 flex-1 px-2 py-3 text-left hover:bg-ink/5"
+                className="min-w-0 flex-1 px-2 py-3 text-left hover:bg-hover"
                 data-testid="select-place"
                 onClick={() => focusPlace(row.place.id)}
               >
@@ -492,7 +492,7 @@ export function ListPage() {
                   <button
                     type="button"
                     aria-label="Move up"
-                    className="rounded-pill px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
+                    className="rounded-pill px-1.5 py-0.5 text-xs text-ink hover:bg-hover"
                     onClick={(e) => {
                       e.stopPropagation();
                       move(row, -1);
@@ -503,7 +503,7 @@ export function ListPage() {
                   <button
                     type="button"
                     aria-label="Move down"
-                    className="rounded-pill px-1.5 py-0.5 text-xs text-ink hover:bg-ink/10"
+                    className="rounded-pill px-1.5 py-0.5 text-xs text-ink hover:bg-hover"
                     onClick={(e) => {
                       e.stopPropagation();
                       move(row, 1);
@@ -513,7 +513,7 @@ export function ListPage() {
                   </button>
                   <button
                     type="button"
-                    className="rounded-pill px-1.5 py-0.5 text-xs text-accent-vermilion-deep hover:bg-ink/5"
+                    className="rounded-pill px-1.5 py-0.5 text-xs text-accent-vermilion-deep hover:bg-hover"
                     data-testid="remove-from-list"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -541,7 +541,7 @@ export function ListPage() {
         <div className="mt-6">
           <button
             type="button"
-            className="rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-accent-vermilion-deep hover:bg-ink/5"
+            className="rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-accent-vermilion-deep hover:bg-hover"
             data-testid="delete-list"
             onClick={() =>
               guarded("Can’t delete this list yet", () =>

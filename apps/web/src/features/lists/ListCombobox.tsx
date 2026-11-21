@@ -171,7 +171,7 @@ export function ListCombobox({
                     onClick={() => pick(option)}
                     onMouseEnter={() => setActiveIndex(index)}
                     className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-ink ${
-                      index === active ? "bg-ink/5" : ""
+                      index === active ? "bg-hover" : ""
                     }`}
                     data-testid={
                       option.kind === "create"

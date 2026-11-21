@@ -1,65 +1,103 @@
 # Visual Design
 
-The direction is **instrument-panel retrofuturism**: the clean-lined, optimistic mid-century idea
-of the future — Eames-era cartography, the NASA punch-card era, Braun dials — not neon cyberpunk.
-A deep-green console, precise hairlines, and a small set of bright signal colours doing real
-work: dark chrome around a lit chart. The whole system serves one job: the eight list-marker
-accents are the loudest, clearest thing in the app.
+The direction is **the quiet paper**: a warm off-white notebook beside a light map, set in clean
+modern type, with hairlines doing the structural work. On top of that calm base sits a small
+playful layer borrowed from retro desktop software — black pixel-face labels, bubblegum pink —
+so the app feels friendly rather than corporate. The whole system still serves one job: the
+eight list-marker accents are the loudest, clearest thing on screen.
 
-The system is expressed as Tailwind `@theme` tokens. This chapter names the tokens and gives rough
-starting values; it fixes roles and relationships, not pixel specs.
+The system is expressed as Tailwind `@theme` tokens in `apps/web/src/index.css`. This chapter
+names the tokens and gives their starting values; it fixes roles and relationships, not pixel
+specs.
+
+## Themes
+
+There are two themes, and only token values differ between them.
+
+- **Paper** — the default. Warm off-white ground (`#FCFCF9`), warm near-black ink (`#171716`),
+  hairlines in a light warm grey (`#DFDFDD`).
+- **Night** — the dark theme, followed automatically from the device's
+  `prefers-color-scheme: dark`. Neutral charcoal ground (`#171716`), off-white ink (`#F3F3EF`),
+  hairlines at `#343431`.
+
+There is no in-app theme switch. Components never branch on the theme; they use token
+utilities and the tokens change underneath them.
 
 ## Paper and ink
 
-The ground is the **deep-green console**: a mid-deep forest (`#223129`) — deliberately lifted
-well clear of black, so the console sits beside the light map plate rather than clashing against
-it — with warm off-white ink (`#E9EFE9`) and hairlines in a muted green (`#41544A`). The notebook, cards, sheets,
-and the public viewer all sit on that same ground; structure comes from hairlines and whitespace,
-not background changes. The one exception is `--color-panel` (`#2B3C33`), a single slightly-raised
-surface reserved for popups and menus that must sit above the ground.
+The notebook, cards, sheets, and the public viewer all sit on the one **paper** ground;
+structure comes from hairlines and whitespace, not background changes. Three quiet surfaces sit
+beside it: `--color-panel` (white in Paper, `#222220` in Night) for popups and menus that float
+above the ground; `--color-wash` for status chips; and the tag ground described under
+[The playful layer](#the-playful-layer).
 
-The basemap deliberately stays a light plate (see [Map styling](#map-styling)), so the console
-frames a lit chart and the accent pins dominate it. Because the ground is dark, the deepened
-accent variants are *lightened* to stay text-safe. There is one theme; a light theme is a listed
-future.
+Secondary text is ink at reduced opacity, never below 60% for anything meant to be read.
 
 ## The eight accents
 
-The accent palette **is** the list-marker palette, and these are the only hues in the app. Each
-accent has a bright fill token and a text-safe variant at `--color-accent-<name>-deep` for small
-text on paper, where the bright fill would fall short of readable contrast. The paper is dark, so
-"deep" variants are in fact *lightened* toward the ink — the token name fixes the role (readable
-small text on paper), not a direction on the lightness scale.
+The accent palette **is** the list-marker palette. Each accent has a bright fill token and a
+text-safe variant at `--color-accent-<name>-deep` for small text on paper, where the bright fill
+would fall short of readable contrast. The token name fixes the role (readable small text on
+paper), not a direction on the lightness scale: in Paper the deep variants are darkened, in
+Night they are lightened.
 
-| Accent | Token | Fill start | Deep start |
-|---|---|---|---|
-| Signal orange | `--color-accent-orange` | `#F97316` | `#FBA45C` |
-| Cobalt | `--color-accent-cobalt` | `#2457E6` | `#7FA0F5` |
-| Kelly green | `--color-accent-green` | `#17A34A` | `#5CCB8A` |
-| Magenta | `--color-accent-magenta` | `#D6219C` | `#EC72C4` |
-| Cyan | `--color-accent-cyan` | `#08AECE` | `#5BCFE6` |
-| Golden yellow | `--color-accent-gold` | `#F0B100` | `#F5CB4D` |
-| Vermilion | `--color-accent-vermilion` | `#E43D1F` | `#F58063` |
-| Violet | `--color-accent-violet` | `#7C3AED` | `#AD8BF7` |
+| Accent | Token | Fill | Deep (Paper) | Deep (Night) |
+|---|---|---|---|---|
+| Signal orange | `--color-accent-orange` | `#F97316` | `#B4500C` | `#FBA45C` |
+| Cobalt | `--color-accent-cobalt` | `#2457E6` | `#1D44C4` | `#7FA0F5` |
+| Kelly green | `--color-accent-green` | `#17A34A` | `#0F7A36` | `#5CCB8A` |
+| Magenta | `--color-accent-magenta` | `#D6219C` | `#AD1A7E` | `#EC72C4` |
+| Cyan | `--color-accent-cyan` | `#08AECE` | `#067A91` | `#5BCFE6` |
+| Golden yellow | `--color-accent-gold` | `#F0B100` | `#8A6500` | `#F5CB4D` |
+| Vermilion | `--color-accent-vermilion` | `#E43D1F` | `#C2331A` | `#F58063` |
+| Violet | `--color-accent-violet` | `#7C3AED` | `#6A2FD0` | `#AD8BF7` |
 
 Bright fills are for markers, toggles, and large type; deep variants are for small text on paper
-and should hold roughly 4.5:1 contrast against it. Values are starting points, tuned during the
-visual-system pass — the token names and the eight-accent count are the fixed part.
+and should hold roughly 4.5:1 contrast against it. The token names and the eight-accent count
+are the fixed part. The fills are the same in both themes, so a list's marker never changes
+colour.
+
+`--color-signal` is the focus colour — cobalt in Paper, its lightened form in Night.
+
+## The playful layer
+
+A deliberately small set of ornaments, used the same way everywhere:
+
+- **Section labels** (`eyebrow`) — WHAT PEOPLE SAY, LISTS, POSTS — are black tags set in the
+  pixel face with pink lettering, like highlighted terminal text. In Night the tag inverts: a
+  pink tag with dark lettering.
+- **Data tags** — the dishes people order — are the same tag ground in the mono face, the name
+  in `--color-tag-text` and the count in `--color-tag-accent`.
+- **Meters** are outlined pills with a pink (`--color-blush`) fill.
+- **Hover** — the row or control under the pointer fills with `--color-hover`: pink in Paper, a
+  deep magenta in Night so light text stays readable.
+
+Pink is ornament and state, never information: nothing is communicated by pink alone, and it
+never competes with a list accent for meaning. The pixel face is for labels only, never running
+text.
 
 ## Clean lines
 
-Rules and borders are 1px hairlines, never heavier. Corners take a sharp 2px radius everywhere.
-Whitespace is generous; density comes from good setting, not tight packing. No shadow is heavier
-than a hairline — elevation is drawn with borders, not blur. The notebook should read like a
-well-set field notebook: ruled, calm, and precise.
+Rules and borders are 1px hairlines, never heavier. There are two radii, assigned by role:
+**surfaces** — cards, images, menus, tags — take the crisp 2px radius; **anything pressed or
+typed into** — buttons, fields, list chips, meters — is a full pill. Whitespace is generous;
+density comes from good setting, not tight packing.
+
+There is one shadow, `--shadow-lift`: a wide, soft lift reserved for things that float — controls
+over the map, popups and menus, and the primary action. Everything else is flat; elevation is
+otherwise drawn with hairlines.
 
 ## Type
 
-- **Display and UI** — a geometric sans (Space Grotesk-class) with tabular numerals, so counts
-  and coordinates hold their columns like dial readouts.
-- **Article bodies** — a readable text face; posts are for reading, not for chrome.
-- **Instrument accents** — coordinates, place counts, and slugs render in a monospaced accent
-  style: the small, deliberate instrument-panel nod, used sparingly.
+All faces are open-licensed and self-hosted with the app (Latin and Latin Extended subsets), so
+the offline shell and the content security policy never depend on a font host.
+
+- **Display** — Schibsted Grotesk: headings and anything pressed. Page and place titles are
+  large and tight (about 2–2.5rem, line-height 1, semibold).
+- **Text** — Inter: UI copy, summaries, and article bodies. Tabular numerals, so counts hold
+  their columns.
+- **Mono** — Geist Mono: coordinates, place counts, slugs, opening hours, and data tags.
+- **Pixel** — VT323: section labels only.
 
 ## Markers
 
@@ -83,16 +121,17 @@ half again as large, never dimmed, above its neighbours — the size is the sign
 
 ## Map styling
 
-The basemap is neutral and desaturated — a light, quiet plate restyled from the provider's
-default (see [Map Data & Providers](./data-sources.md)) so that accent pins are the loudest thing
-on the canvas. It deliberately stays light while the chrome is dark: the console frames a lit
-chart, and the map reads as the bright instrument in the panel rather than dissolving into it.
+The basemap is neutral and desaturated — a quiet plate restyled from the provider's default (see
+[Map Data & Providers](./data-sources.md)) so that accent pins are the loudest thing on the
+canvas. The plate follows the chrome: its greys are chosen to sit beside the paper as one
+surface. Today the plate is light in both themes; a dark plate for Night is planned, and until
+it lands Night frames a lit chart.
 
 Two consequences follow. Every control floating over the map — the list-toggle chips, the
-reopen affordance, the unavailable banner, attribution — reads as a deep console chip: solid
-paper, hairline border, ink text. And everything painted *into* the map scene (pin outlines,
-cluster discs) contrasts against the light plate, not the dark chrome — those
-are fixed plate values, not the chrome tokens. Attribution is always visible.
+reopen affordance, the map's own zoom and locate buttons, the unavailable banner, attribution —
+reads as a lifted paper pill: solid paper, hairline border, the lift shadow. And everything
+painted *into* the map scene (pin outlines, cluster discs) contrasts against the plate, not the
+chrome — those are fixed plate values, not the chrome tokens. Attribution is always visible.
 
 ## Motion
 
@@ -101,17 +140,24 @@ things. Under `prefers-reduced-motion` every one of them completes instantly.
 
 ## Token families
 
-- **Paper** — `--color-paper` (`#223129`): the one background — deep forest, not black.
-- **Ink** — `--color-ink` (`#E9EFE9`): text, icons, and controls at full strength — warm
-  off-white.
-- **Panel** — `--color-panel` (`#2B3C33`): the one raised surface, only for popups and menus
-  that sit above the ground.
+Values are Paper / Night where they differ.
+
+- **Paper** — `--color-paper` (`#FCFCF9` / `#171716`): the one background.
+- **Ink** — `--color-ink` (`#171716` / `#F3F3EF`): text, icons, and controls at full strength.
+- **Panel** — `--color-panel` (`#FFFFFF` / `#222220`): popups and menus above the ground.
+- **Wash** — `--color-wash` (`#EBEBE8` / `#2B2B29`): status chips.
+- **Hairline** — `--color-hairline` (`#DFDFDD` / `#343431`): every rule and border, at 1px.
+- **Signal** — `--color-signal` (`#2457E6` / `#7FA0F5`): focus.
 - **Accents** — `--color-accent-<name>` and `--color-accent-<name>-deep`, eight of each (table
-  above). No other hues exist in the app.
-- **Hairline** — `--color-hairline` (`#41544A`): every rule and border, at 1px.
-- **Radius** — `--radius-crisp` (`2px`): the one corner radius.
-- **Type** — `--font-display`, `--font-body`, `--font-mono`; the size scale keeps Tailwind's
-  default `--text-*` steps.
+  above).
+- **Tag** — `--color-tag` (`#171716` / `#F386A1`), `--color-tag-text` (`#FCFCF9` / `#171716`),
+  `--color-tag-accent` (`#F7A1B8` / `#171716`): section labels and data tags.
+- **Blush and hover** — `--color-blush` (`#F386A1`): meter fills; `--color-hover`
+  (`#F7A8BC` / `#8F2A6B`): the fill under the pointer.
+- **Radius** — `--radius-crisp` (`2px`) for surfaces, `--radius-pill` for controls.
+- **Shadow** — `--shadow-lift`: the one shadow, for floating things.
+- **Type** — `--font-display`, `--font-body`, `--font-mono`, `--font-pixel`; the size scale keeps
+  Tailwind's default `--text-*` steps.
 
 Storybook is the design-QA harness for the marker and token system (see
 [Tech Stack](./tech-stack.md)).

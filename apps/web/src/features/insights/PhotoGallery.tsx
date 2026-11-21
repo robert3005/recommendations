@@ -138,7 +138,7 @@ function Lightbox({
   if (!photo) return null;
 
   const navClass =
-    "rounded-pill border border-hairline bg-paper px-3 py-1.5 text-sm text-ink hover:bg-ink/10";
+    "rounded-pill border border-hairline bg-paper px-3 py-1.5 text-sm text-ink hover:bg-hover";
   // Portalled to <body> so no ancestor's overflow or stacking context clips it.
   return createPortal(
     <div

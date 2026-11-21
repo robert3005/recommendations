@@ -110,8 +110,8 @@ function RootLayout() {
       >
         <MapCanvas />
         {/* Collapsed notebook: a floating reopen affordance on the canvas.
-            A deep-green chip — solid paper with a hairline — so every control
-            floating over the light map plate reads as console chrome
+            A lifted paper pill — solid paper, hairline, soft shadow — like
+            every control floating over the map plate
             (spec/src/design.md §Map styling). */}
         {desktop === "collapsed" ? (
           <button
@@ -182,7 +182,7 @@ function RootLayout() {
             data-testid="pane-collapse"
             disabled={atMapEnd}
             onClick={collapse}
-            className="rounded-pill px-2 py-1 text-sm text-ink hover:bg-ink/10 disabled:opacity-30"
+            className="rounded-pill px-2 py-1 text-sm text-ink hover:bg-hover disabled:opacity-30"
           >
             ⟨
           </button>
@@ -193,7 +193,7 @@ function RootLayout() {
             data-testid="pane-expand"
             disabled={atContentEnd}
             onClick={expand}
-            className="rounded-pill px-2 py-1 text-sm text-ink hover:bg-ink/10 disabled:opacity-30"
+            className="rounded-pill px-2 py-1 text-sm text-ink hover:bg-hover disabled:opacity-30"
           >
             ⟩
           </button>

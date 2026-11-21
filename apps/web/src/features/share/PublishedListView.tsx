@@ -56,7 +56,7 @@ export function PublishedListContent({ slug }: { slug: string }) {
     <article className="p-4" data-testid="published-list">
       <header className="flex items-center gap-2">
         <MarkerGlyph marker={document.marker} />
-        <h1 className="font-display text-[1.75rem] leading-tight font-medium tracking-tight text-ink">
+        <h1 className="font-display text-[2.25rem] leading-none font-semibold tracking-tight text-ink">
           {document.title}
         </h1>
       </header>

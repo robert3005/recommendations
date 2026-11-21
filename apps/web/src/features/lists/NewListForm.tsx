@@ -51,7 +51,7 @@ export function NewListForm({ submitLabel, submitTestId, onCreate, onCancel }: N
       <button
         type="button"
         onClick={onCancel}
-        className="shrink-0 rounded-pill px-2 py-1 text-xs text-ink hover:bg-ink/10"
+        className="shrink-0 rounded-pill px-2 py-1 text-xs text-ink hover:bg-hover"
       >
         Cancel
       </button>

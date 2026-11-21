@@ -2,7 +2,7 @@
  * The basemap plate (spec/src/design.md §Map styling): a neutral, desaturated,
  * light map built in code from Protomaps vector tiles, so the eight list
  * accents are the loudest thing on the canvas. The plate carries no hue of its
- * own beyond a faint green-grey cast that sits quietly beside the console.
+ * own beyond a faint green-grey cast that sits quietly beside the chrome.
  *
  * Built with @protomaps/basemaps: the layer schema is theirs, the colours are
  * ours. POI icons and road shields are dropped — the only points of interest

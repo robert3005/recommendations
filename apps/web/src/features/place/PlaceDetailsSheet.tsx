@@ -137,7 +137,7 @@ export function PlaceDetailsSheet({
           address, compact fact rows. No coordinates: the pin is the
           coordinate display. Facts are the user's copy (spec/src/data-model.md). */}
       <h2
-        className="pr-8 font-display text-2xl leading-tight font-medium tracking-tight text-ink"
+        className="pr-8 font-display text-[2rem] leading-none font-semibold tracking-tight text-ink"
         data-testid="place-name"
       >
         {place.name}

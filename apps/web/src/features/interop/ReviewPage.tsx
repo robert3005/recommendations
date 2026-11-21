@@ -313,7 +313,7 @@ export function ReviewPage() {
                   <button
                     type="button"
                     disabled={busy}
-                    className="rounded-pill px-2 py-1 text-xs text-ink/60 hover:bg-ink/5 disabled:opacity-40"
+                    className="rounded-pill px-2 py-1 text-xs text-ink/60 hover:bg-hover disabled:opacity-40"
                     data-testid="review-skip"
                     onClick={() => void resolve(item.id, { kind: "skip" })}
                   >

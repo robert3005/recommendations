@@ -97,7 +97,7 @@ target is refused until I unpublish it first.
 
 ## Phase 6 — Visual system & hardening
 
-- The retrofuturist polish pass: paper-and-ink surfaces, the eight accents, the marker system,
+- The visual polish pass: paper-and-ink surfaces, the eight accents, the marker system,
   the neutral basemap ([Visual design](./design.md)).
 - Accessibility acceptance: keyboard operability, dialog semantics for sheets, reduced motion.
 - Performance: marker clustering at scale and large-import responsiveness.

@@ -35,7 +35,7 @@ export function ListsPage() {
   return (
     <div className="mx-auto max-w-2xl p-4" data-testid="lists-page">
       <div className="flex items-center justify-between">
-        <h1 className="font-display text-[1.75rem] leading-tight font-medium tracking-tight text-ink">
+        <h1 className="font-display text-[2.25rem] leading-none font-semibold tracking-tight text-ink">
           Lists
         </h1>
         <div className="flex items-center gap-2">
@@ -76,7 +76,7 @@ export function ListsPage() {
       <ul className="mt-4 divide-y divide-hairline">
         {(rows ?? []).map(({ list, placeCount }) => (
           <li key={list.id} data-testid="list-row">
-            <div className="flex items-center gap-3 px-1 py-3 hover:bg-ink/5">
+            <div className="flex items-center gap-3 px-1 py-3 hover:bg-hover">
               <MarkerGlyph
                 marker={list.marker}
                 size={20}

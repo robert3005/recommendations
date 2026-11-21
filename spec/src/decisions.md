@@ -51,6 +51,21 @@ deep-linkable. The list page's posts sidebar is demoted to a quiet alternate vie
 deliberately unaccented Places/Posts toggle, and the home rows drop their posts indicator —
 marker, name, count only (supersedes the sidebar reading of requirement 7 — owner's call).
 
+## 2026-11-21 — Paper and Night replace the deep-green console
+
+The owner asked for a modern look in the spirit of spiraldb.com and typesafe.ai and picked, from
+mockups, a light default with a dark companion plus a few playful touches. The deep-green console
+and "instrument-panel retrofuturism" are retired. Paper (`#FCFCF9` ground, `#171716` ink,
+`#DFDFDD` hairlines) is the default; Night (charcoal `#171716` ground) follows
+`prefers-color-scheme: dark`. Token names carried over, so most components changed no colour
+classes; new tokens are `--color-wash`, `--color-signal`, `--color-tag*`, `--color-blush`,
+`--color-hover`, `--radius-pill`, `--shadow-lift`, and `--font-pixel`. From Spiral: off-white
+ground, hairlines, a grotesk display face over a plain text sans, crisp surfaces with pill
+controls, one soft shadow. From typesafe: black pixel-face section labels and dish tags with
+pink lettering, pink meter fills, a pink hover fill, large tight headlines. Type is self-hosted
+(Schibsted Grotesk, Inter, Geist Mono, VT323) so the offline shell and CSP need no font host.
+The basemap plate is to be restyled to follow these tokens, including a dark plate for Night.
+
 ## 2026-07-26 — the deep-green console
 
 The owner picked the design-review artifact's deep green over the near-white paper as the app's

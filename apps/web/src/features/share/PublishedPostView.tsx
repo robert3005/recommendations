@@ -48,7 +48,7 @@ export function PublishedPostContent({ slug }: { slug: string }) {
   return (
     <article className="p-4" data-testid="published-post">
       <header>
-        <h1 className="font-display text-[1.75rem] leading-tight font-medium tracking-tight text-ink">
+        <h1 className="font-display text-[2.25rem] leading-none font-semibold tracking-tight text-ink">
           {document.title}
         </h1>
         {document.list ? (

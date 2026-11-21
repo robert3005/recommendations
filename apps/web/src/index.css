@@ -8,11 +8,12 @@
  * ground, near-black ink, 1px hairlines, and the eight accent colours — the
  * list-marker palette — as the only loud hues in the app. The chrome is light
  * like the basemap plate, so notebook and map read as one surface and the
- * pins carry the colour. One theme; a dark theme is a listed future.
+ * pins carry the colour. Two themes: Paper here, Night below.
  *
  * These are Tailwind `@theme` tokens, so they generate real utilities:
- * `bg-paper`, `text-ink`, `border-hairline`, `bg-wash`, `bg-signal`,
- * `text-accent-cobalt-deep`, `rounded-crisp`, `rounded-pill`, `shadow-lift`.
+ * `bg-paper`, `text-ink`, `border-hairline`, `bg-wash`, `bg-tag`, `bg-blush`,
+ * `bg-hover`, `text-accent-cobalt-deep`, `rounded-crisp`, `rounded-pill`,
+ * `shadow-lift`.
  * Components use those names — never a raw hex.
  */
 @theme {
@@ -31,9 +32,21 @@
   /* Hairline — every rule and border, at 1px. */
   --color-hairline: #dfdfdd;
 
-  /* Signal — the one colour for data marks (meter fills, the label square)
-     and focus. It is the cobalt accent, named for its role. */
+  /* Signal — the focus colour. It is the cobalt accent, named for its role. */
   --color-signal: #2457e6;
+
+  /*
+   * The playful layer, borrowed from retro desktop software: black tags set
+   * in a pixel face with bubblegum-pink accents, pink meter fills, and a pink
+   * fill under whatever the pointer is on. Tag — the label/tag ground;
+   * tag-text and tag-accent — what is written on it; blush — the pink itself;
+   * hover — the fill under a hovered row or control.
+   */
+  --color-tag: #171716;
+  --color-tag-text: #fcfcf9;
+  --color-tag-accent: #f7a1b8;
+  --color-blush: #f386a1;
+  --color-hover: #f7a8bc;
 
   /*
    * The eight accents. Bright fills are for markers, toggles, and large type;
@@ -76,6 +89,8 @@
     "Schibsted Grotesk Variable", "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
   --font-body: "Inter Variable", system-ui, "Segoe UI", Roboto, sans-serif;
   --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  /* The pixel face — section labels only, never running text. */
+  --font-pixel: "VT323", "Geist Mono Variable", ui-monospace, monospace;
 }
 
 /*
@@ -93,6 +108,10 @@
     --color-wash: #2b2b29;
     --color-hairline: #343431;
     --color-signal: #7fa0f5;
+    --color-tag: #f386a1;
+    --color-tag-text: #171716;
+    --color-tag-accent: #171716;
+    --color-hover: #8f2a6b;
     --color-accent-orange-deep: #fba45c;
     --color-accent-cobalt-deep: #7fa0f5;
     --color-accent-green-deep: #5ccb8a;
@@ -138,7 +157,7 @@ h2,
 button,
 .font-display {
   font-family: var(--font-display);
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
 }
 
 /* Selection inverts paper and ink — signal without introducing a new hue. */
@@ -155,32 +174,22 @@ button,
 }
 
 /*
- * The section label: small uppercase mono on a wash chip, led by a signal
- * square. It names a block of content (WHAT PEOPLE SAY, LISTS, POSTS) and is
- * the one recurring ornament in the notebook.
+ * The section label: a black tag in the pixel face with pink lettering, like
+ * highlighted terminal text. It names a block of content (WHAT PEOPLE SAY,
+ * LISTS, POSTS) and is the one recurring ornament in the notebook.
  */
 @utility eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
+  display: inline-block;
   border-radius: var(--radius-crisp);
-  background: var(--color-wash);
-  padding: 0.1875rem 0.4375rem;
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
+  background: var(--color-tag);
+  padding: 0 0.375rem;
+  font-family: var(--font-pixel);
+  font-size: 0.9375rem;
   font-weight: 400;
-  line-height: 1rem;
-  letter-spacing: 0.04em;
+  line-height: 1.125rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--color-ink) 80%, transparent);
-
-  &::before {
-    content: "";
-    width: 0.3125rem;
-    height: 0.3125rem;
-    flex: none;
-    background: var(--color-signal);
-  }
+  color: var(--color-tag-accent);
 }
 
 /* The same voice without the chip — for labels inside menus. */

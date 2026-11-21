@@ -62,12 +62,12 @@ function Meter({ label, score, mentions }: { label: string; score: number; menti
     >
       <span className="text-ink/80">{label}</span>
       <span
-        className="relative h-1 rounded-pill bg-hairline"
+        className="relative h-2 overflow-hidden rounded-pill border border-ink bg-panel"
         role="img"
         aria-label={`${label}: ${aspectWord(score)}, ${mentions} mentions`}
       >
         <span
-          className="absolute inset-y-0 left-0 rounded-pill bg-signal"
+          className="absolute inset-y-0 left-0 border-r border-ink bg-blush"
           style={{ width: `${fill * 100}%` }}
         />
       </span>
@@ -161,10 +161,10 @@ export function PlaceInsightsPanel({
             {profile.dishes.slice(0, 6).map((d) => (
               <li
                 key={d.name}
-                className="rounded-pill border border-hairline bg-panel px-2.5 py-0.5 text-xs text-ink"
+                className="rounded-crisp bg-tag px-2 py-0.5 font-mono text-[11px] text-tag-text"
                 title={`${d.mentions} mentions, ${aspectWord(d.score).toLowerCase()}`}
               >
-                {d.name} <span className="font-mono text-ink/60">{d.mentions}</span>
+                {d.name} <span className="text-tag-accent">{d.mentions}</span>
               </li>
             ))}
           </ul>
