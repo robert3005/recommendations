@@ -4,30 +4,35 @@
  * or self-hosted deployments via VITE_* env configuration (the build fails closed).
  */
 /**
- * Basemap, preferred path: our own plate style (src/map/basemapStyle.ts) built
- * from a Protomaps-schema PMTiles archive — self-hosted static storage, no
- * per-view billing (spec/src/data-sources.md §Map tiles). When set, it wins
- * over VITE_MAP_STYLE_URL. Relative paths resolve against the app's origin.
+ * Our tile bucket (Cloudflare R2, public r2.dev URL): the Protomaps Europe
+ * archive plus the plate's glyphs and sprite (spec/src/data-sources.md §Map tiles).
  */
-export const MAP_PMTILES_URL: string | undefined =
-  import.meta.env.VITE_MAP_PMTILES_URL || undefined;
-
-/** Glyphs for the plate style. The default (GitHub Pages) is development-only. */
-export const MAP_GLYPHS_URL: string =
-  import.meta.env.VITE_MAP_GLYPHS_URL ??
-  "https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf";
-
-/** Sprite for the plate style. The default (GitHub Pages) is development-only. */
-export const MAP_SPRITE_URL: string =
-  import.meta.env.VITE_MAP_SPRITE_URL ??
-  "https://protomaps.github.io/basemaps-assets/sprites/v4/light";
+const TILE_BUCKET = "https://pub-a5fdf113afab4f329db5d4a74129b60d.r2.dev";
 
 /**
- * Fallback basemap when no PMTiles archive is configured: OpenFreeMap
- * "positron" — a quiet grey OSM style on full street-level vector tiles, no
- * API key (https://openfreemap.org). Alternatives for development live in
- * .env.example / spec/src/data-sources.md. E2e overrides this with a local,
- * network-free style fixture.
+ * Basemap, preferred path: our own plate style (src/map/basemapStyle.ts) built
+ * from a Protomaps-schema PMTiles archive — self-hosted static storage, no
+ * per-view billing. Defaults to the bucket's archive unless a hosted style is
+ * chosen explicitly with VITE_MAP_STYLE_URL (e2e's network-free fixture does
+ * this). Relative paths resolve against the app's origin.
+ */
+export const MAP_PMTILES_URL: string | undefined =
+  import.meta.env.VITE_MAP_PMTILES_URL ||
+  (import.meta.env.VITE_MAP_STYLE_URL ? undefined : `${TILE_BUCKET}/europe.pmtiles`);
+
+/** Glyphs for the plate style, served beside the archive. */
+export const MAP_GLYPHS_URL: string =
+  import.meta.env.VITE_MAP_GLYPHS_URL ?? `${TILE_BUCKET}/fonts/{fontstack}/{range}.pbf`;
+
+/** Sprite for the plate style, served beside the archive. */
+export const MAP_SPRITE_URL: string =
+  import.meta.env.VITE_MAP_SPRITE_URL ?? `${TILE_BUCKET}/sprites/v4/light`;
+
+/**
+ * Hosted basemap, used only when VITE_MAP_STYLE_URL is set — e.g. OpenFreeMap
+ * Positron (keyless, quiet grey, worldwide) for places outside the Europe
+ * archive. Alternatives live in .env.example / spec/src/data-sources.md. E2e
+ * sets a local, network-free style fixture.
  */
 export const MAP_STYLE_URL: string =
   import.meta.env.VITE_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/positron";
