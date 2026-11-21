@@ -85,9 +85,7 @@ export const harvestReviewSchema = z.object({
   originalLanguage: z.string().optional(),
   translatedText: z.string().optional(),
   translatedLanguage: z.string().optional(),
-  ownerResponse: z
-    .object({ text: z.string(), publishedAt: isoDate.optional() })
-    .optional(),
+  ownerResponse: z.object({ text: z.string(), publishedAt: isoDate.optional() }).optional(),
   likes: z.number().int().nonnegative().optional(),
   publishedAt: isoDate.optional(),
   updatedAt: isoDate.optional(),

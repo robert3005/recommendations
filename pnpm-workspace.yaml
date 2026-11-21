@@ -2,6 +2,7 @@ packages:
   - "packages/*"
   - "apps/*"
   - "services/*"
+  - "tools/*"
 allowBuilds:
   esbuild: true
   msw: false

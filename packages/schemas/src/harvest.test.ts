@@ -65,7 +65,8 @@ describe("harvest dataset schemas", () => {
     };
     expect(harvestPhotoSchema.safeParse(photo).success).toBe(false);
     expect(
-      harvestPhotoSchema.safeParse({ ...photo, url: "https://lh3.googleusercontent.com/x" }).success,
+      harvestPhotoSchema.safeParse({ ...photo, url: "https://lh3.googleusercontent.com/x" })
+        .success,
     ).toBe(true);
   });
 

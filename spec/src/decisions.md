@@ -16,6 +16,18 @@ produces a union-of-all-designs codebase: roughly 8,500 lines of it, removed ove
 
 ---
 
+## 2026-11-21 — the review harvest
+
+The product now classifies what reviewers say about a place, which needs far more review text
+than any file export or official API provides. The Places API returns only a few reviews per
+place, may cache only place IDs long term, and forbids showing its content beside a non-Google
+map. **A local harvester** therefore downloads Google Maps place facts and reviews to the owner's
+machine, starting with the self-hosted gosom scraper and with a paid scraping API as the planned
+fallback ([Review Harvest](./harvest.md)). This reverses "no Google API calls, ever" and "no
+scraping" for that tool only: the web app still calls nothing proprietary, and review text is
+classification input, never displayed or published. The terms-of-service risk was accepted
+explicitly for a private dataset.
+
 ## 2026-07-26 — richer place metadata
 
 The owner asked for the place card to show a picture, a description, and more POI facts —
