@@ -49,8 +49,12 @@ November 2026) that is a **limited view of about five reviews per place**, whate
 5 of 56,858 for one deli. Place facts, rating histograms and photos come through in full. Each snapshot records how complete
 the download was (`reviewCollection`: complete, limited or partial, collected against expected).
 
-A paid scraping API (Apify or SerpApi) is therefore the route to review volume, not only the
-fallback for when Google blocks the home connection. Providers sit behind one batch-shaped interface, so adding one changes no dataset
+The second provider is **SerpApi** (`--provider serpapi`): its Google Maps API resolves the
+place (by feature id and coordinates, else by search), and its Reviews API pages through the
+review history newest first. Every request is one SerpApi credit, so `--max-reviews` (default 50)
+caps the pages per place; a place stopped by the cap is recorded as `partial`. The key comes from
+`$SERPAPI_KEY` or `~/.config/placemarks/serpapi-key`, never from the repository. An invalid key or
+an exhausted quota stops the run; a single place that fails is reported and the run goes on. Providers sit behind one batch-shaped interface, so adding one changes no dataset
 shape.
 
 The harvester is deliberately slow: one browser page at a time, small batches, a jittered pause

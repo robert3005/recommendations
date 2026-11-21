@@ -25,6 +25,19 @@ pnpm harvest status
 
 Data goes to `~/placemarks-data` (or `$PLACEMARKS_DATA`, or `--data-dir`).
 
+## SerpApi (full review history)
+
+```sh
+mkdir -p ~/.config/placemarks && install -m 600 /dev/null ~/.config/placemarks/serpapi-key
+$EDITOR ~/.config/placemarks/serpapi-key        # paste the key; or export SERPAPI_KEY
+pnpm harvest takeout takeout.zip --provider serpapi --max-reviews 50
+```
+
+Each request costs one SerpApi credit: one to look the place up, then one per page of reviews
+(the first page holds about 8, later pages 20). `--max-reviews 50` is about 4 credits per place.
+The run log prints the credits each batch used. Check the free plan's monthly quota before a
+large Takeout run, and use `--dry-run` to see how many places it would fetch.
+
 ## Pace
 
 Defaults are slow on purpose: one browser page at a time, 5 inputs per batch, 60–120 s between
