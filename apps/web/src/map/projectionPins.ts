@@ -14,8 +14,24 @@ import type { MarkPinFeature, PlacePinFeature } from "./MapView";
 /** A library place with its memberships — structurally repo.listPlaceViews(). */
 export interface ProjectablePlace {
   place: { id: PlaceId; name: string; lat: number; lng: number };
-  listIds: string[];
+  listIds: readonly string[];
+  /** Saved views whose filter the place matches (spec/src/map-view.md §Layers). */
+  viewIds?: readonly string[];
+  /** The active library filter excludes the place — the home overlay hides it. */
+  filteredOut?: boolean;
 }
+
+/** Anything that groups places and wears a marker: a list or a saved view. */
+export interface Layer {
+  id: string;
+  marker: ListMarker;
+}
+
+/** The layer id of places in no list and no saved view. */
+export const OTHER_LAYER_ID = "__other";
+
+/** What a place in no group wears: a quiet neutral, outside the eight accents. */
+export const UNGROUPED_MARKER: ListMarker = { shape: "circle", color: "#77776F" };
 
 /** The pin a published post document's places wear (no list marker travels with a post). */
 export const DEFAULT_PUBLISHED_MARKER: ListMarker = {
@@ -27,7 +43,9 @@ export interface LibraryPinsInput {
   projection: CanvasProjection;
   places: readonly ProjectablePlace[];
   lists: readonly List[];
-  /** Home-overlay toggles: lists switched off (spec/src/map-view.md §Home). */
+  /** Saved views, layered on the home overlay beside the lists. */
+  views?: readonly Layer[];
+  /** Home-overlay toggles: layers switched off — list ids, view ids, OTHER_LAYER_ID. */
   hiddenListIds: readonly string[];
   /** The post projection's places — its target's members (spec/src/posts.md §Projection). */
   postTargetPlaceIds?: ReadonlySet<PlaceId>;
@@ -39,12 +57,14 @@ export function libraryPins({
   projection,
   places,
   lists,
+  views = [],
   hiddenListIds,
   postTargetPlaceIds,
   postListId,
 }: LibraryPinsInput): PlacePinFeature[] {
   if (projection.kind === "import-item" || projection.kind === "published-doc") return [];
   const listsById = new Map(lists.map((list) => [list.id, list]));
+  const viewsById = new Map(views.map((view) => [view.id, view]));
 
   return places.flatMap((view) => {
     // Deterministic marker for a place in several lists: lowest list id leads.
@@ -52,23 +72,37 @@ export function libraryPins({
       .sort()
       .map((id) => listsById.get(id))
       .filter((list): list is List => list !== undefined);
-    if (memberLists.length === 0) return [];
+    // A place on no list wears the neutral marker wherever it shows.
+    const ownMarker = memberLists[0]?.marker ?? UNGROUPED_MARKER;
 
     if (projection.kind === "post") {
       // A post projects its target's places and nothing else (one rule, all surfaces).
       if (!postTargetPlaceIds?.has(view.place.id)) return [];
-      const marker =
-        (postListId ? listsById.get(postListId)?.marker : undefined) ??
-        (memberLists[0] as List).marker;
+      const marker = (postListId ? listsById.get(postListId)?.marker : undefined) ?? ownMarker;
       return [pin(view, marker, { stacked: [], dimmed: false })];
     }
 
     if (projection.kind === "lists-overlay") {
-      // The toggle row is the overlay's filter: a place hides only when EVERY
-      // list containing it is toggled off; visible lists decide the marker.
-      const visibleLists = memberLists.filter((list) => !hiddenListIds.includes(list.id));
-      if (visibleLists.length === 0) return [];
-      const [lead, ...rest] = visibleLists as [List, ...List[]];
+      // The library filter narrows the map exactly as it narrows the notebook.
+      if (view.filteredOut) return [];
+      // Layers: the lists a place is on, then the saved views it matches.
+      const layers: Layer[] = [
+        ...memberLists,
+        ...[...(view.viewIds ?? [])]
+          .sort()
+          .map((id) => viewsById.get(id))
+          .filter((layer): layer is Layer => layer !== undefined),
+      ];
+      if (layers.length === 0) {
+        // In no group at all: its own toggle, its own neutral marker.
+        if (hiddenListIds.includes(OTHER_LAYER_ID)) return [];
+        return [pin(view, UNGROUPED_MARKER, { stacked: [], dimmed: false })];
+      }
+      // The toggles are the overlay's filter: a place hides only when EVERY
+      // layer containing it is toggled off; visible layers decide the marker.
+      const visible = layers.filter((layer) => !hiddenListIds.includes(layer.id));
+      if (visible.length === 0) return [];
+      const [lead, ...rest] = visible as [Layer, ...Layer[]];
       return [pin(view, lead.marker, { stacked: rest.map((l) => l.marker), dimmed: false })];
     }
 
@@ -76,7 +110,7 @@ export function libraryPins({
     // library dimmed in its own marker (spec/src/map-view.md §The list page).
     const projected = listsById.get(projection.listId);
     const member = projected !== undefined && view.listIds.includes(projection.listId);
-    const marker = member && projected ? projected.marker : (memberLists[0] as List).marker;
+    const marker = member && projected ? projected.marker : ownMarker;
     return [pin(view, marker, { stacked: [], dimmed: !member })];
   });
 }
@@ -180,14 +214,32 @@ export function boundsOf(points: readonly { lat: number; lng: number }[]): BBoxL
  * One camera move per projection change, keyed so an unchanged projection never
  * re-frames. Returns null when there is nothing to frame — never a default
  * camera, which would yank the user somewhere they did not ask to go. The
- * lists overlay never fits: the home keeps the persisted viewport.
+ * home overlay moves the camera only twice: when a session starts it frames
+ * the whole library once, and an active library filter frames its results.
+ * Toggling a layer or clearing the filter leaves the camera where it is.
  */
 export function fitForProjection(input: {
   projection: CanvasProjection;
   placePins: readonly PlacePinFeature[];
   markPins: readonly MarkPinFeature[];
+  /** Identity of the active library filter; absent when there is none. */
+  filterKey?: string;
+  /** The session's opening frame is still owed (applied once — the key never changes). */
+  firstLaunch?: boolean;
 }): { bounds: BBoxLike; key: string } | null {
-  const { projection, placePins, markPins } = input;
+  const { projection, placePins, markPins, filterKey, firstLaunch } = input;
+
+  if (projection.kind === "lists-overlay") {
+    if (filterKey !== undefined) {
+      const bounds = boundsOf(placePins);
+      return bounds ? { bounds, key: `filter:${filterKey}` } : null;
+    }
+    if (firstLaunch) {
+      const bounds = boundsOf(placePins);
+      return bounds ? { bounds, key: "library:launch" } : null;
+    }
+    return null;
+  }
 
   if (projection.kind === "list") {
     const bounds = boundsOf(placePins.filter((pin) => !pin.dimmed));

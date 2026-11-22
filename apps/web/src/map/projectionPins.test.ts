@@ -12,8 +12,10 @@ import {
   fitForProjection,
   importItemMarks,
   libraryPins,
+  OTHER_LAYER_ID,
   type ProjectablePlace,
   publishedPins,
+  UNGROUPED_MARKER,
 } from "./projectionPins";
 
 const NOW = "2026-07-26T10:00:00.000Z";
@@ -186,7 +188,7 @@ describe("fitForProjection", () => {
   });
   const pins = [pin("a", 1, 2, false), pin("b", 5, 6, true)];
 
-  it("never frames the lists overlay — the home keeps the persisted viewport", () => {
+  it("leaves the home overlay alone when no session frame or filter asks for one", () => {
     expect(
       fitForProjection({ projection: { kind: "lists-overlay" }, placePins: pins, markPins: [] }),
     ).toBeNull();
@@ -255,5 +257,99 @@ describe("fitForProjection", () => {
     expect(all?.key).toBe("list:lisbon");
     expect(focused?.key).toBe("list:lisbon:b");
     expect(focused?.bounds.north).toBeCloseTo(5.001);
+  });
+});
+
+describe("libraryPins — layers beyond lists", () => {
+  const overlay = { kind: "lists-overlay" } as const;
+  const view = { id: "v-wine", marker: (lists[2] as List).marker };
+
+  it("draws a place on no list in the neutral marker, under its own toggle", () => {
+    const places = [place("p1", 1, 1, [])];
+    const shown = libraryPins({ projection: overlay, places, lists, hiddenListIds: [] });
+    expect(shown).toHaveLength(1);
+    expect(shown[0]?.marker).toEqual(UNGROUPED_MARKER);
+    expect(
+      libraryPins({ projection: overlay, places, lists, hiddenListIds: [OTHER_LAYER_ID] }),
+    ).toEqual([]);
+  });
+
+  it("a saved view is a layer: its matches wear its marker and follow its toggle", () => {
+    const places = [{ ...place("p1", 1, 1, []), viewIds: ["v-wine"] }];
+    const shown = libraryPins({
+      projection: overlay,
+      places,
+      lists,
+      views: [view],
+      hiddenListIds: [],
+    });
+    expect(shown[0]?.marker).toEqual(view.marker);
+    expect(
+      libraryPins({ projection: overlay, places, lists, views: [view], hiddenListIds: ["v-wine"] }),
+    ).toEqual([]);
+  });
+
+  it("a list leads a view, and a place stays while any of its layers is on", () => {
+    const places = [{ ...place("p1", 1, 1, ["l-a"]), viewIds: ["v-wine"] }];
+    const both = libraryPins({
+      projection: overlay,
+      places,
+      lists,
+      views: [view],
+      hiddenListIds: [],
+    });
+    expect(both[0]?.marker).toEqual((lists[0] as List).marker);
+    expect(both[0]?.stackedMarker).toEqual(view.marker);
+    const listOff = libraryPins({
+      projection: overlay,
+      places,
+      lists,
+      views: [view],
+      hiddenListIds: ["l-a"],
+    });
+    expect(listOff[0]?.marker).toEqual(view.marker);
+  });
+
+  it("the library filter hides what it excludes, whatever the toggles say", () => {
+    const places = [
+      { ...place("p1", 1, 1, ["l-a"]), filteredOut: true },
+      place("p2", 2, 2, ["l-a"]),
+    ];
+    const shown = libraryPins({ projection: overlay, places, lists, hiddenListIds: [] });
+    expect(shown.map((pin) => pin.placeId)).toEqual(["p2"]);
+  });
+
+  it("a list projection dims an unlisted place in the neutral marker", () => {
+    const pins = libraryPins({
+      projection: { kind: "list", listId: "l-a" },
+      places: [place("p1", 1, 1, [])],
+      lists,
+      hiddenListIds: [],
+    });
+    expect(pins[0]).toMatchObject({ dimmed: true, marker: UNGROUPED_MARKER });
+  });
+});
+
+describe("fitForProjection — the home overlay", () => {
+  const pins = libraryPins({
+    projection: { kind: "lists-overlay" },
+    places: [place("p1", 1, 1, ["l-a"]), place("p2", 2, 2, ["l-a"])],
+    lists,
+    hiddenListIds: [],
+  });
+  const base = { projection: { kind: "lists-overlay" } as const, placePins: pins, markPins: [] };
+
+  it("frames the library once when a session starts", () => {
+    expect(fitForProjection({ ...base, firstLaunch: true })?.key).toBe("library:launch");
+  });
+
+  it("frames the results of an active filter, keyed by the filter", () => {
+    expect(fitForProjection({ ...base, firstLaunch: true, filterKey: "{a}" })?.key).toBe(
+      "filter:{a}",
+    );
+  });
+
+  it("frames nothing while the library is empty", () => {
+    expect(fitForProjection({ ...base, placePins: [], firstLaunch: true })).toBeNull();
   });
 });

@@ -8,7 +8,13 @@
  * list's posts (2026-07-26 — search-first chrome). The canvas shows the
  * list's places with the library dimmed.
  */
-import type { List, ListEntry, Place, Post } from "@placemarks/domain";
+import {
+  type List,
+  type ListEntry,
+  type Place,
+  type Post,
+  placeKindLine,
+} from "@placemarks/domain";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useEffect, useId, useRef, useState } from "react";
 import { useList, useListEntries, useLists, usePosts, usePostsFor } from "../../data/hooks";
@@ -246,6 +252,8 @@ export function ListPage() {
   const [editing, setEditing] = useState(false);
   const [view, setView] = useState<ListView>("places");
   const [name, setName] = useState<string>();
+  const [description, setDescription] = useState<string>();
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [refusal, setRefusal] = useState<{ title: string; blockers: Blocker[] }>();
   const [exportError, setExportError] = useState<string>();
   const [handoffHint, setHandoffHint] = useState<string>();
@@ -395,7 +403,7 @@ export function ListPage() {
       {/* One compact header row: the title and the secondary controls —
           the Export menu and the Edit toggle (spec/src/map-view.md §The list
           page). The entries below get the room. */}
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         {editing ? (
           <div className="min-w-0 flex-1">
             <input
@@ -413,13 +421,27 @@ export function ListPage() {
               used={(lists ?? []).filter((l: List) => l.id !== list.id).map((l: List) => l.marker)}
               onSelect={(marker) => void repo.setListMarker(list.id, marker)}
             />
+            <label className="mt-2 block text-xs font-medium text-ink">
+              Intro — shown under the title, and published with the list
+              <textarea
+                value={description ?? list.description ?? ""}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                maxLength={1000}
+                placeholder="Who is this list for, and how did you pick the places?"
+                className="mt-1 block w-full rounded-crisp border border-hairline bg-paper px-2.5 py-1.5 text-sm font-normal text-ink focus:border-ink focus:outline-none"
+                data-testid="list-description-input"
+              />
+            </label>
           </div>
         ) : (
-          <h1 className="flex min-w-0 items-center gap-2 font-display text-[2.25rem] leading-none font-semibold tracking-tight text-ink">
-            <span data-testid="list-marker" data-color={list.marker.color}>
+          // The title wraps rather than truncates: a list's name is the one
+          // thing this page must always show in full.
+          <h1 className="flex min-w-0 flex-1 basis-48 items-start gap-2 font-display text-[2rem] leading-[1.05] font-semibold tracking-tight text-ink">
+            <span className="mt-2" data-testid="list-marker" data-color={list.marker.color}>
               <MarkerGlyph marker={list.marker} size={18} />
             </span>
-            <span className="truncate">{list.name}</span>
+            <span className="min-w-0 break-words">{list.name}</span>
           </h1>
         )}
         <div className="flex shrink-0 items-center gap-1.5">
@@ -433,7 +455,12 @@ export function ListPage() {
               if (editing) {
                 const trimmed = name?.trim();
                 if (trimmed && trimmed !== list.name) void repo.renameList(list.id, trimmed);
+                if (description !== undefined && description.trim() !== (list.description ?? "")) {
+                  void repo.setListDescription(list.id, description);
+                }
                 setName(undefined);
+                setDescription(undefined);
+                setConfirmingDelete(false);
               }
               setEditing(!editing);
             }}
@@ -446,6 +473,14 @@ export function ListPage() {
       {/* Posts are a quiet ALTERNATE VIEW of the list (spec/src/map-view.md
           §The list page): muted tabs, no accent — the entries stay the
           default centre of the page. */}
+      {!editing && list.description ? (
+        <p
+          className="mt-2 font-body text-sm leading-relaxed whitespace-pre-line text-ink/85"
+          data-testid="list-description"
+        >
+          {list.description}
+        </p>
+      ) : null}
       <ListViewToggle view={view} onChange={setView} />
 
       {/* Publish entry point (spec/src/sharing.md). */}
@@ -480,11 +515,16 @@ export function ListPage() {
                 onClick={() => focusPlace(row.place.id)}
               >
                 <span className="font-medium text-ink">{row.place.name}</span>
-                {row.place.category ? (
-                  <span className="ml-2 text-xs text-ink/60 capitalize">{row.place.category}</span>
+                {placeKindLine(row.place) !== "" ? (
+                  <span className="ml-2 text-xs text-ink/60">{placeKindLine(row.place)}</span>
                 ) : null}
                 {row.place.address ? (
                   <span className="mt-0.5 block text-sm text-ink/70">{row.place.address}</span>
+                ) : null}
+                {row.place.note ? (
+                  <span className="mt-0.5 block text-sm text-ink/85 italic">
+                    “{row.place.note}”
+                  </span>
                 ) : null}
               </button>
               {editing ? (
@@ -517,9 +557,9 @@ export function ListPage() {
                     data-testid="remove-from-list"
                     onClick={(e) => {
                       e.stopPropagation();
-                      // Last membership deletes the place — refused while
-                      // posts target it (spec/src/data-model.md §Teardown).
-                      guarded("Can’t remove this place yet", () => repo.removeEntry(row.entry.id));
+                      // Off this list only — the place stays in the library
+                      // (spec/src/data-model.md §The library).
+                      void repo.removeEntry(row.entry.id);
                     }}
                   >
                     Remove
@@ -530,29 +570,55 @@ export function ListPage() {
           ))}
           {rows !== undefined && entries.length === 0 ? (
             <li className="px-2 py-4 text-sm text-ink/60">
-              Nothing here yet — paste a link or search in the top bar, or import a Takeout archive
-              in Settings.
+              Nothing here yet — open a place and add it to this list, or search in the top bar.
             </li>
           ) : null}
         </ul>
       ) : null}
 
       {view === "places" && editing ? (
-        <div className="mt-6">
-          <button
-            type="button"
-            className="rounded-pill border border-hairline px-3 py-1.5 text-sm font-medium text-accent-vermilion-deep hover:bg-hover"
-            data-testid="delete-list"
-            onClick={() =>
-              guarded("Can’t delete this list yet", () =>
-                repo.deleteList(list.id).then(() => {
-                  void navigate({ to: "/" });
-                }),
-              )
-            }
-          >
-            Delete list
-          </button>
+        <div className="mt-6 flex flex-wrap items-center gap-2 text-sm">
+          {confirmingDelete ? (
+            <>
+              <span className="text-ink" data-testid="delete-list-confirm">
+                Delete this list?{" "}
+                {entries.length > 0
+                  ? `Its ${entries.length.toString()} ${entries.length === 1 ? "place stays" : "places stay"} in your library.`
+                  : ""}
+              </span>
+              <button
+                type="button"
+                className="rounded-pill bg-accent-vermilion-deep px-3 py-1.5 font-medium text-paper"
+                data-testid="confirm-delete-list"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  guarded("Can’t delete this list yet", () =>
+                    repo.deleteList(list.id).then(() => {
+                      void navigate({ to: "/" });
+                    }),
+                  );
+                }}
+              >
+                Delete list
+              </button>
+              <button
+                type="button"
+                className="underline"
+                onClick={() => setConfirmingDelete(false)}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="rounded-pill border border-hairline px-3 py-1.5 font-medium text-accent-vermilion-deep hover:bg-hover"
+              data-testid="delete-list"
+              onClick={() => setConfirmingDelete(true)}
+            >
+              Delete list
+            </button>
+          )}
         </div>
       ) : null}
 

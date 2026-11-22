@@ -35,15 +35,11 @@ describe("actionable teardown blockers", () => {
     );
   });
 
-  it("counts remaining entries and states the unpublish-first rule", () => {
-    const blockers: Blocker[] = [
-      { kind: "list-not-empty", ids: ["e1", "e2", "e3"] },
-      { kind: "live-publication", ids: ["pub-1"] },
-    ];
+  it("states the unpublish-first rule", () => {
+    const blockers: Blocker[] = [{ kind: "live-publication", ids: ["pub-1"] }];
     render(
       <BlockerDialog title="Can’t delete this list yet" blockers={blockers} onClose={vi.fn()} />,
     );
-    expect(screen.getByTestId("blocker-list-not-empty").textContent).toContain("3 places");
     expect(screen.getByTestId("blocker-live-publication").textContent).toContain(
       "unpublish it first",
     );

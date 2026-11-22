@@ -1,7 +1,8 @@
 /**
  * DexieRepository invariants (spec/src/storage.md §Repository invariants) on
- * fake-indexeddb: membership is existence, the dedup precedence ladder, marker
- * uniqueness up to the 64-pair space, the three teardown refusals, post-target
+ * fake-indexeddb: the library owns places (lists and saved views only group
+ * them), the dedup precedence ladder, marker uniqueness up to the 64-pair
+ * space, the teardown refusals, post-target
  * immutability, and the id-preserving library archive round trip.
  */
 import type { List, ListEntry, Place, Post, Publication } from "@placemarks/domain";
@@ -50,8 +51,8 @@ async function refusal(action: Promise<unknown>): Promise<TeardownRefusedError> 
 const GOOGLE_URL =
   "https://www.google.com/maps/place/Caf%C3%A9+Central/@38.71,-9.14,17z/data=!3d38.7139!4d-9.1394!1s0x1a2b3c:0x4d5e6f";
 
-describe("membership is existence", () => {
-  it("a place enters the library by being added to a list", async () => {
+describe("the library owns places", () => {
+  it("adding new facts to a list creates the place and its entry", async () => {
     const list = await repo.createList("Lisbon");
     const result = await repo.addToList(list.id, { kind: "new", facts: facts() }, { now: NOW });
     expect(result.status).toBe("added");
@@ -81,22 +82,60 @@ describe("membership is existence", () => {
     expect(await repo.entriesOf(list.id)).toHaveLength(1);
   });
 
-  it("removing one of several memberships keeps the place; the last removes it", async () => {
+  it("leaving every list keeps the place in the library, on no list", async () => {
     const l1 = await repo.createList("Lisbon");
     const l2 = await repo.createList("Coffee");
     const place = placeOf(await repo.addToList(l1.id, { kind: "new", facts: facts() }));
     await repo.addToList(l2.id, { kind: "existing", placeId: place.id });
 
-    const l1Entry = (await repo.entriesOf(l1.id))[0]?.entry;
-    if (!l1Entry) throw new Error("no entry");
-    await repo.removeEntry(l1Entry.id);
+    for (const list of [l1, l2]) {
+      const entry = (await repo.entriesOf(list.id))[0]?.entry;
+      if (!entry) throw new Error("no entry");
+      await repo.removeEntry(entry.id);
+    }
     expect(await repo.getPlace(place.id)).toBeDefined();
+    const views = await repo.listPlaceViews();
+    expect(views).toHaveLength(1);
+    expect(views[0]?.listIds).toEqual([]);
+  });
 
-    const l2Entry = (await repo.entriesOf(l2.id))[0]?.entry;
-    if (!l2Entry) throw new Error("no entry");
-    await repo.removeEntry(l2Entry.id);
+  it("savePlace saves on no list, and dedups like addToList", async () => {
+    const saved = await repo.savePlace(facts({ googleUrl: GOOGLE_URL }), { now: NOW });
+    expect(saved.status).toBe("saved");
+    if (saved.status !== "saved") throw new Error("unreachable");
+    expect((await repo.listPlaceViews())[0]?.listIds).toEqual([]);
+
+    const again = await repo.savePlace(facts({ name: "Other name", googleUrl: GOOGLE_URL }));
+    expect(again.status).toBe("already-saved");
+    const conflict = await repo.savePlace(facts());
+    expect(conflict.status).toBe("name-proximity-conflict");
+    expect(await repo.listPlaceViews()).toHaveLength(1);
+
+    // A saved place joins a list later without forking identity.
+    const list = await repo.createList("Lisbon");
+    const joined = await repo.addToList(list.id, { kind: "existing", placeId: saved.place.id });
+    expect(joined.status).toBe("added");
+    expect(await repo.listPlaceViews()).toHaveLength(1);
+  });
+
+  it("deletePlace removes the place and all its entries", async () => {
+    const l1 = await repo.createList("Lisbon");
+    const l2 = await repo.createList("Coffee");
+    const place = placeOf(await repo.addToList(l1.id, { kind: "new", facts: facts() }));
+    await repo.addToList(l2.id, { kind: "existing", placeId: place.id });
+    await repo.deletePlace(place.id);
     expect(await repo.getPlace(place.id)).toBeUndefined();
-    expect(await repo.listPlaceViews()).toHaveLength(0);
+    expect(await repo.entriesOf(l1.id)).toHaveLength(0);
+    expect(await repo.entriesOf(l2.id)).toHaveLength(0);
+  });
+
+  it("deleting a list keeps its places", async () => {
+    const list = await repo.createList("Lisbon");
+    const place = placeOf(await repo.addToList(list.id, { kind: "new", facts: facts() }));
+    await repo.deleteList(list.id);
+    expect(await repo.getList(list.id)).toBeUndefined();
+    expect(await repo.getPlace(place.id)).toBeDefined();
+    expect((await repo.listPlaceViews())[0]?.listIds).toEqual([]);
   });
 
   it("entries order by (rank, id) and moveEntry reorders", async () => {
@@ -167,6 +206,93 @@ describe("membership is existence", () => {
     // A later unrelated patch leaves the facts standing.
     await repo.updatePlaceFacts(place.id, { name: "Café Central (renamed)" });
     expect((await repo.getPlace(place.id))?.website).toBe("https://cafecentral.pt");
+  });
+});
+
+describe("the personal layer", () => {
+  it("stores normalised tags, a note, a rating and a status; null clears", async () => {
+    const saved = await repo.savePlace(facts());
+    if (saved.status !== "saved") throw new Error("unreachable");
+    const id = saved.place.id;
+    await repo.updatePlacePersonal(id, {
+      tags: ["Wine", " date  night ", "wine", "#Brunch"],
+      note: "  Back bar  ",
+      rating: 3,
+      status: "been",
+    });
+    expect(await repo.getPlace(id)).toMatchObject({
+      tags: ["brunch", "date night", "wine"],
+      note: "Back bar",
+      rating: 3,
+      status: "been",
+    });
+
+    // An absent key leaves the field alone.
+    await repo.updatePlacePersonal(id, { rating: 2 });
+    expect(await repo.getPlace(id)).toMatchObject({ note: "Back bar", rating: 2, status: "been" });
+
+    await repo.updatePlacePersonal(id, { tags: [], note: null, rating: null, status: null });
+    const cleared = await repo.getPlace(id);
+    expect(cleared?.tags).toBeUndefined();
+    expect(cleared?.note).toBeUndefined();
+    expect(cleared?.rating).toBeUndefined();
+    expect(cleared?.status).toBeUndefined();
+  });
+
+  it("enrichment-style fact patches never touch the personal layer", async () => {
+    const saved = await repo.savePlace(facts());
+    if (saved.status !== "saved") throw new Error("unreachable");
+    await repo.updatePlacePersonal(saved.place.id, { tags: ["wine"], note: "mine" });
+    await repo.updatePlaceFacts(saved.place.id, { cuisine: "portuguese" });
+    expect(await repo.getPlace(saved.place.id)).toMatchObject({
+      tags: ["wine"],
+      note: "mine",
+      cuisine: "portuguese",
+    });
+  });
+
+  it("a list carries an optional description", async () => {
+    const list = await repo.createList("Lisbon");
+    await repo.setListDescription(list.id, "  Three days, mostly eating.  ");
+    expect((await repo.getList(list.id))?.description).toBe("Three days, mostly eating.");
+    await repo.setListDescription(list.id, "   ");
+    expect((await repo.getList(list.id))?.description).toBeUndefined();
+  });
+});
+
+describe("saved views", () => {
+  it("creates, updates and deletes a view with a compacted filter", async () => {
+    const view = await repo.createView(" Date night ", { tags: ["Wine", "wine"], text: " " });
+    expect(view.name).toBe("Date night");
+    expect(view.filter).toEqual({ tags: ["wine"] });
+    await repo.updateView(view.id, { name: "Dates", filter: { minRating: 2 } });
+    expect(await repo.listViews()).toMatchObject([{ name: "Dates", filter: { minRating: 2 } }]);
+    await repo.deleteView(view.id);
+    expect(await repo.listViews()).toEqual([]);
+  });
+
+  it("views and lists draw markers from one pair space", async () => {
+    const list = await repo.createList("Lisbon");
+    const view = await repo.createView("Wine", { tags: ["wine"] });
+    const list2 = await repo.createList("Coffee");
+    const keys = [list.marker, view.marker, list2.marker].map(markerKey);
+    expect(new Set(keys).size).toBe(3);
+  });
+
+  it("views travel in the archive and survive a fresh restore", async () => {
+    const view = await repo.createView("Wine", { tags: ["wine"] });
+    const archive = await repo.exportLibrary({ includeCredentials: false });
+    expect(archive.views).toEqual([view]);
+    const fresh = new DexieRepository(`test-db-views-${Date.now()}-${counter}`);
+    await fresh.importLibrary(archive);
+    expect(await fresh.listViews()).toEqual([view]);
+  });
+
+  it("an archive written before views existed still restores", async () => {
+    const archive = await repo.exportLibrary({ includeCredentials: false });
+    const { views: _views, ...legacy } = archive;
+    const fresh = new DexieRepository(`test-db-legacy-${Date.now()}-${counter}`);
+    expect(await fresh.importLibrary(legacy)).toEqual({ mode: "fresh" });
   });
 });
 
@@ -386,52 +512,45 @@ describe("markers", () => {
 });
 
 describe("teardown refusals", () => {
-  it("refuses the last-membership removal while posts target the place", async () => {
+  it("refuses to delete a place while posts target it", async () => {
     const list = await repo.createList("Lisbon");
     const place = placeOf(await repo.addToList(list.id, { kind: "new", facts: facts() }));
     const post = await repo.createPost({ kind: "place", placeId: place.id }, "Café Central");
 
-    const entry = (await repo.entriesOf(list.id))[0]?.entry;
-    if (!entry) throw new Error("no entry");
-    const error = await refusal(repo.removeEntry(entry.id));
+    const error = await refusal(repo.deletePlace(place.id));
     expect(error.blockers).toEqual([{ kind: "place-has-posts", ids: [post.id] }]);
     expect(await repo.getPlace(place.id)).toBeDefined();
+    expect(await repo.entriesOf(list.id)).toHaveLength(1);
 
     await repo.deletePost(post.id);
-    await repo.removeEntry(entry.id);
+    await repo.deletePlace(place.id);
     expect(await repo.getPlace(place.id)).toBeUndefined();
   });
 
-  it("place posts do not block removal while another membership remains", async () => {
-    const l1 = await repo.createList("Lisbon");
-    const l2 = await repo.createList("Coffee");
-    const place = placeOf(await repo.addToList(l1.id, { kind: "new", facts: facts() }));
-    await repo.addToList(l2.id, { kind: "existing", placeId: place.id });
+  it("place posts never block leaving a list — the place stays", async () => {
+    const list = await repo.createList("Lisbon");
+    const place = placeOf(await repo.addToList(list.id, { kind: "new", facts: facts() }));
     await repo.createPost({ kind: "place", placeId: place.id }, "Write-up");
 
-    const entry = (await repo.entriesOf(l1.id))[0]?.entry;
+    const entry = (await repo.entriesOf(list.id))[0]?.entry;
     if (!entry) throw new Error("no entry");
     await repo.removeEntry(entry.id);
     expect(await repo.getPlace(place.id)).toBeDefined();
   });
 
-  it("refuses to delete a list until it is empty and its posts are deleted", async () => {
+  it("refuses to delete a list until its posts are deleted; places never block", async () => {
     const list = await repo.createList("Lisbon");
     const place = placeOf(await repo.addToList(list.id, { kind: "new", facts: facts() }));
     const post = await repo.createPost({ kind: "list", listId: list.id }, "Guide");
 
     const error = await refusal(repo.deleteList(list.id));
-    expect(error.blockers).toEqual([
-      { kind: "list-not-empty", ids: [place.id] },
-      { kind: "list-has-posts", ids: [post.id] },
-    ]);
+    expect(error.blockers).toEqual([{ kind: "list-has-posts", ids: [post.id] }]);
+    expect(await repo.entriesOf(list.id)).toHaveLength(1);
 
-    const entry = (await repo.entriesOf(list.id))[0]?.entry;
-    if (!entry) throw new Error("no entry");
-    await repo.removeEntry(entry.id);
     await repo.deletePost(post.id);
     await repo.deleteList(list.id);
     expect(await repo.getList(list.id)).toBeUndefined();
+    expect(await repo.getPlace(place.id)).toBeDefined();
   });
 
   it("refuses to delete a list with a live publication until it is unpublished", async () => {
@@ -809,7 +928,7 @@ describe("library archive", () => {
     expect(forCafe[0]?.entry.id).toBe("duplicate-entry");
   });
 
-  it("re-establishes membership-is-existence: a merged place with no entry is dropped", async () => {
+  it("keeps a merged place that is on no list — the library owns places", async () => {
     const seeded = await seedLibrary();
     const archive = await repo.exportLibrary({ includeCredentials: true });
     const orphan: Place = {
@@ -823,7 +942,7 @@ describe("library archive", () => {
     };
     archive.places.push(orphan);
     await repo.importLibrary(archive, LATER);
-    expect(await repo.getPlace("orphan-place")).toBeUndefined();
+    expect(await repo.getPlace("orphan-place")).toBeDefined();
     expect(await repo.getPlace(seeded.cafe.id)).toBeDefined();
   });
 });

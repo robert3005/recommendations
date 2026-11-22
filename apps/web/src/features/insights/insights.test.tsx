@@ -5,7 +5,7 @@
  * in its googleUrl. The panel shows classification results, never review text.
  */
 import type { PlaceProfile } from "@placemarks/domain";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 import { InsightsDb, setInsightsDb } from "./db";
 import { readPlaceInsights } from "./hooks";
@@ -158,9 +158,10 @@ describe("PlaceInsightsPanel", () => {
     expect(screen.getAllByTestId("aspect-meter")).toHaveLength(5);
     expect(screen.getByRole("img", { name: "Food: Excellent, 151 mentions" })).toBeInTheDocument();
     expect(screen.getByTestId("insights-dishes")).toHaveTextContent("Pastel de nata 58");
-    expect(screen.getByTestId("insights-tags-occasion")).toHaveTextContent(
-      "Quick bite · Solo · Brunch",
-    );
+    // Review tags are drawn as derived chips — dashed, marked "from reviews".
+    const occasion = screen.getByTestId("insights-tags-occasion");
+    expect(occasion).toHaveTextContent(/Quick bite.*Solo.*Brunch/);
+    expect(within(occasion).getAllByTestId("derived-tag")).toHaveLength(3);
     expect(screen.getByTestId("insights-warnings")).toHaveTextContent(
       "Rude staff reported in 3 recent reviews",
     );

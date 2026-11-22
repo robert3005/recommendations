@@ -18,6 +18,7 @@ vi.mock("../../providers", () => ({ geocoder }));
 function renderField() {
   const repo = {
     listLists: vi.fn().mockResolvedValue([]),
+    listPlaceViews: vi.fn().mockResolvedValue([]),
     addToList: vi.fn(),
     createList: vi.fn(),
     updatePlaceFacts: vi.fn().mockResolvedValue(undefined),

@@ -4,8 +4,8 @@
  * derived index fields (googleFeatureId, osmKey, targetKey) next to the domain
  * shape; the repository derives and strips them at the boundary.
  *
- * One schema version until something ships; migrations begin when real
- * libraries exist. Rows are hard-deleted — the only tombstone concept is a
+ * Version 2 was a development flush; from version 3 on, upgrades are
+ * additive and keep existing rows. Rows are hard-deleted — the only tombstone concept is a
  * revoked Publication row (revokedAt set).
  */
 import type {
@@ -16,6 +16,7 @@ import type {
   Place,
   Post,
   Publication,
+  SavedView,
 } from "@placemarks/domain";
 import Dexie, { type EntityTable } from "dexie";
 
@@ -27,6 +28,7 @@ export type ListEntryRow = ListEntry;
 export type PostRow = Post & { targetKey: string };
 /** targetKey via publicationTargetKey. editorToken lives ON the row (spec/src/sharing.md). */
 export type PublicationRow = Publication & { targetKey: string };
+export type SavedViewRow = SavedView;
 export type ImportBatchRow = ImportBatch;
 export type ImportItemRow = ImportItem;
 
@@ -42,6 +44,7 @@ export class PlacemarksDb extends Dexie {
   listEntries!: EntityTable<ListEntryRow, "id">;
   posts!: EntityTable<PostRow, "id">;
   publications!: EntityTable<PublicationRow, "id">;
+  views!: EntityTable<SavedViewRow, "id">;
   importBatches!: EntityTable<ImportBatchRow, "id">;
   importItems!: EntityTable<ImportItemRow, "id">;
   settings!: EntityTable<SettingRow, "key">;
@@ -72,5 +75,10 @@ export class PlacemarksDb extends Dexie {
           await tx.table(table).clear();
         }
       });
+    // Version 3 adds saved views (spec/src/data-model.md §Saved views). It is
+    // additive — a new store, nothing rewritten — so existing libraries keep
+    // every row. Places gained optional personal fields at the same time;
+    // optional fields need no migration.
+    this.version(3).stores({ ...stores, views: "id" });
   }
 }

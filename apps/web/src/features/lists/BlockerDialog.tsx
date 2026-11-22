@@ -63,14 +63,6 @@ export function BlockerDialog({
                 </li>
               ));
             }
-            if (blocker.kind === "list-not-empty") {
-              return (
-                <li key="list-not-empty" data-testid="blocker-list-not-empty">
-                  ◉ {blocker.ids.length} {blocker.ids.length === 1 ? "place is" : "places are"}{" "}
-                  still on this list — remove them in Edit mode first.
-                </li>
-              );
-            }
             // live-publication (spec/src/data-model.md §Teardown rule 3): no
             // public page is ever orphaned by a local delete.
             return (

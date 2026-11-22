@@ -97,6 +97,9 @@ export const OUR_SOURCE_IDS = ["saved", "marks", "selection"] as const;
 
 const PIN_LAYER_IDS = ["saved-pins", "saved-clusters", "mark-pins"] as const;
 
+/** Above this zoom the library never clusters — every place is its own pin. */
+const CLUSTER_MAX_ZOOM = 13;
+
 /**
  * Everything painted INTO the map scene — pin outlines, cluster discs —
  * contrasts against the plate, not the chrome (spec/src/design.md §Map
@@ -352,6 +355,10 @@ export function MapView({
         data: placesToGeoJSON(placePinsRef.current, selectedIdRef.current),
         cluster: true,
         clusterRadius: 44,
+        // Clusters open up for good at neighbourhood zoom: from here every
+        // place is its own pin, so a selected place is never hidden inside a
+        // count (spec/src/map-view.md §Layers).
+        clusterMaxZoom: CLUSTER_MAX_ZOOM,
       });
       map.addLayer({
         id: "saved-clusters",
@@ -402,6 +409,33 @@ export function MapView({
             0.35,
             1,
           ],
+        },
+      });
+
+      // Place names, once pins are individual: a map of favourites should be
+      // readable without tapping every pin. A separate layer, so a label that
+      // collides is dropped while its pin always stays.
+      map.addLayer({
+        id: "saved-labels",
+        type: "symbol",
+        source: "saved",
+        filter: ["!", ["has", "point_count"]],
+        minzoom: CLUSTER_MAX_ZOOM + 0.5,
+        layout: {
+          "text-field": ["get", "name"],
+          "text-size": ["case", ["==", ["get", "selected"], 1], 13, 11.5],
+          "text-anchor": "top",
+          "text-offset": [0, 0.25],
+          "text-max-width": 9,
+          "text-optional": true,
+          "symbol-sort-key": ["case", ["==", ["get", "selected"], 1], 0, 1],
+          ...overlayFontLayout(),
+        },
+        paint: {
+          "text-color": scene.disc,
+          "text-halo-color": scene.discText,
+          "text-halo-width": 1.6,
+          "text-opacity": ["case", ["==", ["get", "dimmed"], 1], 0.45, 1],
         },
       });
 
@@ -556,6 +590,8 @@ export function MapView({
       map.setPaintProperty("saved-clusters", "circle-color", scene.disc);
       map.setPaintProperty("saved-clusters", "circle-stroke-color", scene.outline);
       map.setPaintProperty("saved-cluster-count", "text-color", scene.discText);
+      map.setPaintProperty("saved-labels", "text-color", scene.disc);
+      map.setPaintProperty("saved-labels", "text-halo-color", scene.discText);
       map.setPaintProperty("mark-pins", "circle-stroke-color", scene.outline);
       for (const id of map.listImages()) {
         if (id.startsWith("pm|")) map.removeImage(id);
@@ -710,9 +746,13 @@ export function MapView({
         // The requested zoom is a floor: centring a selection never zooms the
         // user OUT of a closer view they already have.
         zoom: Math.max(map.getZoom(), flyTo.zoom ?? 17),
-        // Keep the target clear of the mobile bottom sheet; the desktop place
-        // card is a column beside the canvas, so there it centres exactly.
-        offset: (layoutKey?.startsWith("desktop") ? [0, 0] : [0, -120]) as [number, number],
+        // The desktop place card is a column beside the canvas, so there the
+        // target centres exactly.
+        // On a phone the card rises over the lower 70% of the canvas, so the
+        // target goes to the middle of the strip left above it.
+        offset: (layoutKey?.startsWith("desktop")
+          ? [0, 0]
+          : [0, -Math.round((containerRef.current?.clientHeight ?? 0) * 0.35)]) as [number, number],
       };
       // The selection stays the camera's anchor until the user moves the map:
       // the desktop place column usually mounts a moment AFTER this flight

@@ -1,6 +1,7 @@
 /**
- * Add a place to a list — the one door into the library (membership is
- * existence, spec/src/data-model.md). One combobox picks or creates the list;
+ * Put a place on a list. Lists are optional groupings — a place can be on any
+ * number, or none (spec/src/data-model.md §The library) — so member lists
+ * show as chips that can be removed. One combobox picks or creates the list;
  * picking is the add. Handles the repository's AddResult in full: added,
  * already-member, and the name-proximity conflict, which prompts the user
  * rather than merging silently.
@@ -19,6 +20,8 @@ export interface AddToListProps {
   /** Lists the place already belongs to — shown as chips, not offered again. */
   memberListIds?: string[];
   onAdded?: (place: Place, listId: string) => void;
+  /** When given, each membership chip carries a remove control. */
+  onRemove?: (listId: string) => void;
   /** Distinguishes controls and test hooks when several pickers exist. */
   idPrefix?: string;
 }
@@ -28,6 +31,7 @@ export function AddToList({
   lists,
   memberListIds = [],
   onAdded,
+  onRemove,
   idPrefix = "add",
 }: AddToListProps) {
   const repo = useRepo();
@@ -90,6 +94,17 @@ export function AddToList({
             >
               <MarkerGlyph marker={list.marker} size={12} />
               {list.name}
+              {onRemove ? (
+                <button
+                  type="button"
+                  aria-label={`Remove from ${list.name}`}
+                  onClick={() => onRemove(list.id)}
+                  className="ml-0.5 text-ink/60 hover:text-ink"
+                  data-testid="remove-membership"
+                >
+                  ✕
+                </button>
+              ) : null}
             </li>
           ))}
         </ul>

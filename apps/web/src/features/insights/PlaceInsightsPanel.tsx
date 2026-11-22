@@ -5,6 +5,7 @@
  * from them. Drawn in ink and hairlines: the eight accents stay with lists.
  */
 import { type PlaceProfile, vocabLabel } from "@placemarks/domain";
+import { DerivedTag } from "../library/TagChip";
 import type { PlaceSourceRow } from "./db";
 
 const nf = new Intl.NumberFormat();
@@ -177,8 +178,10 @@ export function PlaceInsightsPanel({
         return (
           <div key={kind}>
             <SectionTitle>{title}</SectionTitle>
-            <p className="mt-1 text-sm text-ink/85" data-testid={`insights-tags-${kind}`}>
-              {tags.map((t) => vocabLabel(t.tag)).join(" · ")}
+            <p className="mt-1.5 flex flex-wrap gap-1.5" data-testid={`insights-tags-${kind}`}>
+              {tags.map((t) => (
+                <DerivedTag key={t.tag} tag={t.tag} count={t.mentions} />
+              ))}
             </p>
           </div>
         );

@@ -10,12 +10,13 @@ import type {
   Post,
   PostTarget,
   Publication,
+  SavedView,
 } from "@placemarks/domain";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useDexieRepo, useRepo } from "./RepoContext";
 import type { PlaceView } from "./repo";
 
-/** Every place in the library — i.e. every place in at least one list. */
+/** Every place in the library, with the lists it is on (possibly none). */
 export function usePlaceViews(): PlaceView[] | undefined {
   const repo = useRepo();
   return useLiveQuery(() => repo.listPlaceViews(), [repo]);
@@ -38,6 +39,11 @@ export function usePlace(placeId: PlaceId | undefined): Place | undefined {
 export function useLists(): List[] | undefined {
   const repo = useRepo();
   return useLiveQuery(() => repo.listLists(), [repo]);
+}
+
+export function useViews(): SavedView[] | undefined {
+  const repo = useRepo();
+  return useLiveQuery(() => repo.listViews(), [repo]);
 }
 
 export function useList(listId: string | undefined): List | undefined {

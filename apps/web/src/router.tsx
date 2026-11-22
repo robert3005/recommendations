@@ -28,17 +28,22 @@ import { PublishedListView } from "./features/share/PublishedListView";
 import { PublishedPostView } from "./features/share/PublishedPostView";
 import { MapCanvas } from "./map/MapCanvas";
 import { type DesktopPane, type SheetDetent, usePaneStore } from "./state/pane";
+import { useSelectionStore } from "./state/projection";
 
 /** Notebook geometry: mobile sheet detents × desktop split/collapsed. On md+
  *  the shell is a flex row — notebook, place column, canvas — so the notebook
  *  is the row's first column, not an overlay. */
-function paneClasses(desktop: DesktopPane, sheet: SheetDetent): string {
+function paneClasses(desktop: DesktopPane, sheet: SheetDetent, placeOpen: boolean): string {
   const base =
     "absolute inset-x-0 bottom-0 z-20 flex min-h-0 flex-col rounded-t-crisp border-t border-hairline bg-paper " +
     "md:relative md:inset-auto md:order-1 md:h-full md:shrink-0 md:rounded-none md:border-t-0 md:border-r";
   const mobile = sheet === "peek" ? "h-14 overflow-hidden" : sheet === "half" ? "h-1/2" : "h-full";
   const desktopWidth = desktop === "collapsed" ? "md:hidden" : "md:w-[26rem]";
-  return `${base} ${mobile} ${desktopWidth}`;
+  // Tablet widths cannot hold notebook, place card and map side by side: the
+  // card takes the notebook's column while a place is open, and closing it
+  // brings the notebook back (spec/src/map-view.md §The grammar).
+  const tablet = placeOpen ? "md:max-lg:hidden" : "";
+  return `${base} ${mobile} ${desktopWidth} ${tablet}`;
 }
 
 /** Desktop is true sibling geometry: the canvas is the row's flexible last
@@ -58,6 +63,7 @@ function RootLayout() {
   // Review is exposed only while an import needs it (2026-07-26 —
   // search-first chrome): the pill renders exactly while a batch is reviewing.
   const reviewCount = useReviewingCount() ?? 0;
+  const placeOpen = useSelectionStore((s) => s.selectedPlaceId !== null) && !readOnly;
   const mode = usePaneStore((s) => s.mode);
   const desktop = usePaneStore((s) => s.desktop);
   const sheet = usePaneStore((s) => s.sheet);
@@ -126,7 +132,7 @@ function RootLayout() {
       </div>
 
       {/* The notebook: where routes render. */}
-      <div className={paneClasses(desktop, sheet)} data-testid="content-pane">
+      <div className={paneClasses(desktop, sheet, placeOpen)} data-testid="content-pane">
         {/* One detent per tap — a button is keyboard operable; dismissal is
             never gesture-only (spec/src/map-view.md §Accessibility). */}
         <button
@@ -138,11 +144,11 @@ function RootLayout() {
         >
           <span aria-hidden="true" className="h-1 w-10 rounded-full bg-hairline" />
         </button>
-        {/* The top bar is for SEARCH (2026-07-26 — search-first chrome): the
-            wordmark home affordance, the add-a-place field filling the rest,
-            and — only while an import batch is reviewing — the review pill.
-            There is no persistent nav; Settings hides behind the gear chip. */}
-        <header className="flex shrink-0 items-center gap-2 border-b border-hairline px-4 py-2.5">
+        {/* The top bar is for SEARCH: the wordmark home affordance, the search
+            field filling the rest, the review pill only while an import batch
+            is reviewing, the two pane steps, and Settings. Search results
+            float below the whole bar, so they are readable on a phone. */}
+        <header className="relative flex shrink-0 items-center gap-2 border-b border-hairline px-3 py-2.5 md:px-4">
           {readOnly ? (
             <div
               className="min-w-0 flex-1 font-display text-sm font-medium text-ink"
@@ -155,12 +161,21 @@ function RootLayout() {
               <Link
                 to="/"
                 data-testid="home-link"
+                aria-label="Placemarks — home"
                 className="shrink-0 font-display text-[15px] font-semibold tracking-tight text-ink"
               >
-                Placemarks
+                {/* The phone gives the width to search: the wordmark shrinks
+                    to its initial (spec/src/map-view.md §The grammar). */}
+                <span
+                  aria-hidden="true"
+                  className="flex size-7 items-center justify-center rounded-pill bg-ink text-paper md:hidden"
+                >
+                  P
+                </span>
+                <span className="hidden md:inline">Placemarks</span>
               </Link>
               <div className="min-w-0 flex-1">
-                <AddPlaceField />
+                <AddPlaceField onShowAll={() => void appRouter.navigate({ to: "/" })} />
               </div>
               {reviewCount > 0 ? (
                 <Link
@@ -174,7 +189,8 @@ function RootLayout() {
             </>
           )}
           {/* One step toward the map / toward the content — the map is one
-              collapse away, never a tab switch. */}
+              collapse away, never a tab switch. A step that cannot be taken is
+              not drawn: the width goes to search. */}
           <button
             type="button"
             aria-label="Show more map"
@@ -182,7 +198,7 @@ function RootLayout() {
             data-testid="pane-collapse"
             disabled={atMapEnd}
             onClick={collapse}
-            className="flex size-7 shrink-0 items-center justify-center rounded-pill border border-hairline text-xs text-ink hover:bg-hover disabled:opacity-30"
+            className="flex size-7 shrink-0 items-center justify-center rounded-pill border border-hairline text-xs text-ink hover:bg-hover disabled:hidden"
           >
             ⟨
           </button>
@@ -193,14 +209,27 @@ function RootLayout() {
             data-testid="pane-expand"
             disabled={atContentEnd}
             onClick={expand}
-            className="flex size-7 shrink-0 items-center justify-center rounded-pill border border-hairline text-xs text-ink hover:bg-hover disabled:opacity-30"
+            className="flex size-7 shrink-0 items-center justify-center rounded-pill border border-hairline text-xs text-ink hover:bg-hover disabled:hidden"
           >
             ⟩
           </button>
+          {/* Settings sits in the top bar, so nothing floats over the page. */}
+          {!readOnly ? (
+            <button
+              type="button"
+              aria-label="Settings"
+              aria-pressed={onSettings}
+              data-testid="settings-gear"
+              onClick={toggleSettings}
+              className={`flex size-7 shrink-0 items-center justify-center rounded-pill border border-hairline text-sm ${
+                onSettings ? "bg-ink text-paper" : "text-ink hover:bg-hover"
+              }`}
+            >
+              <span aria-hidden="true">⚙</span>
+            </button>
+          ) : null}
         </header>
-        {/* Bottom padding keeps the last line of a page clear of the floating
-            settings gear. */}
-        <main className="min-h-0 flex-1 overflow-y-auto pb-14" data-testid="pane-outlet">
+        <main className="min-h-0 flex-1 overflow-y-auto pb-6" data-testid="pane-outlet">
           <Outlet />
         </main>
       </div>
@@ -212,24 +241,17 @@ function RootLayout() {
           bottom sheet that stays visible when the sheet covers the map. */}
       {!readOnly ? mode === "desktop" ? <PlaceColumn /> : <PlaceSheet /> : null}
 
-      {/* Settings is hidden (2026-07-26 — search-first chrome): a floating
-          deep-chip gear pinned bottom-left of the shell. The collapsed
-          notebook's reopen chip sits at bottom-16 in the same corner, so the
-          two stack — gear below, reopen above — and never overlap. The gear
-          is a toggle: opening from chrome must also make the notebook visible
-          (a collapsed pane expands back to split, or the page would load
-          unseen), and pressing it on /settings returns to the page it came
-          from — the library home when settings was opened by deep link. */}
-      {!readOnly ? (
+      {/* While the desktop notebook is collapsed its top bar is gone, so the
+          gear floats on the canvas under the reopen chip; opening Settings
+          from there expands the notebook back to split. */}
+      {!readOnly && mode === "desktop" && desktop === "collapsed" ? (
         <button
           type="button"
           aria-label="Settings"
           aria-pressed={onSettings}
-          data-testid="settings-gear"
+          data-testid="settings-gear-floating"
           onClick={toggleSettings}
-          className={`absolute bottom-3 left-3 z-30 rounded-pill border border-hairline px-2.5 py-1.5 text-sm shadow-lift ${
-            onSettings ? "bg-ink text-paper" : "bg-paper text-ink"
-          }`}
+          className="absolute bottom-3 left-3 z-30 rounded-pill border border-hairline bg-paper px-2.5 py-1.5 text-sm text-ink shadow-lift"
         >
           <span aria-hidden="true">⚙</span>
         </button>

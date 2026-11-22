@@ -51,6 +51,7 @@ const hoisted = vi.hoisted(() => ({
 }));
 vi.mock("../../data/hooks", () => ({
   usePlaceView: () => hoisted.placeView,
+  usePlaceViews: () => [],
   useLists: () => lists,
   usePostsFor: () => [],
 }));
@@ -169,7 +170,7 @@ describe("the enriched listing", () => {
   it("lays the card out as a listing: category · cuisine, description, address, fact rows", () => {
     hoisted.placeView = { place: enriched, listIds: ["list-1"] };
     renderCard("column");
-    expect(screen.getByTestId("place-category")).toHaveTextContent("cafe · portuguese");
+    expect(screen.getByTestId("place-category")).toHaveTextContent("Cafe · Portuguese");
     expect(screen.getByTestId("place-description")).toHaveTextContent(
       "Historic café on Rua Example, pouring bica since 1923.",
     );

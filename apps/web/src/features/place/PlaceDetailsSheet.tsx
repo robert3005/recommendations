@@ -15,11 +15,12 @@
  * semantics); RootLayout composes the desktop column — an <aside> vertical in
  * the shell's row, beside the notebook (spec/src/map-view.md §The grammar).
  */
-import type { Post } from "@placemarks/domain";
+import { type Post, placeKindLine, tagCounts } from "@placemarks/domain";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
-import { useLists, usePlaceView, usePostsFor } from "../../data/hooks";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLists, usePlaceView, usePlaceViews, usePostsFor } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
+import { TeardownRefusedError } from "../../data/repo";
 import { geocoder } from "../../providers";
 import { useSelectionStore } from "../../state/projection";
 import { usePhotoUrls, usePlaceInsights } from "../insights/hooks";
@@ -30,6 +31,7 @@ import { enrichPlace } from "./enrichment";
 import { NavLinks } from "./NavLinks";
 import { PlaceFacts } from "./PlaceFacts";
 import { PlaceImage } from "./PlaceImage";
+import { PlacePersonal } from "./PlacePersonal";
 
 const NO_PHOTOS: never[] = [];
 
@@ -56,6 +58,14 @@ export function PlaceDetailsSheet({
   // from the separate insights store; null when the place has none.
   const insights = usePlaceInsights(place);
   const photoUrls = usePhotoUrls(insights?.photos ?? NO_PHOTOS);
+  // Every own tag in the library, most used first — the tag field's suggestions.
+  const allViews = usePlaceViews();
+  const knownTags = useMemo(
+    () => tagCounts((allViews ?? []).map((v) => v.place.tags ?? [])).map((t) => t.tag),
+    [allViews],
+  );
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string>();
 
   // Managed focus: enter the card once it has actually rendered (the place
   // resolves asynchronously), return to the invoker on close
@@ -142,11 +152,19 @@ export function PlaceDetailsSheet({
       >
         {place.name}
       </h2>
-      {place.category || place.cuisine ? (
-        <p className="mt-0.5 text-xs capitalize text-ink/70" data-testid="place-category">
-          {[place.category, place.cuisine].filter(Boolean).join(" · ")}
+      {placeKindLine(place) !== "" ? (
+        <p className="mt-1 text-xs text-ink/70" data-testid="place-category">
+          {placeKindLine(place)}
         </p>
       ) : null}
+      {/* The owner's own layer comes first: their rating, tags and note —
+          then what reviews and providers say. */}
+      <PlacePersonal
+        key={place.id}
+        place={place}
+        derivedTags={insights?.profile?.tags.map((t) => t.tag) ?? []}
+        knownTags={knownTags}
+      />
       {insights ? <PlaceInsightsPanel source={insights.source} profile={insights.profile} /> : null}
       <PlaceFacts
         description={place.description}
@@ -163,8 +181,8 @@ export function PlaceDetailsSheet({
         <NavLinks place={place} />
       </div>
 
-      {/* Add to list — joining a list is how a place enters the library
-          (membership is existence, spec/src/data-model.md). */}
+      {/* Lists are optional groupings: a place can be on any number, or none
+          (spec/src/data-model.md §The library). */}
       <div className="mt-4">
         <h3 className="eyebrow">Lists</h3>
         <AddToList
@@ -172,6 +190,7 @@ export function PlaceDetailsSheet({
           lists={lists}
           memberListIds={memberListIds ?? []}
           idPrefix="card"
+          onRemove={(listId) => void repo.removeFromList(listId, place.id)}
         />
       </div>
 
@@ -206,6 +225,57 @@ export function PlaceDetailsSheet({
               </li>
             ))}
           </ul>
+        ) : null}
+      </div>
+
+      {/* Deleting is explicit and never a side effect of leaving a list. */}
+      <div className="mt-6 border-t border-hairline pt-3">
+        {confirmingDelete ? (
+          <div className="flex flex-wrap items-center gap-2 text-xs text-ink">
+            <span>Delete this place from your library and every list?</span>
+            <button
+              type="button"
+              className="rounded-pill bg-accent-vermilion-deep px-2.5 py-1 font-medium text-paper"
+              data-testid="confirm-delete-place"
+              onClick={() => {
+                repo
+                  .deletePlace(place.id)
+                  .then(clearSelection)
+                  .catch((err: unknown) => {
+                    setConfirmingDelete(false);
+                    setDeleteError(
+                      err instanceof TeardownRefusedError
+                        ? "This place has posts — delete its posts first."
+                        : err instanceof Error
+                          ? err.message
+                          : String(err),
+                    );
+                  });
+              }}
+            >
+              Delete
+            </button>
+            <button type="button" className="underline" onClick={() => setConfirmingDelete(false)}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="text-xs text-accent-vermilion-deep underline"
+            data-testid="delete-place"
+            onClick={() => {
+              setDeleteError(undefined);
+              setConfirmingDelete(true);
+            }}
+          >
+            Delete place
+          </button>
+        )}
+        {deleteError ? (
+          <p className="mt-1 text-xs text-ink" role="alert" data-testid="delete-place-error">
+            {deleteError}
+          </p>
         ) : null}
       </div>
     </Wrapper>

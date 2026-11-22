@@ -32,9 +32,18 @@ export interface Place {
   description?: string;
   descriptionSource?: "osm" | "wikipedia"; // which source filled description
   wikipediaUrl?: string; // the article page a Wikipedia-sourced description came from
+  // The owner's own judgement (spec/src/data-model.md §The personal layer):
+  // never filled by a provider, never overwritten by enrichment or import.
+  tags?: string[]; // own tags, normalised by normalizeTag; sorted, unique
+  note?: string; // a short private note; published only on explicit opt-in
+  rating?: PlaceRating; // 1 good · 2 great · 3 favourite
+  status?: PlaceStatus; // "been" | "want"; absent = not said
   createdAt: string;
   updatedAt: string;
 }
+
+export type PlaceRating = 1 | 2 | 3;
+export type PlaceStatus = "been" | "want";
 
 export type MarkerShape =
   | "circle"
@@ -56,6 +65,7 @@ export interface List {
   id: string;
   name: string;
   marker: ListMarker;
+  description?: string; // the curator's intro; published with the list
   sourceKey?: string; // import binding: Takeout CSV / Saved Places GeoJSON filename, or KML
   // folder id, set on first import so re-imports follow local renames
   createdAt: string;
@@ -69,6 +79,32 @@ export interface ListEntry {
   rank: string; // fractional rank; order by (rank, id)
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * A saved filter over the library (spec/src/data-model.md §Saved views): the
+ * loose, self-updating kind of group. A view owns no places — it is evaluated
+ * against the library every time it is shown — and wears a marker from the
+ * same pair space as lists, so the two layer on the map without colliding.
+ */
+export interface SavedView {
+  id: string;
+  name: string;
+  marker: ListMarker;
+  filter: PlaceFilter;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Every present facet must hold (AND); within `listIds` any one suffices. */
+export interface PlaceFilter {
+  text?: string; // free text over name, tags, note, facts, and review text
+  tags?: string[]; // own tags — the place carries every one
+  derivedTags?: string[]; // review-derived tags — the place carries every one
+  listIds?: string[]; // on any of these lists
+  minRating?: PlaceRating;
+  status?: PlaceStatus;
+  unlisted?: boolean; // on no list at all
 }
 
 export type PostTarget = { kind: "list"; listId: string } | { kind: "place"; placeId: PlaceId };
