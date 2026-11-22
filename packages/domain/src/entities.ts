@@ -66,6 +66,7 @@ export interface List {
   name: string;
   marker: ListMarker;
   description?: string; // the curator's intro; published with the list
+  shareNotes?: boolean; // false = publish without the owner's notes, tags and ratings
   sourceKey?: string; // import binding: Takeout CSV / Saved Places GeoJSON filename, or KML
   // folder id, set on first import so re-imports follow local renames
   createdAt: string;
@@ -125,6 +126,8 @@ export interface Publication {
   editorToken?: string; // device-held secret; absent = this device cannot
   // update/revoke (e.g. restored without credentials)
   lastPublishedHash?: string; // "unpublished changes" = current hash ≠ this
+  version?: number; // counts publishes: 1 on the first, +1 per update
+  live?: boolean; // false = update only on an explicit press; absent = live
   publishedAt?: string;
   revokedAt?: string; // set on unpublish; row kept as a local tombstone
   createdAt: string;

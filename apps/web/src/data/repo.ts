@@ -189,6 +189,8 @@ export interface LocalRepository {
   setListMarker(id: string, marker: ListMarker): Promise<void>;
   /** An empty or whitespace description clears it. */
   setListDescription(id: string, description: string): Promise<void>;
+  /** Whether the list's public page carries the owner's notes, tags and ratings. */
+  setListShareNotes(id: string, share: boolean): Promise<void>;
   /** Deletes the list and its entries; its places stay in the library. */
   deleteList(id: string): Promise<void>;
   findListBySourceKey(key: string): Promise<List | undefined>;
@@ -223,7 +225,15 @@ export interface LocalRepository {
     editorToken: string,
     now: string,
   ): Promise<Publication>;
-  recordPublished(id: string, lastPublishedHash: string, now: string): Promise<void>;
+  /** Records a successful PUT; `version` is the version that PUT carried. */
+  recordPublished(
+    id: string,
+    lastPublishedHash: string,
+    now: string,
+    version?: number,
+  ): Promise<void>;
+  /** Live pages republish on their own after a change; false waits for a press. */
+  setPublicationLive(id: string, live: boolean): Promise<void>;
   markRevoked(id: string, now: string): Promise<void>;
   livePublications(): Promise<Publication[]>;
   // imports
@@ -536,6 +546,14 @@ export class DexieRepository implements LocalRepository {
     });
   }
 
+  async setListShareNotes(id: string, share: boolean): Promise<void> {
+    await this.db.transaction("rw", [this.db.lists], async () => {
+      const list = await this.db.lists.get(id);
+      if (!list) throw new Error("list not found");
+      await this.db.lists.put({ ...list, shareNotes: share, updatedAt: nowIso() });
+    });
+  }
+
   async setListMarker(id: string, marker: ListMarker): Promise<void> {
     await this.db.transaction("rw", [this.db.lists], async () => {
       const list = await this.db.lists.get(id);
@@ -830,16 +848,30 @@ export class DexieRepository implements LocalRepository {
     return publication;
   }
 
-  async recordPublished(id: string, lastPublishedHash: string, now: string): Promise<void> {
+  async recordPublished(
+    id: string,
+    lastPublishedHash: string,
+    now: string,
+    version?: number,
+  ): Promise<void> {
     await this.db.transaction("rw", [this.db.publications], async () => {
       const row = await this.db.publications.get(id);
       if (!row) throw new Error("publication not found");
       await this.db.publications.put({
         ...row,
         lastPublishedHash,
+        version: version ?? (row.version ?? 0) + 1,
         publishedAt: now,
         updatedAt: now,
       });
+    });
+  }
+
+  async setPublicationLive(id: string, live: boolean): Promise<void> {
+    await this.db.transaction("rw", [this.db.publications], async () => {
+      const row = await this.db.publications.get(id);
+      if (!row) throw new Error("publication not found");
+      await this.db.publications.put({ ...row, live, updatedAt: nowIso() });
     });
   }
 

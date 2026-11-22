@@ -112,6 +112,20 @@ export function validateArchiveRows(a: LibraryArchive): void {
       malformed("a post row is malformed");
     }
   }
+  // Saved views arrived later: an archive without the section is valid.
+  if (a.views !== undefined && !Array.isArray(a.views)) malformed("the views section is malformed");
+  for (const v of a.views ?? []) {
+    if (
+      typeof v.id !== "string" ||
+      typeof v.name !== "string" ||
+      !SHAPES.has(v.marker?.shape) ||
+      typeof v.marker?.color !== "string" ||
+      typeof v.filter !== "object" ||
+      v.filter === null
+    ) {
+      malformed("a saved view row is malformed");
+    }
+  }
   for (const p of a.publications) {
     const kindOk = p.target?.kind === "list" || p.target?.kind === "post";
     if (
@@ -142,8 +156,13 @@ export async function shouldRemindArchiveExport(
   repo: LocalRepository,
   now: string,
 ): Promise<boolean> {
-  const [lists, posts] = await Promise.all([repo.listLists(), repo.allPosts()]);
-  if (lists.length === 0 && posts.length === 0) return false;
+  const [lists, posts, places] = await Promise.all([
+    repo.listLists(),
+    repo.allPosts(),
+    repo.listPlaceViews(),
+  ]);
+  // A library of places on no list is as worth backing up as one with lists.
+  if (lists.length === 0 && posts.length === 0 && places.length === 0) return false;
   const last = await lastArchiveExportAt(repo);
   if (!last || !Number.isFinite(Date.parse(last))) return true;
   const elapsed = Date.parse(now) - Date.parse(last);

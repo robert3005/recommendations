@@ -74,9 +74,30 @@ export function ListPublishControls({ listId }: { listId: string }) {
       const computed = await listPreflight(repo, listId);
       if (!computed) return;
       setReplacingLost(replaceLost);
-      setChecked(new Set());
+      // A list's write-up belongs with it: its posts are offered ticked, and
+      // the owner unticks what should stay private.
+      setChecked(new Set(computed.unpublishedPosts.map((post) => post.id)));
       setPreflight(computed);
     });
+
+  const list = useLiveQuery(() => repo.getList(listId), [repo, listId]);
+  const [copied, setCopied] = useState(false);
+  const copyLink = (url: string) => {
+    void navigator.clipboard
+      ?.writeText(url)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => undefined);
+  };
+  const share = (url: string) => {
+    // The phone's own share sheet when there is one; the clipboard otherwise.
+    if (typeof navigator.share === "function") {
+      void navigator.share({ title: list?.name ?? "Placemarks", url }).catch(() => undefined);
+    } else copyLink(url);
+  };
+  const liveUpdates = publication?.live !== false;
 
   const confirmPublish = () =>
     run(async () => {
@@ -114,10 +135,10 @@ export function ListPublishControls({ listId }: { listId: string }) {
             type="button"
             disabled={busy}
             onClick={() => openPreflight()}
-            className="rounded-pill border border-hairline px-2.5 py-1 font-medium text-ink/70 disabled:opacity-40"
+            className="rounded-pill bg-ink px-3 py-1 text-sm font-medium text-paper disabled:opacity-40"
             data-testid="publish-list"
           >
-            Publish…
+            Share this list…
           </button>
         </>
       ) : (
@@ -129,7 +150,9 @@ export function ListPublishControls({ listId }: { listId: string }) {
             data-testid="publication-status"
             data-status={unpublishedChanges ? "unpublished-changes" : "published"}
           >
-            Published{unpublishedChanges ? " · unpublished changes" : ""}
+            {liveUpdates ? "Live" : "Published"}
+            {publication.version ? ` · v${publication.version.toString()}` : ""}
+            {unpublishedChanges ? (liveUpdates ? " · updating…" : " · unpublished changes") : ""}
           </span>
           {pageUrl ? (
             <a
@@ -142,8 +165,27 @@ export function ListPublishControls({ listId }: { listId: string }) {
               {pageUrl.replace(/^https?:\/\//, "")}
             </a>
           ) : null}
+          {pageUrl ? (
+            <button
+              type="button"
+              onClick={() => share(pageUrl)}
+              className="rounded-pill bg-ink px-2.5 py-0.5 font-medium text-paper"
+              data-testid="share-link"
+            >
+              {copied ? "Link copied" : "Share link"}
+            </button>
+          ) : null}
           {publication.editorToken ? (
             <>
+              <label className="flex items-center gap-1 text-ink/70">
+                <input
+                  type="checkbox"
+                  checked={liveUpdates}
+                  onChange={(e) => void repo.setPublicationLive(publication.id, e.target.checked)}
+                  data-testid="live-toggle"
+                />
+                Update the page automatically
+              </label>
               <button
                 type="button"
                 disabled={busy}
@@ -202,6 +244,26 @@ export function ListPublishControls({ listId }: { listId: string }) {
           heading="Exactly this becomes public:"
           title={preflight.doc.title}
           places={preflight.doc.places}
+          {...(preflight.doc.description ? { intro: preflight.doc.description } : {})}
+          {...(preflight.doc.author ? { author: preflight.doc.author } : {})}
+          extra={
+            <label className="mt-1.5 flex items-center gap-1.5 text-ink/70">
+              <input
+                type="checkbox"
+                checked={list?.shareNotes !== false}
+                onChange={(e) =>
+                  void repo
+                    .setListShareNotes(listId, e.target.checked)
+                    .then(() => listPreflight(repo, listId))
+                    .then((next) => {
+                      if (next) setPreflight(next);
+                    })
+                }
+                data-testid="share-notes"
+              />
+              Include my notes, tags and ratings for these places
+            </label>
+          }
           offers={preflight.unpublishedPosts.map((post) => ({
             id: post.id,
             label: `The post “${post.title}”, so the public list can link to it`,

@@ -5,6 +5,7 @@
  * linked-but-unpublished posts and a list post's list alongside.
  */
 import type { PublishedPlace } from "@placemarks/domain";
+import type { ReactNode } from "react";
 
 export interface PreflightOfferOption {
   id: string;
@@ -17,6 +18,9 @@ export function PreflightDialog({
   places,
   body,
   listRef,
+  intro,
+  author,
+  extra,
   offers,
   checked,
   onToggle,
@@ -32,6 +36,11 @@ export function PreflightDialog({
   body?: string;
   /** List posts name their list; linked only when the list has a public page. */
   listRef?: { title: string; url?: string };
+  /** A list's intro and the curator's name, when they will be published. */
+  intro?: string;
+  author?: string;
+  /** Extra controls over what is shared (a list's notes opt-out). */
+  extra?: ReactNode;
   offers: readonly PreflightOfferOption[];
   checked: ReadonlySet<string>;
   onToggle: (id: string) => void;
@@ -60,12 +69,34 @@ export function PreflightDialog({
             : " (name only — the list has no public page)"}
         </p>
       ) : null}
+      {author ? (
+        <p className="text-ink/70" data-testid="preflight-author">
+          Curated by <span className="font-medium text-ink">{author}</span>
+        </p>
+      ) : null}
+      {intro ? (
+        <p className="mt-1 whitespace-pre-line text-ink/70" data-testid="preflight-intro">
+          Intro: {intro}
+        </p>
+      ) : null}
+      {extra}
       <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-ink/70">
         {places.map((place) => (
           <li key={place.id} data-testid="preflight-place">
             <span className="font-medium text-ink">{place.name}</span> · {String(place.lat)},{" "}
             {String(place.lng)}
             {place.address ? <span className="text-ink/60"> · {place.address}</span> : null}
+            {place.note || place.tags?.length || place.rating ? (
+              <span className="block text-ink/80" data-testid="preflight-personal">
+                {[
+                  place.rating ? "★".repeat(place.rating) : undefined,
+                  place.tags?.map((tag) => `#${tag}`).join(" "),
+                  place.note ? `“${place.note}”` : undefined,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            ) : null}
           </li>
         ))}
         {places.length === 0 ? <li className="text-ink/60">No places.</li> : null}
@@ -96,7 +127,8 @@ export function PreflightDialog({
         </fieldset>
       ) : null}
       <p className="mt-2 text-[11px] text-ink/60">
-        Nothing leaves this device until you press Publish.
+        Nothing leaves this device until you press Publish. After that the page is live: later
+        changes here update it on their own, and you can switch that off beside the link.
       </p>
       <div className="mt-2 flex gap-2">
         <button

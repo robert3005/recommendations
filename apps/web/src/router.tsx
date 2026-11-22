@@ -22,6 +22,7 @@ import { ListsPage } from "./features/lists/ListsPage";
 import { PlaceColumn, PlaceSheet } from "./features/place/PlaceSheet";
 import { PostEditorPage } from "./features/posts/PostEditorPage";
 import { PostPage } from "./features/posts/PostPage";
+import { LivePublisher } from "./features/publish/LivePublisher";
 import { AddPlaceField } from "./features/search/AddPlaceField";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { PublishedListView } from "./features/share/PublishedListView";
@@ -108,6 +109,8 @@ function RootLayout() {
       data-pane-state={desktop}
       data-sheet-detent={sheet}
     >
+      {/* Live pages follow their source (spec/src/sharing.md §Live pages). */}
+      {!readOnly ? <LivePublisher /> : null}
       {/* The persistent canvas: always mounted, never navigates. */}
       <div
         className={mapCanvasClasses()}

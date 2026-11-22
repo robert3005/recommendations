@@ -15,13 +15,20 @@ import {
 const NOW = "2026-07-26T12:00:00.000Z";
 
 /** The slice of the repository the reminder and restore glue touch. */
-function repoStub(opts: { lists?: number; posts?: number } = {}) {
+function repoStub(opts: { lists?: number; posts?: number; places?: number } = {}) {
   const settings = new Map<string, unknown>();
   const imported: LibraryArchive[] = [];
   const stub = {
     listLists: () =>
       Promise.resolve(
         Array.from({ length: opts.lists ?? 0 }, (_, i) => ({ id: `l${i.toString()}` })),
+      ),
+    listPlaceViews: () =>
+      Promise.resolve(
+        Array.from({ length: opts.places ?? 0 }, (_, i) => ({
+          place: { id: `pl${i.toString()}` },
+          listIds: [],
+        })),
       ),
     allPosts: () =>
       Promise.resolve(
@@ -127,6 +134,11 @@ describe("shouldRemindArchiveExport", () => {
 
   it("reminds when content exists and no export was recorded", async () => {
     const { repo } = repoStub({ lists: 1 });
+    expect(await shouldRemindArchiveExport(repo, NOW)).toBe(true);
+  });
+
+  it("places on no list count as content worth archiving", async () => {
+    const { repo } = repoStub({ places: 1 });
     expect(await shouldRemindArchiveExport(repo, NOW)).toBe(true);
   });
 

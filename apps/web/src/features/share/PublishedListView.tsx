@@ -6,21 +6,19 @@
  * of publish time. noindex by default; ODbL attribution when any place
  * carries an `osmRef`.
  */
+
+import { placeKindLine } from "@placemarks/domain";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useMemo } from "react";
+import { OwnTag, RatingStars } from "../library/TagChip";
+import { NavLinks } from "../place/NavLinks";
 import { PlaceFacts } from "../place/PlaceFacts";
 import { PlaceImage } from "../place/PlaceImage";
 import { usePlaceFragmentSelection } from "./placeFragment";
 import { fetchPublishedList, PublishedDocumentError } from "./publishedDoc";
 import { useNoindex } from "./useNoindex";
-import {
-  MarkerGlyph,
-  OdblAttribution,
-  OsmPlaceLink,
-  ViewerError,
-  ViewerLoading,
-} from "./viewerChrome";
+import { MarkerGlyph, OdblAttribution, ViewerError, ViewerLoading } from "./viewerChrome";
 import { usePublishedDocProjection } from "./viewerProjection";
 
 export function PublishedListView() {
@@ -41,6 +39,11 @@ export function PublishedListContent({ slug }: { slug: string }) {
     queryKey: ["published", "list", slug],
     queryFn: ({ signal }) => fetchPublishedList(slug, signal),
     retry: retryUnreachableOnce,
+    // A shared list is live (spec/src/sharing.md §Live pages): an open page
+    // picks up the curator's next version on its own — on return to the tab
+    // and, while it stays open, about once a minute (the service's cache window).
+    refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
   });
   const doc = query.data;
   const placeIds = useMemo(() => (doc?.places ?? []).map((place) => place.id), [doc]);
@@ -60,6 +63,34 @@ export function PublishedListContent({ slug }: { slug: string }) {
           {document.title}
         </h1>
       </header>
+      {document.author || document.version ? (
+        <p className="mt-2 font-mono text-[11px] text-ink/60" data-testid="published-byline">
+          {[
+            document.author ? `Curated by ${document.author}` : undefined,
+            document.places.length > 0
+              ? `${document.places.length.toString()} ${document.places.length === 1 ? "place" : "places"}`
+              : undefined,
+            document.version ? `v${document.version.toString()}` : undefined,
+            document.updatedAt
+              ? `updated ${new Date(document.updatedAt).toLocaleDateString(undefined, {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })}`
+              : undefined,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      ) : null}
+      {document.description ? (
+        <p
+          className="mt-3 font-body text-sm leading-relaxed whitespace-pre-line text-ink/90"
+          data-testid="published-intro"
+        >
+          {document.description}
+        </p>
+      ) : null}
       {document.posts && document.posts.length > 0 ? (
         <nav aria-label="Posts about this list" className="mt-3">
           <h2 className="eyebrow">Posts</h2>
@@ -99,13 +130,32 @@ export function PublishedListContent({ slug }: { slug: string }) {
                 aria-current={selectedId === place.id ? "true" : undefined}
                 className="block w-full text-left"
               >
-                <span className="text-sm font-medium text-ink">{place.name}</span>
-                {place.category || place.cuisine ? (
-                  <span className="block text-xs capitalize text-ink/70">
-                    {[place.category, place.cuisine].filter(Boolean).join(" · ")}
+                <span className="flex items-baseline gap-2">
+                  <span className="font-display text-base font-semibold text-ink">
+                    {place.name}
                   </span>
+                  <RatingStars rating={place.rating} />
+                </span>
+                {placeKindLine(place) !== "" ? (
+                  <span className="block text-xs text-ink/70">{placeKindLine(place)}</span>
                 ) : null}
               </button>
+              {/* The curator's voice comes before the provider's facts. */}
+              {place.note ? (
+                <p
+                  className="mt-1.5 border-l-2 border-ink pl-2 font-body text-sm leading-relaxed text-ink"
+                  data-testid="published-note"
+                >
+                  {place.note}
+                </p>
+              ) : null}
+              {place.tags?.length ? (
+                <p className="mt-1.5 flex flex-wrap gap-1" data-testid="published-tags">
+                  {place.tags.map((tag) => (
+                    <OwnTag key={tag} tag={tag} />
+                  ))}
+                </p>
+              ) : null}
               <PlaceFacts
                 description={place.description}
                 wikipediaUrl={place.wikipediaUrl}
@@ -115,7 +165,11 @@ export function PublishedListContent({ slug }: { slug: string }) {
                 openingHours={place.openingHours}
                 wheelchair={place.wheelchair}
               />
-              <OsmPlaceLink place={place} />
+              {/* A recommendation is for going there: the same deep links the
+                  owner's card hands out. */}
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                <NavLinks place={place} />
+              </div>
             </div>
           </li>
         ))}

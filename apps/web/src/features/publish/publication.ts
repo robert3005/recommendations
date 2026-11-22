@@ -1,7 +1,11 @@
 /**
- * Foreground publishing (spec/src/sharing.md): Publish, Publish update, and
- * Unpublish are awaited network calls — each visibly succeeds or fails in the
- * UI, and retrying means pressing the button again. No outbox, no jobs.
+ * Publishing (spec/src/sharing.md). The first Publish and every Unpublish are
+ * foreground actions the owner presses — awaited network calls that visibly
+ * succeed or fail. After that a page is LIVE by default: changes to its
+ * source republish on their own, each as the next version (§Live pages); a
+ * page switched to manual waits for Publish update. No outbox: a live update
+ * that fails is simply still behind, and is tried again on the next change
+ * or when the network returns.
  *
  * The published document is the domain projection of repository reads; its
  * SHA-256 (of `stableStringify`) becomes `lastPublishedHash`, and "unpublished
@@ -44,10 +48,20 @@ export interface PublishRepo {
     editorToken: string,
     now: string,
   ): Promise<Publication>;
-  recordPublished(id: string, lastPublishedHash: string, now: string): Promise<void>;
+  recordPublished(
+    id: string,
+    lastPublishedHash: string,
+    now: string,
+    version?: number,
+  ): Promise<void>;
   markRevoked(id: string, now: string): Promise<void>;
   livePublications(): Promise<Publication[]>;
+  /** The curator's display name lives in settings; optional so stubs may omit it. */
+  getSetting?<T>(key: string): Promise<T | undefined>;
 }
+
+/** Settings key of the name shown on shared pages ("Curated by …"). */
+export const AUTHOR_NAME_KEY = "profile.name";
 
 /** A publish/unpublish failure with a message fit for the controls to show. */
 export class PublishError extends Error {}
@@ -161,10 +175,12 @@ export async function buildListDocument(
   const publishedPosts = posts
     .filter((post) => urls.has(post.id))
     .map((post) => ({ title: post.title, url: urls.get(post.id) as string }));
+  const author = (await repo.getSetting?.<string>(AUTHOR_NAME_KEY))?.trim();
   return projectList(
     list,
     entries.map((e) => e.place),
     publishedPosts,
+    author ? { author } : undefined,
   );
 }
 
@@ -320,10 +336,13 @@ async function publishDocument(
 ): Promise<Publication> {
   const fetcher = opts.fetcher ?? defaultFetcher();
   const now = opts.now ?? nowIso();
-  const body = JSON.stringify(doc);
+  // The hash covers the content only; the version stamp rides on the wire
+  // copy, so an unchanged document always hashes the same.
   const hash = await documentHash(doc);
 
   const existing = await repo.publicationFor(target);
+  const version = isLive(existing) ? (existing.version ?? 1) + 1 : 1;
+  const body = JSON.stringify({ ...doc, version, updatedAt: now });
   if (isLive(existing)) {
     if (!existing.editorToken) {
       throw new PublishError(
@@ -338,7 +357,7 @@ async function publishDocument(
       body,
     );
     if (response.status === 200 || response.status === 201) {
-      await repo.recordPublished(existing.id, hash, now);
+      await repo.recordPublished(existing.id, hash, now, version);
       return (await repo.publicationFor(target)) ?? existing;
     }
     if (response.status === 410) {
@@ -357,7 +376,7 @@ async function publishDocument(
       // The row is written only after the claim succeeds: the contract has no
       // way to move a publication between slugs, so an unclaimed row would lie.
       const publication = await repo.createPublication(target, candidate, token, now);
-      await repo.recordPublished(publication.id, hash, now);
+      await repo.recordPublished(publication.id, hash, now, version);
       return (await repo.publicationFor(target)) ?? publication;
     }
     // 403: owned by another token. 410: tombstoned — including our own earlier
@@ -483,4 +502,40 @@ export async function abandonLostPublication(
   now?: string,
 ): Promise<void> {
   await repo.markRevoked(publication.id, now ?? nowIso());
+}
+
+// ---------- live pages ----------
+
+/**
+ * A live page follows its source (spec/src/sharing.md §Live pages): once the
+ * owner has published it, later changes go out on their own, each as the next
+ * version. These are the publications that are behind right now — live, held
+ * by this device, on the wire, and showing a different hash than the current
+ * projection. A page whose `live` flag is false is never listed: it waits for
+ * the owner to press Publish update.
+ */
+export async function stalePublications(
+  repo: PublishRepo,
+): Promise<{ publication: Publication; hash: string }[]> {
+  const stale: { publication: Publication; hash: string }[] = [];
+  for (const publication of await repo.livePublications()) {
+    if (publication.live === false || !publication.editorToken || !onWire(publication)) continue;
+    const hash = await currentDocumentHash(repo, publication.target).catch(() => undefined);
+    if (hash !== undefined && hash !== publication.lastPublishedHash) {
+      stale.push({ publication, hash });
+    }
+  }
+  return stale;
+}
+
+/** Bring one live page up to date — the same PUT a pressed Publish update makes. */
+export async function republish(
+  repo: PublishRepo,
+  publication: Publication,
+  opts: PublishOptions = {},
+): Promise<Publication> {
+  ensureReady();
+  return publication.target.kind === "list"
+    ? publishListDocument(repo, publication.target.id, opts)
+    : publishPostDocument(repo, publication.target.id, opts);
 }

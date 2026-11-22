@@ -140,7 +140,13 @@ export function PostPublishControls({ postId }: { postId: string }) {
             data-testid="post-publication-status"
             data-status={unpublishedChanges ? "unpublished-changes" : "published"}
           >
-            Published{unpublishedChanges ? " · unpublished changes" : ""}
+            {publication.live !== false ? "Live" : "Published"}
+            {publication.version ? ` · v${publication.version.toString()}` : ""}
+            {unpublishedChanges
+              ? publication.live !== false
+                ? " · updating…"
+                : " · unpublished changes"
+              : ""}
           </span>
           {pageUrl ? (
             <a
@@ -155,6 +161,15 @@ export function PostPublishControls({ postId }: { postId: string }) {
           ) : null}
           {publication.editorToken ? (
             <>
+              <label className="flex items-center gap-1 text-ink/70">
+                <input
+                  type="checkbox"
+                  checked={publication.live !== false}
+                  onChange={(e) => void repo.setPublicationLive(publication.id, e.target.checked)}
+                  data-testid="post-live-toggle"
+                />
+                Update the page automatically
+              </label>
               <button
                 type="button"
                 disabled={busy}

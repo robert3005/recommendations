@@ -75,7 +75,7 @@ describe("PublishedListView", () => {
     // The enriched facts render exactly as published — the same listing as
     // the place card, and no coordinates row (spec/src/map-view.md §The
     // place card: coordinates were chrome, not information).
-    expect(screen.getByText(/cafe · portuguese/)).toBeInTheDocument();
+    expect(screen.getByText(/Cafe · Portuguese/)).toBeInTheDocument();
     expect(screen.getByTestId("place-description")).toHaveTextContent("pouring bica since 1923");
     const credit = screen.getByTestId("place-description-credit");
     expect(credit).toHaveAttribute(
@@ -110,7 +110,7 @@ describe("PublishedListView", () => {
     expect(screen.getByTestId("place-image-credit")).toBeInTheDocument();
     // osmRef present on a place → attribution + the OSM deep link.
     expect(screen.getByTestId("odbl-attribution")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "OpenStreetMap" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "View on OpenStreetMap" })).toHaveAttribute(
       "href",
       "https://www.openstreetmap.org/node/101",
     );

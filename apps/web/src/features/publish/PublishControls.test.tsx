@@ -45,8 +45,9 @@ describe("PublishControls preflight", () => {
     expect(rows[1]).toHaveTextContent("Livraria Antiga");
     expect(rows[1]).toHaveTextContent("38.7141, -9.1392");
 
-    // The offer names the unpublished post about this list.
-    expect(screen.getByTestId("preflight-offer")).toBeInTheDocument();
+    // The offer names the unpublished post about this list — ticked, because
+    // a list's write-up belongs with it; the owner unticks to keep it private.
+    expect(screen.getByTestId("preflight-offer")).toBeChecked();
     expect(screen.getByText(/Sidebar Draft/)).toBeInTheDocument();
 
     // Nothing has left the device.
@@ -54,8 +55,9 @@ describe("PublishControls preflight", () => {
     expect((await getHosted("lists", "disclosure-weekend")).status).toBe(404);
 
     await user.click(screen.getByTestId("confirm-publish-list"));
+    // The list and its accepted post.
     await waitFor(async () => {
-      expect(repo.publications).toHaveLength(1);
+      expect(repo.publications).toHaveLength(2);
     });
     expect((await getHosted("lists", "disclosure-weekend")).status).toBe(200);
     expect(await screen.findByTestId("public-link")).toHaveTextContent("/l/disclosure-weekend");

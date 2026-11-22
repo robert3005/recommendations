@@ -16,6 +16,7 @@ import {
 } from "../archive/archive";
 import { InsightsSection } from "../insights/InsightsSection";
 import { ImportSection } from "../interop/ImportSection";
+import { AUTHOR_NAME_KEY } from "../publish/publication";
 
 export function SettingsPage() {
   const repo = useRepo();
@@ -26,6 +27,7 @@ export function SettingsPage() {
   // The periodic archive reminder (spec/src/storage.md §Eviction honesty).
   const remind = useLiveQuery(() => shouldRemindArchiveExport(repo, nowIso()), [repo]);
   const lastExport = useLiveQuery(() => lastArchiveExportAt(repo), [repo]);
+  const authorName = useLiveQuery(() => repo.getSetting<string>(AUTHOR_NAME_KEY), [repo]);
 
   const doExport = async () => {
     try {
@@ -145,6 +147,24 @@ export function SettingsPage() {
           Restoring into an empty library is the supported path. Restoring into a non-empty library
           merges by id — same id, same entity, newer edit wins.
         </p>
+      </section>
+
+      <section className="mt-6" data-testid="sharing-settings">
+        <h2 className="text-sm font-semibold text-ink/70">Sharing</h2>
+        <label className="mt-1 block text-xs text-ink/60">
+          Your name on shared pages — shown as “Curated by …”. Leave it empty to share without a
+          name.
+          <input
+            type="text"
+            defaultValue={authorName ?? ""}
+            key={authorName ?? ""}
+            maxLength={80}
+            onBlur={(e) => void repo.setSetting(AUTHOR_NAME_KEY, e.target.value.trim())}
+            placeholder="Your name"
+            className="mt-1.5 block w-full max-w-xs rounded-pill border border-hairline bg-paper px-3 py-1.5 text-sm text-ink focus:border-ink focus:outline-none"
+            data-testid="author-name"
+          />
+        </label>
       </section>
 
       <InsightsSection />

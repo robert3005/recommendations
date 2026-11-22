@@ -5,7 +5,7 @@
  * projection (SHA-256 of `stableStringify`, via crypto.subtle) lives in the
  * app; this module stays platform-free.
  */
-import type { List, ListMarker, OsmRef, Place, Post } from "./entities";
+import type { List, ListMarker, OsmRef, Place, PlaceRating, Post } from "./entities";
 import { rewriteBodyForPublish } from "./postLinks";
 
 export interface PublishedPlace {
@@ -27,18 +27,35 @@ export interface PublishedPlace {
   wheelchair?: string;
   description?: string;
   wikipediaUrl?: string;
+  // The curator's own layer — present only when the list shares it
+  // (spec/src/sharing.md §The curator's voice). Never on post documents.
+  note?: string;
+  tags?: string[];
+  rating?: PlaceRating;
 }
 
-export interface PublishedList {
+/**
+ * Stamped onto a document as it is sent, never part of what is hashed: the
+ * hash answers "did the content change", and a stamp that changed on every
+ * publish would make the answer always yes.
+ */
+export interface PublishedStamp {
+  version?: number; // 1 on first publish, +1 on every update
+  updatedAt?: string; // ISO time of this version
+}
+
+export interface PublishedList extends PublishedStamp {
   v: 1;
   kind: "list";
   title: string;
   marker: ListMarker;
+  description?: string; // the curator's intro
+  author?: string; // the curator's display name, when they set one
   places: PublishedPlace[]; // list order
   posts?: { title: string; url: string }[]; // published posts about this list
 }
 
-export interface PublishedPost {
+export interface PublishedPost extends PublishedStamp {
   v: 1;
   kind: "post";
   title: string;
@@ -47,8 +64,11 @@ export interface PublishedPost {
   list?: { title: string; url?: string }; // list posts only; url when the list is published
 }
 
-export function toPublishedPlace(p: Place): PublishedPlace {
+export function toPublishedPlace(p: Place, opts?: { personal?: boolean }): PublishedPlace {
   return {
+    ...(opts?.personal && p.note !== undefined ? { note: p.note } : {}),
+    ...(opts?.personal && p.tags?.length ? { tags: p.tags } : {}),
+    ...(opts?.personal && p.rating !== undefined ? { rating: p.rating } : {}),
     id: p.id,
     name: p.name,
     lat: p.lat,
@@ -67,18 +87,27 @@ export function toPublishedPlace(p: Place): PublishedPlace {
   };
 }
 
-/** `places` in list order; `posts` are the published posts about this list. */
+/**
+ * `places` in list order; `posts` are the published posts about this list.
+ * The curator's notes, tags and ratings travel unless the list opted out
+ * (`shareNotes === false`); the intro and the author name travel when set.
+ */
 export function projectList(
   list: List,
   places: Place[],
   publishedPosts: { title: string; url: string }[],
+  opts?: { author?: string },
 ): PublishedList {
+  const personal = list.shareNotes !== false;
+  const author = opts?.author?.trim();
   return {
     v: 1,
     kind: "list",
     title: list.name,
     marker: list.marker,
-    places: places.map(toPublishedPlace),
+    ...(list.description !== undefined ? { description: list.description } : {}),
+    ...(author ? { author } : {}),
+    places: places.map((place) => toPublishedPlace(place, { personal })),
     ...(publishedPosts.length > 0 ? { posts: publishedPosts } : {}),
   };
 }
@@ -98,7 +127,7 @@ export function projectPost(
     kind: "post",
     title: post.title,
     body: rewriteBodyForPublish(post.body, { placeIdsInDoc, postUrls: opts.postUrls }),
-    places: places.map(toPublishedPlace),
+    places: places.map((place) => toPublishedPlace(place)),
     ...(opts.listRef !== undefined ? { list: opts.listRef } : {}),
   };
 }

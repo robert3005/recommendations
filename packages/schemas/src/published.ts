@@ -68,7 +68,17 @@ export const publishedPlaceSchema = z.object({
   wheelchair: z.enum(["yes", "limited", "no"]).optional(),
   description: z.string().max(600).optional(),
   wikipediaUrl: httpsUrlSchema.optional(), // credits a Wikipedia-sourced description
+  // The curator's own layer, present only when the list shares it.
+  note: z.string().max(600).optional(),
+  tags: z.array(z.string().min(1).max(40)).max(40).optional(),
+  rating: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
 });
+
+/** Stamped at send time; never part of the content hash. */
+const stampShape = {
+  version: z.number().int().min(1).max(1_000_000).optional(),
+  updatedAt: z.string().max(40).optional(),
+};
 
 const placesSchema = z.array(publishedPlaceSchema).max(PUBLISHED_LIMITS.maxPlaces);
 
@@ -77,6 +87,9 @@ export const publishedListSchema = z.object({
   kind: z.literal("list"),
   title: titleSchema,
   marker: listMarkerSchema,
+  description: z.string().max(1000).optional(), // the curator's intro
+  author: z.string().min(1).max(80).optional(), // the curator's display name
+  ...stampShape,
   places: placesSchema, // list order
   posts: z.array(z.object({ title: titleSchema, url: httpsUrlSchema })).optional(),
 });
@@ -88,6 +101,7 @@ export const publishedPostSchema = z.object({
   body: z.string().refine((value) => utf8Bytes(value) <= PUBLISHED_LIMITS.maxBodyBytes, {
     message: `body exceeds ${PUBLISHED_LIMITS.maxBodyBytes} bytes`,
   }),
+  ...stampShape,
   places: placesSchema, // the post's projection at publish time
   list: z.object({ title: titleSchema, url: httpsUrlSchema.optional() }).optional(),
 });
