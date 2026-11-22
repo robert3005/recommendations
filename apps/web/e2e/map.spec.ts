@@ -189,7 +189,7 @@ test.describe("map display", () => {
     // stacked above the settings gear in the same corner, never overlapping.
     await expect(page.getByTestId("content-pane")).toBeHidden();
     const reopenBox = await page.getByTestId("pane-reopen").boundingBox();
-    const gearBox = await page.getByTestId("settings-gear").boundingBox();
+    const gearBox = await page.getByTestId("settings-gear-floating").boundingBox();
     if (!reopenBox || !gearBox) throw new Error("floating chips have no bounding boxes");
     expect(gearBox.y).toBeGreaterThanOrEqual(reopenBox.y + reopenBox.height);
     await page.getByTestId("pane-reopen").click();
@@ -200,7 +200,7 @@ test.describe("map display", () => {
     // visible; pressed again it returns to the page it came from.
     await page.getByTestId("pane-collapse").click();
     await expect(shell).toHaveAttribute("data-pane-state", "collapsed");
-    await page.getByTestId("settings-gear").click();
+    await page.getByTestId("settings-gear-floating").click();
     await expect(shell).toHaveAttribute("data-pane-state", "split");
     await expect(page.getByTestId("settings-page")).toBeVisible();
     await expect(page.getByTestId("settings-gear")).toHaveAttribute("aria-pressed", "true");
@@ -209,7 +209,7 @@ test.describe("map display", () => {
     await expect(page.getByTestId("settings-gear")).toHaveAttribute("aria-pressed", "false");
 
     // Notebook routes render designed states, never blanks: Settings behind
-    // the bottom-left gear chip, /review deep-linkable without a pill.
+    // the top bar's gear, /review deep-linkable without a pill.
     await page.goto("/review");
     await expect(page.getByTestId("review-page")).toBeVisible();
     await expect(page.getByTestId("review-empty")).toBeVisible();

@@ -123,14 +123,15 @@ test("Edit mode reorders, renames, re-marks, and removes; reading stays read-onl
   await expect(page.getByTestId("list-page")).toContainText("Curated Lisbon");
   await expect(page.getByTestId("list-marker")).toHaveAttribute("data-color", "#2457E6");
 
-  // Removing the last remaining membership removes the place (membership is existence).
+  // Removing an entry takes the place off the list; the library keeps it.
   await page.getByTestId("edit-list").click();
   await items.nth(1).getByTestId("remove-from-list").click();
   await expect(items).toHaveCount(1);
   await page.getByTestId("edit-list").click();
-  // Home projects every list's pins on the canvas beside the notebook.
+  // Home projects the whole library on the canvas beside the notebook.
   await page.getByTestId("home-link").click();
-  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "1");
+  await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "2");
+  await expect(page.getByTestId("place-total")).toHaveText("2");
 });
 
 test("a list created on the Lists home is offered in the add-a-place field", async ({ page }) => {
