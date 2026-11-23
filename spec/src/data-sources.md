@@ -16,11 +16,15 @@ The basemap is **our own plate**: a MapLibre style built in code (`src/map/basem
 road shields are dropped — the only points of interest on the map are the user's own places.
 The linked OSM attribution control is always visible.
 
-Production reads one Protomaps-schema **PMTiles** archive by HTTP range request from static
-storage (Cloudflare R2), with the plate's glyphs and sprite self-hosted beside it:
-`VITE_MAP_PMTILES_URL`, `VITE_MAP_GLYPHS_URL`, `VITE_MAP_SPRITE_URL`. No per-view metering, no
-tile vendor in the request path, and the same archive doubles as the fully offline development
-option. A production build fails closed when the plate's assets point at development hosts.
+Production reads one Protomaps-schema **PMTiles** archive kept in static storage (Cloudflare R2)
+through a small tile service (`services/tiles`, a Cloudflare Worker): it serves each tile at its
+own URL (`/<archive>/<z>/<x>/<y>.mvt`) with long cache lifetimes, so browsers reuse tiles across
+visits and Cloudflare's edge can serve them without touching the archive. Range requests into one
+large file were never reused that way. The plate's glyphs and sprite come through the same
+Worker: `VITE_MAP_TILES_URL`, `VITE_MAP_GLYPHS_URL`, `VITE_MAP_SPRITE_URL`. No per-view metering,
+no tile vendor in the request path. `VITE_MAP_PMTILES_URL` still reads an archive directly by
+range request, which is the fully offline development option. A production build fails closed
+when the plate's assets point at development hosts.
 
 Without a PMTiles archive, `VITE_MAP_STYLE_URL` selects a hosted style instead. Development
 defaults to OpenFreeMap Positron (keyless); VersaTiles, Stadia Maps on localhost, or MapLibre
