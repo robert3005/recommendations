@@ -177,3 +177,25 @@ describe("typing to search", () => {
     expect(screen.getByTestId("add-place-confirm").textContent).toContain("38.71540");
   });
 });
+
+describe("the results dropdown", () => {
+  it("puts itself away when a press lands outside the field, and comes back on focus", async () => {
+    geocoder.search.mockResolvedValue([
+      { name: "Café do Rio", address: "Lisboa", lat: 38.7, lng: -9.1 },
+    ]);
+    renderField();
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    const field = screen.getByRole("combobox", { name: "Add a place" });
+    await userEvent.click(field);
+    await userEvent.type(field, "cafe");
+    expect(await screen.findByRole("option", { name: /Café do Rio/ })).toBeTruthy();
+
+    await userEvent.click(outside);
+    expect(screen.queryByTestId("search-panel")).toBeNull();
+
+    await userEvent.click(field);
+    expect(await screen.findByRole("option", { name: /Café do Rio/ })).toBeTruthy();
+    outside.remove();
+  });
+});

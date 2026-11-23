@@ -20,7 +20,7 @@
 import type { GeocoderCandidate, OsmRef, PlaceFacets } from "@placemarks/domain";
 import { matchesFilter, parsePastedLink, placeKindLine } from "@placemarks/domain";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useLists } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import type { NewPlaceFacts } from "../../data/repo";
@@ -81,6 +81,36 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
   const [saving, setSaving] = useState(false);
   const debouncedQuery = useDebounced(query.trim(), 250);
   const listboxId = useId();
+  const fieldRef = useRef<HTMLDivElement>(null);
+
+  // The results are a transient dropdown: pressing anywhere outside the field
+  // (the map, a list, the gear, the home link) or moving focus elsewhere puts
+  // them away. The typed text stays, so focusing the field brings them back.
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.target instanceof Node && fieldRef.current?.contains(e.target)) return;
+      setOpen(false);
+      setActiveIndex(-1);
+    };
+    // Only a focus move to a known element outside closes here: a press that
+    // leaves focus nowhere (Safari does not focus buttons) is the pointer
+    // handler's to judge, so a click on an option still lands.
+    const onFocusOut = (e: FocusEvent) => {
+      const next = e.relatedTarget;
+      if (next instanceof Node && !fieldRef.current?.contains(next)) {
+        setOpen(false);
+        setActiveIndex(-1);
+      }
+    };
+    const field = fieldRef.current;
+    document.addEventListener("pointerdown", onPointerDown, true);
+    field?.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      field?.removeEventListener("focusout", onFocusOut);
+    };
+  }, [open]);
   // The geocoder leans toward what the canvas shows; coarsened so panning a
   // little does not re-run the search.
   const mapCenter = useUiStore((s) => s.mapCenter);
@@ -301,7 +331,7 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
   };
 
   return (
-    <div className="w-full" data-testid="add-place-field">
+    <div ref={fieldRef} className="w-full" data-testid="add-place-field">
       <input
         type="search"
         role="combobox"
