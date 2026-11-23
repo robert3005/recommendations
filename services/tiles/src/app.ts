@@ -91,7 +91,10 @@ export async function handleTileRequest(
       result = await deps.getTile(archive, z, x, y);
     } catch (error) {
       if (error instanceof UnknownArchiveError) return plain(404, "Unknown archive");
-      throw error;
+      // Still CORS-open, so the map sees a failed tile rather than an opaque
+      // network error, and never cached so the next request tries again.
+      console.error("tile read failed", archive, z, x, y, error);
+      return plain(503, "Tile temporarily unavailable", { "Cache-Control": "no-store" });
     }
     if (!result) {
       return new Response(null, {

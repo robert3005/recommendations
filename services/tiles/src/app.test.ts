@@ -60,6 +60,21 @@ describe("tile service", () => {
     expect(res.status).toBe(404);
   });
 
+  it("answers a failed archive read with an uncached, CORS-open 503", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await handleTileRequest(
+      get("/europe/14/8320/6082.mvt"),
+      deps({
+        getTile: async () => {
+          throw new Error("This promise was created by a request that has since ended");
+        },
+      }),
+    );
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
   it("passes glyphs and sprites through with long cache lifetimes", async () => {
     const d = deps();
     const res = await handleTileRequest(get("/fonts/Noto%20Sans%20Regular/0-255.pbf"), d);

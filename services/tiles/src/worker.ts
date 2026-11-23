@@ -4,7 +4,7 @@ import {
   EtagMismatch,
   PMTiles,
   type RangeResponse,
-  SharedPromiseCache,
+  ResolvedValueCache,
   type Source,
 } from "pmtiles";
 import { type AssetResult, handleTileRequest, type TileResult, UnknownArchiveError } from "./app";
@@ -79,8 +79,11 @@ async function asStored(buf: ArrayBuffer): Promise<ArrayBuffer> {
   return buf;
 }
 
-// Headers and directories survive across requests in a warm isolate.
-const directoryCache = new SharedPromiseCache(400, true, gunzip);
+// Headers and directories survive across requests in a warm isolate. Only
+// settled values are shared: a Workers promise belongs to the request that
+// created it, so a ResolvedValueCache made concurrent cold tiles throw
+// ("a request that has since ended") whenever the first request finished early.
+const directoryCache = new ResolvedValueCache(400, true, gunzip);
 const archives = new Map<string, PMTiles>();
 
 function archiveOf(bucket: R2BucketLike, name: string): PMTiles {
