@@ -40,7 +40,7 @@ never remounts and keeps its viewport across routes. See [The Notebook & the Map
 
 Framework-independent TypeScript owns the rules of the model:
 
-- model invariants — membership is existence, entry and marker uniqueness, the teardown refusals;
+- model invariants — the library owns places, entry and marker uniqueness, the teardown refusals;
 - projections — which places a route or post puts on the canvas;
 - publish-time link rewriting from `place:`/`post:` protocols to fragments and public URLs;
 - deep-link building and parsing for Google Maps, Apple Maps, and OSM URLs;
@@ -58,7 +58,7 @@ Dexie. Its transactions enforce the model invariants at the storage boundary. Se
 
 External concerns sit behind three interfaces: `Geocoder`, `MapStyleProvider`, and
 `SharePublisher`. The `Geocoder` is one adapter with two calls that may bind to two endpoints:
-`search(text, bias?)` serves the add-a-place field and the import ladder, `lookup(osmRef)`
+`search(text, bias?)` serves the search field and the import ladder, `lookup(osmRef)`
 serves pasted OSM element URLs. `MapStyleProvider` supplies the basemap style and attribution;
 `SharePublisher` speaks the share service's Bearer protocol ([Sharing & Publishing](./sharing.md)).
 Adapters capture failure behaviour and attribution terms, not just endpoint URLs; see
@@ -68,7 +68,7 @@ Adapters capture failure behaviour and attribution terms, not just endpoint URLs
 
 Deep links are built and parsed in one core-domain module: the place card, every export writer,
 and the public viewer emit the same Google Maps, Apple Maps, and OSM URLs for a place, and the
-add-a-place field parses pasted links with the same code. See [Import & Export](./interop.md).
+search field parses pasted links with the same code. See [Import & Export](./interop.md).
 
 ## Key decisions
 

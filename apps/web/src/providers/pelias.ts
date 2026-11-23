@@ -80,7 +80,7 @@ export class PeliasGeocoder {
     const url = new URL(`${this.baseUrl}/v1/autocomplete`);
     url.searchParams.set("text", text);
     url.searchParams.set("size", String(opts?.limit ?? 8));
-    // Place-shaped layers only — no country/region rows in an add-a-place field.
+    // Place-shaped layers only — no country/region rows in a search field.
     url.searchParams.set("layers", "venue,address,street,locality");
     if (bias) {
       url.searchParams.set("focus.point.lat", String(bias.lat));

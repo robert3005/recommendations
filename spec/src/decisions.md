@@ -16,6 +16,51 @@ produces a union-of-all-designs codebase: roughly 8,500 lines of it, removed ove
 
 ---
 
+## 2026-11-22 — the library pivot
+
+A walkthrough of the whole app against the stated goal — *the map app you already use, with
+the search and display of your favourite places made your own; loose grouping; lists for
+showing a curation* — found the app organised around the opposite idea: a place existed only
+as a member of a list, the one search field searched the world but not the library, and tags
+were read-only text on a card. Four rulings follow.
+
+**The library owns places; membership is no longer existence.** A place is saved with one
+press and lives on any number of lists, or none. Leaving a list never deletes a place; deleting
+a list keeps its places and no longer has to be emptied first; deletion of a place is explicit.
+This reverses the 2026-07-18 removal of standalone saves. That ruling was right about import
+being the front door and wrong about what a saved place is for: forcing a list at save time is
+the vendor behaviour the product exists to escape. The marker argument for it ("an unlisted
+place has no marker to wear") is answered by a neutral marker.
+
+**Three kinds of group.** Tags (free text, the owner's words), saved views (a named filter
+that keeps itself current), and lists (ordered, introduced, publishable). Lists stop being the
+only way to organise and become the way a curation is shown to someone else. Own tags and
+review-derived tags are separate facets and are always drawn differently — a tag someone else's
+review earned is never presented as the owner's judgement.
+
+**One search, yours first.** The top-bar field searches the library before the wider map —
+name, tags, note, description, cuisine, and what reviews say — and the geocoder leans toward
+the canvas. Filters and saved views layer on the map with names. This supersedes "that
+sentence is the whole search spec".
+
+**Live, versioned sharing.** A published page follows its source after the first explicit
+Publish, each change a numbered version, with a per-page switch back to manual. This relaxes
+"a public page changes only on an explicit publish update": the explicit act is now the first
+publish, and the preview says so. A shared list carries the curator's name, intro, and a note
+per place. Version *history* — keeping or showing earlier versions — is not built.
+
+Also decided: the personal layer (tags, note, rating, been / want) lives on the place, not on
+the list entry — it is the owner's judgement of the place, wherever it is listed; and the
+import rung may auto-place on corroborating evidence rather than only on a lone exact hit,
+because one row in five placing itself made Takeout import unusable at real sizes.
+
+Not yet done from the same review: sync between devices, basemap coverage outside Europe, one
+identity joining a place's Google id and its OSM ref (so review insights reach places found by
+search), running the review harvest from inside the app, and imported Notes landing in the note
+field instead of a post.
+
+---
+
 ## 2026-11-21 — the review harvest
 
 The product now classifies what reviewers say about a place, which needs far more review text

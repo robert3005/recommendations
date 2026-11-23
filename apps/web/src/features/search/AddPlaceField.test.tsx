@@ -1,6 +1,6 @@
 /**
- * The paste half of the add-a-place field (spec/src/map-view.md §The
- * add-a-place field): links are parsed, never fetched — except an OSM element
+ * The paste half of the search field (spec/src/map-view.md §The
+ * search field): links are parsed, never fetched — except an OSM element
  * URL, whose facts come through the geocoder's exact lookup; short links ask
  * for the expanded URL.
  */

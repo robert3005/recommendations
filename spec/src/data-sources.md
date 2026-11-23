@@ -34,7 +34,7 @@ One adapter, two calls, possibly two endpoints:
 - `search(text, bias?)` — forward geocoding via a Photon-class **or** Pelias-class autocomplete
   endpoint, selected by `VITE_GEOCODER` (`photon` is the keyless development default; `pelias`
   requires `VITE_PELIAS_URL`, with an optional `VITE_PELIAS_KEY` sent as a query parameter).
-  Serves the add-a-place field and the Title + Address step of the import coordinate ladder
+  Serves the search field and the Title + Address step of the import coordinate ladder
   ([Import & Export](./interop.md)).
 - `lookup(osmRef)` — exact element fetch via a Nominatim `/lookup`-class endpoint or the OSM API.
   Serves OSM element URL paste.

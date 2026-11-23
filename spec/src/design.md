@@ -119,6 +119,20 @@ A place on multiple visible lists wears a deterministic stacked/badged variant o
 tapping it names the lists it belongs to. The selected place is the loudest pin on the plate:
 half again as large, never dimmed, above its neighbours — the size is the signal; no ring.
 
+## Tags
+
+Two kinds of tag exist ([Data Model](./data-model.md) §Own tags and derived tags) and they are
+never drawn alike — the difference is carried by shape and fill, not by colour alone:
+
+- an **own tag** is a solid ink pill, prefixed `#`, upright: the owner's word, stated flatly;
+- a **derived tag** is a dashed outline with no fill, prefixed `✦`, italic, and announced to
+  assistive technology as "from reviews": something overheard, not something said.
+
+As filter chips the same rule holds: an unpressed own tag is an ink outline, a pressed one
+fills; a derived tag keeps its dashes in both states. The rating is one to three ink stars, the
+rest drawn faint so the scale shows. A place in no list and no view wears a neutral grey circle
+on the map — deliberately outside the eight accents, which stay with lists and views.
+
 ## Map styling
 
 The basemap is neutral and desaturated — a quiet plate restyled from the provider's default (see

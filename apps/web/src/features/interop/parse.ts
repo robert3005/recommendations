@@ -343,8 +343,8 @@ export function parseKml(text: string, fallbackName: string): ParsedList[] {
  * The CSVs have list structure but no geometry; `Saved Places.json` has
  * geometry but no list structure. Rows are joined **by Google feature id** —
  * by id only, never by name. Geometry rows no CSV references become the
- * auto-created "Saved places" list — membership is existence, so a place with
- * geometry but no list still needs a list to live in (spec/src/interop.md).
+ * auto-created "Saved places" list, so an import can always be seen and
+ * re-imported as one group (spec/src/interop.md).
  */
 export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
   const entries = unzipSync(bytes);

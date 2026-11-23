@@ -2,7 +2,7 @@
  * Provider failure states (spec/src/map-view.md §Accessibility and failure,
  * spec/src/data-sources.md): a basemap failure surfaces the accessible
  * top-anchored "Map unavailable" banner while the notebook keeps working, and
- * a geocoder failure is a designed message in the add-a-place field — never a
+ * a geocoder failure is a designed message in the search field — never a
  * blank or a crash.
  */
 import { expect, test } from "@playwright/test";

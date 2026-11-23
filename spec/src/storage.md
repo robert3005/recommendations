@@ -11,20 +11,22 @@ One store per entity in the [data model](./data-model.md), plus a key-value stor
 - `places`, `lists`, `listEntries`, `posts`, `publications`, `importBatches`, `importItems`.
 - `settings` — small key-value data: the home map toggles and the last viewport.
 
-There is one schema version until something ships; migrations begin when real libraries exist.
+Schema upgrades are additive and keep existing rows: version 3 added the `views` store for
+saved views, and the personal fields on places are optional, so they needed no migration.
 
 ## Repository invariants
 
 Domain writes go through repository transactions, which enforce the model's invariants in the same
 transaction that performs the write:
 
-- **Membership is existence** — a place exists iff it is in at least one list; every creation path
-  ends by adding the place to a list, and removing its last entry deletes the place.
+- **The library owns places** — a place exists on its own, on any number of lists including
+  none; leaving a list never deletes it, and only an explicit delete removes it, with its
+  entries.
 - **One live `(listId, placeId)` pair** — a place appears at most once per list.
 - **Marker uniqueness** — shape and colour pairs are unique across live lists up to the 64-pair
   space; beyond that, pairs repeat as deterministic numeral-badged variants.
 - **The three teardown refusals** — deleting a place is refused while posts target it; deleting a
-  list is refused until it is empty and its posts are deleted; deleting a list or post with a live
+  list is refused until its posts are deleted (its entries go with it, its places stay); deleting a list or post with a live
   publication is refused until it is unpublished.
 - **Post-target existence** — a post's target list or place must exist when the post is created.
 

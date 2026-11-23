@@ -84,9 +84,8 @@ opens this view. A place's posts are reached the same way from its place card.
 - Deleting a post is itself the explicit act, and it touches nothing else: the target list or
   place, its entries, and every other post are untouched. Inbound `post:` links elsewhere
   degrade to plain text — soft links never block anything.
-- A post blocks its target's deletion the other way around: removing a place's last list entry —
-  the removal that would delete the place — is refused while posts target it, and deleting a
-  list is refused until it is empty and its posts are deleted. The owner deletes the writing
+- A post blocks its target's deletion the other way around: deleting a place is refused while
+  posts target it, and deleting a list is refused until its posts are deleted. The owner deletes the writing
   first, deliberately; deletion never cascades through authored content.
 - A post's publishing state — the shareable read-only page, unpublished-changes tracking, the
   refusal to delete a published post until it is unpublished, and the publish-time rewrite of

@@ -1,7 +1,7 @@
 /**
  * THE one deep-link module (spec/src/interop.md, spec/src/architecture.md §One
  * module for deep links): the place card, every export writer, the public
- * viewer, and the add-a-place field all build and parse the same URLs here.
+ * viewer, and the search field all build and parse the same URLs here.
  *
  * Everything is pure string work — a pasted URL is never fetched. Recorded
  * judgements: Google's `!3d`/`!4d` pair (the pin) beats `@lat,lng` (the

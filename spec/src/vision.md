@@ -9,10 +9,13 @@ better than a screenshot. The places are yours; the lists holding them are not.
 
 ## The thesis
 
-Placemarks is a **personal atlas**: your places, your lists, your posts, on your own map.
-Import the places you have already saved elsewhere, curate them into marked lists, write posts
-about the places and lists, and publish any list or post as a read-only page. Everything is
-edited locally; publishing is the only remote act.
+Placemarks is a **personal atlas**: your places, on your own map, found and shown the way you
+choose. Think of the map app you already use, with the search and the display of your favourite
+places made yours: tag them in your own words, rate them, note why they matter, find them by any
+of that, and layer any groups of them on the map at once. Import the places you have already
+saved elsewhere. When a selection is worth showing to someone, make it a list — an ordered,
+introduced, hand-picked curation — and publish it as a live read-only page. Everything is edited
+locally; publishing is the only remote act.
 
 Import is the front door because the collections already exist — overwhelmingly in Google Maps.
 Nobody should have to find every place again through a new map; they should bring the library
@@ -30,9 +33,15 @@ A responsive web app with:
   for uMap on the OSM side, GPX for the OSM ecosystem's navigation apps) and as per-place deep
   links into Google Maps, Apple Maps, and OpenStreetMap. Apple Maps deliberately gets deep
   links only: it offers no custom-map import, so no export artefact can exist for it.
-- **Lists with unique markers** — places collect into named, ordered lists, each wearing a
-  unique marker (shape + colour). Membership is existence: a place is in the library exactly
-  when it is on at least one list.
+- **A library you can search** — a place is saved with one press and lives in the library on
+  its own. Each carries the owner's tags (free text), a note, a rating, and been / want to go.
+  One search field finds saved places first — by name, tag, note, description, cuisine, or what
+  reviews say — and the wider map second, leaning toward what the map is showing.
+- **Loose groups on the map** — filters by tag, rating, status and list narrow the notebook and
+  the map together; a filter saved with a name is a *view* that keeps itself up to date. Every
+  list and view is a named layer with its own marker, and any number show at once.
+- **Lists for showing a curation** — places collect into named, ordered lists, each wearing a
+  unique marker (shape + colour), with an intro. A place can be on any number of lists, or none.
 - **Posts** — Markdown articles, each about exactly one list or one place. A list post links to
   the place posts of its members, so a list's write-up hands off to its own detail pages.
   See [Posts](./posts.md).
@@ -46,9 +55,10 @@ A responsive web app with:
 - **Visual direction** — the quiet paper: off-white chrome beside a light map plate, eight
   bright accents, clean lines, and a small playful layer of pixel labels and pink. See
   [Visual Design](./design.md).
-- **Read-only share links** — publish a list or post to a named public page. Nothing leaves the
-  device until the owner presses Publish, and the page changes only on an explicit publish
-  update. See [Sharing & Publishing](./sharing.md).
+- **Live share links** — publish a list or post to a named public page. Nothing leaves the
+  device until the owner presses Publish; from then on the page is live and follows its source,
+  each change a new version, unless the owner switches that off. A shared list carries the
+  curator's voice: name, intro, and a note per place. See [Sharing & Publishing](./sharing.md).
 
 ## Explicit non-goals (v1)
 
@@ -64,7 +74,7 @@ A responsive web app with:
 - Two themes only — Paper (light) and Night (dark), following the device setting. No in-app
   theme switch and no custom themes.
 - No ambient POI discovery: the map never suggests places; the library grows only when the user
-  searches, pastes a link, or imports.
+  searches, pastes a link, or imports. Discovery means rediscovering your own library.
 
 ## Futures
 
@@ -80,8 +90,10 @@ Deliberately deferred, one line each:
 
 - Import a 50-place Google Takeout list and see every row accounted for — placed, in review, or
   explicitly skipped; nothing silently dropped.
-- Paste a Google Maps link to a place and have it on a list, wearing that list's marker, in
-  seconds.
+- Paste a Google Maps link to a place and have it saved in seconds — on a list or on none.
+- Type a tag, a word from a note, or a dish reviewers mention, and get the saved places that
+  match, in the notebook and on the map, on a phone as easily as on a desktop.
+- Save a filter as a view and see it beside two lists on the map, each a named layer.
 - Publish a list and a post; a recipient with the link can read both but modify neither.
 - On the published page, a list post's link to a place post navigates to that post's public
   page.

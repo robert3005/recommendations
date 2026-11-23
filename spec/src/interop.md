@@ -10,7 +10,7 @@ neither ever calls a proprietary API.
 
 ### One place via a link
 
-The add-a-place field ([the notebook & the map](./map-view.md)) accepts a pasted Google Maps,
+The search field ([the notebook & the map](./map-view.md)) accepts a pasted Google Maps,
 Apple Maps, or OpenStreetMap URL. Parsing is pure string work — the pasted URL is never fetched.
 Two parsing judgements worth recording: Google's `!3d`/`!4d` pair (the pin) is preferred over
 `@lat,lng` (the camera) because they differ, and a coordinate pair sitting in the name slot is
@@ -24,8 +24,8 @@ not a name.
 - A **`maps.app.goo.gl` short link** reveals nothing without following a redirect, so the app
   asks for the expanded URL instead; we never fetch.
 
-Every variant ends in "pick a list", because membership is existence
-([data model](./data-model.md)).
+Every variant ends in one press of **Save place**, with a list picker offered beside it — a
+list is optional ([data model](./data-model.md) §The library).
 
 ### Lists via Takeout
 
@@ -43,8 +43,8 @@ back into Google Maps), or, for user-dropped pins, a **search URL embedding lite
 free coordinates. `Saved Places.json` has geometry but no list structure; the CSVs have list
 structure but no geometry.
 
-Saved Places entries that appear in no CSV import into an auto-created **"Saved places"** list —
-membership is existence, so a place with geometry but no list still needs a list to live in. The
+Saved Places entries that appear in no CSV import into an auto-created **"Saved places"** list,
+so an import can always be seen, re-imported and undone as one group. The
 auto-created list binds to the GeoJSON filename as its `sourceKey`, so re-imports converge into
 it, and the import report accounts for these entries exactly like CSV rows.
 
@@ -66,15 +66,32 @@ accent colours when its marker is assigned ([data model](./data-model.md)).
 
 A CSV row must gain coordinates to become a place. In order:
 
-1. **Literal coordinates** in the source — a dropped-pin URL embedding `lat,lng`.
+1. **Literal coordinates** in the source — a dropped-pin URL embedding `lat,lng`, or a place
+   URL's own `!3d<lat>!4d<lng>` pin (never its `@` camera).
 2. **Cross-reference the archive's GeoJSON** by Google feature id — by id only, never by name.
 3. **Geocode** Title + Address through the configured geocoder
    ([map data & providers](./data-sources.md)).
 
-The auto-place rule: a single geocoder result whose normalised name matches the row title and
-whose address does not contradict auto-places (recording its `osmRef`); anything else — multiple
-candidates, name mismatch, no result — goes to the review queue (candidate picker on the canvas,
-manual placement by clicking the map, or skip). A geocoder *error* is not a miss: it pauses the
+The geocode rung asks with Title + Address, leaning toward the list's already-placed rows while
+they sit together. A geocoder asked for a name *and* an address often answers with whatever sits
+at the address, so when that does not settle the row, the bare Title is asked too and the two
+answers are judged together — at most two requests per row.
+
+The auto-place rule places a row only on evidence (recording the result's `osmRef`). The results
+considered are those whose name matches the row — equal once normalised, or the row adding words
+the result's own address accounts for ("Time Out Market Lisboa") — and whose address does not
+contradict the row's. Then:
+
+- a lone result that qualifies auto-places;
+- among several results, exactly one must be corroborated: by the row's address (a shared
+  number, or two shared words such as street and city), or, failing that, by sitting within
+  40 km of a place already on the list while no other qualifying result does;
+- a result whose name only *begins* with the row's ("Manteigaria – Fábrica de Pastéis de Nata")
+  counts only when its address agrees strongly with the row's — a shared number and two shared
+  words.
+
+There is no scoring: each step is a yes/no test, and a tie or a contradiction always goes to the
+review queue (candidate picker on the canvas, manual placement by clicking the map, or skip). A geocoder *error* is not a miss: it pauses the
 batch's remaining geocode rung — the batch stays `reviewing` and those rows retry when the
 geocoder is back; only genuine empty results fall to review.
 

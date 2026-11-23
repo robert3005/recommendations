@@ -173,7 +173,7 @@ test.describe("map display", () => {
     await expect(page.getByTestId("lists-page")).toBeVisible();
 
     // The top bar is for search (2026-07-26 — search-first chrome): the
-    // wordmark home affordance and the add-a-place field — no persistent
+    // wordmark home affordance and the search field — no persistent
     // nav, no Map tab, and no review pill while nothing is reviewing.
     await expect(page.getByTestId("home-link")).toBeVisible();
     await expect(page.getByTestId("add-place-field")).toBeVisible();

@@ -36,8 +36,8 @@ the same file-shaped way it imports Takeout. Review text stays on disk.
 A URL input names one place, so only the provider's top match is kept for it, even when a
 search-style URL matches several branches. A search input keeps every result.
 
-Harvesting does not add anything to the library. A place still enters the library only through a
-list ([Data Model](./data-model.md) §Membership is existence); the dataset joins to it by the
+Harvesting does not add anything to the library. A place still enters the library only when its
+owner saves it ([Data Model](./data-model.md) §The library); the dataset joins to it by the
 Google feature id the library already keeps in `googleUrl`.
 
 ## Provider

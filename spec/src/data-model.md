@@ -8,15 +8,38 @@ publications (the local records of published pages), and the working state of an
 progress. All of it lives locally; see [Local Storage](./storage.md) for the stores and the
 invariants the repository enforces transactionally.
 
-## Membership is existence
+## The library
 
-A place exists in the library iff it belongs to at least one list. The only door through which a
-place comes to exist is being added to a list: the add-a-place field, the place card's **Add to
-list**, and [import](./interop.md) all end in "pick a list". There is no standalone save, no
-orphan pool — and the rule is load-bearing for the visual system, because an unlisted place would
-have no marker to wear. Removing a place's last entry removes the place, subject to the teardown
-refusals below. Lists themselves may be empty: membership-is-existence constrains places, not
-lists — a freshly created list exists before any place joins it.
+The library owns places. A place is saved on its own — one press in the search field — and
+exists whether or not anything groups it. Three kinds of group sit on top, each good at one job:
+
+- **Tags** are the loose kind: free text the owner types, any number per place, many-to-many.
+  A place also carries the owner's short **note**, a **rating**, and whether they have **been**
+  or **want to go** — together the *personal layer*, the owner's own judgement of the place.
+- **Saved views** are filters with a name — "tagged *date night*, rated great or better" — that
+  keep themselves up to date as the library changes. They own no places.
+- **Lists** are the hand-made kind: an ordered selection with a marker, an intro, and posts.
+  A list is how a curation is *shown to other people* ([Sharing & Publishing](./sharing.md)).
+
+A place can be on any number of lists, or none. Leaving a list never deletes a place, and
+deleting a list keeps its places; only an explicit **Delete place** removes one, with all its
+list entries, subject to the teardown refusals below. Lists themselves may be empty.
+
+This replaced *membership is existence* on 2026-11-22 ([Decisions](./decisions.md)).
+
+### Own tags and derived tags
+
+Two different things are called tags, and they never mix:
+
+- an **own tag** is the owner's word, stored on the place (`Place.tags`), normalised to lower
+  case with collapsed whitespace, free text with no fixed vocabulary;
+- a **derived tag** comes from the review classifier ([Review Insights](./reviews.md)) — other
+  people's reviews, a fixed vocabulary, held in the separate insights store and never written
+  onto the place.
+
+Both can be searched and filtered, as separate facets, and they are always drawn differently
+([Visual Design](./design.md) §Tags). A derived tag becomes an own tag only when the owner
+presses it on the place card — a deliberate adoption, never a silent copy.
 
 ## Entities
 
@@ -46,6 +69,11 @@ interface Place {
   description?: string;
   descriptionSource?: "osm" | "wikipedia";     // which source filled description
   wikipediaUrl?: string;                       // the article a Wikipedia description came from
+  // The personal layer: the owner's own, never filled by a provider or an import.
+  tags?: string[];                             // own tags — normalised, sorted, unique
+  note?: string;                               // a short note; published only with a list that shares notes
+  rating?: 1 | 2 | 3;                          // good · great · favourite
+  status?: "been" | "want";                    // absent = not said
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +88,8 @@ interface List {
   id: string;
   name: string;
   marker: ListMarker;
+  description?: string; // the curator's intro; published with the list
+  shareNotes?: boolean; // false = publish without the owner's notes, tags and ratings
   sourceKey?: string;   // import binding: Takeout CSV / Saved Places GeoJSON filename, or KML
                         // folder id, set on first import so re-imports follow local renames
   createdAt: string;
@@ -73,6 +103,25 @@ interface ListEntry {
   rank: string;                               // fractional rank; order by (rank, id)
   createdAt: string;
   updatedAt: string;
+}
+
+interface SavedView {                          // a named filter; owns no places
+  id: string;
+  name: string;
+  marker: ListMarker;                          // same 64-pair space as lists
+  filter: PlaceFilter;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface PlaceFilter {                        // every present facet must hold
+  text?: string;                               // every word, anywhere in the searchable text
+  tags?: string[];                             // own tags — all of them
+  derivedTags?: string[];                      // review-derived tags — all of them
+  listIds?: string[];                          // on any of these lists
+  minRating?: 1 | 2 | 3;
+  status?: "been" | "want";
+  unlisted?: boolean;                          // on no list
 }
 
 type PostTarget =
@@ -169,7 +218,15 @@ report in [Import & Export](./interop.md).
   bodies contain no custom protocols (rewritten at publish — see
   [Sharing & Publishing](./sharing.md)); the viewer allowlists only `http:`/`https:` and `#`
   fragments. Same parser and sanitizer everywhere.
-- **Markers**: `shape` is one of the eight named shapes; with the eight accent colours the pair
+- **Finding places**: a filter matches a place when every present facet holds. Free text is
+  folded (lower case, diacritics and provider punctuation removed) and matches when *every word*
+  appears somewhere in the place's searchable text — name, address, category, cuisine,
+  description, the owner's note and tags, and the review-derived tags, summary and dish names —
+  in any order. So "cosy italian soho" finds a place tagged *cosy*, serving Italian, on a Soho
+  address. There is no ranking: results are the matches, in name order.
+- **Personal layer**: tags normalise on write (trimmed, lower-cased, a leading `#` dropped,
+  de-duplicated, sorted). Enrichment and import never write the personal layer.
+- **Markers**: lists and saved views draw from one pair space. `shape` is one of the eight named shapes; with the eight accent colours the pair
   space is 64. Auto-assign the first free pair on list creation; imports take the nearest
   colour to the source style, then the first free pair; manual change in list edit mode picks shape
   first, then colour, swapping within free pairs. Uniqueness is enforced across live lists up to 64; beyond that, pairs
@@ -181,9 +238,11 @@ report in [Import & Export](./interop.md).
 
 Deletion runs bottom-up, and three refusals guard it:
 
-1. Deleting a place — removing its last entry — is refused while posts target it; the owner
-   deletes or retargets nothing implicitly, they delete the place posts first.
-2. Deleting a list is refused until it is empty and its posts are deleted.
+1. Deleting a place is refused while posts target it; nothing is deleted or retargeted
+   implicitly — the owner deletes the place posts first. Deleting a place removes its list
+   entries with it. Taking a place off a list is not deletion and is never refused.
+2. Deleting a list is refused until its posts are deleted. Its entries go with it; its places
+   stay in the library.
 3. Deleting a list or post with a live (unrevoked) publication is refused until the owner
    unpublishes it — no public page is ever orphaned by a local delete.
 
@@ -193,7 +252,7 @@ Nothing authored or published dies as a side effect of deleting something else. 
 ## Relationships
 
 ```text
-List ◀──1:*── ListEntry ──*:1──▶ Place
+List ◀──1:*── ListEntry ──*:1──▶ Place ◀─ ─ ─ matches ─ ─ ─ SavedView.filter
   ▲                                ▲
   └───────── Post.target ──────────┘      exactly one list OR one place
   ▲
@@ -204,8 +263,8 @@ List ◀──1:*── ListEntry ──*:1──▶ Place
 
 Durability comes from the app-owned `PlaceId`: entries, post targets, and mentions all join on it,
 so a place's facts and provenance can change without moving anyone's writing. Every relationship
-has one canonical owner — membership lives only in `ListEntry`, prose only in `Post`, publish
-state only in `Publication` — so each fact is edited in exactly one place and the teardown rules
+has one canonical owner — membership lives only in `ListEntry`, the owner's judgement only on
+the `Place`, prose only in `Post`, publish state only in `Publication` — so each fact is edited in exactly one place and the teardown rules
 have single points to guard. And because the model is a handful of flat, id-keyed rows, the
 id-preserving library archive ([Import & Export](./interop.md)) can carry the whole library —
 links and targets intact — while publishing projects it into self-contained public documents

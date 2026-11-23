@@ -1,7 +1,7 @@
 /**
  * The import pipeline (spec/src/interop.md): parse → the coordinate ladder →
- * materialize through addToList — membership is existence, so the import IS
- * the adding-to-a-list. Idempotent: re-running the same archive converges via
+ * materialize through addToList — an import arrives as lists, so every row
+ * lands on its source list. Idempotent: re-running the same archive converges via
  * the pinned dedup precedence (Google feature id → osmRef → name+proximity)
  * and never deletes — the user's edits are canon. Every source row and every
  * Saved Places entry is accounted for: placed, in review, or skipped.

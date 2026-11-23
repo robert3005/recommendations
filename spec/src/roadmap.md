@@ -20,15 +20,15 @@ unconfigured production provider produces a designed failure state rather than a
 
 ## Phase 1 — Places & lists
 
-- The add-a-place field: type to search, or paste a Google Maps / Apple Maps / OSM link; both
-  paths end in "pick a list" ([Import & export](./interop.md)).
+- The search field: type to search, or paste a Google Maps / Apple Maps / OSM link; both
+  paths end in one press of Save place ([Import & export](./interop.md)).
 - The place card, with deep links out to Google Maps, Apple Maps, and OpenStreetMap.
 - Lists with unique markers (shape + colour), entries, and list edit mode: reorder, rename,
   remove entries, change marker.
 - The home overlay: every list's places on the canvas, each pin wearing its list's marker,
   with per-list toggles.
-- The teardown refusals: deleting a place with posts targeting it, or a non-empty list, is
-  refused with the blockers named ([Local storage](./storage.md)).
+- The teardown refusals: deleting a place or a list with posts targeting it is refused with
+  the blockers named ([Local storage](./storage.md)).
 
 **Done when** I can search for a café or paste a map link, put the place in a list wearing a
 unique marker, overlay all my lists on the home canvas and toggle one off, and open the place
@@ -106,6 +106,28 @@ target is refused until I unpublish it first.
 **Done when** the app reads as one designed instrument — bright accents on quiet paper — passes
 the keyboard and reduced-motion acceptance checks, and stays responsive with a
 several-thousand-place library on the canvas.
+
+## Phase 7 — The library
+
+- Places independent of lists: one-press save, explicit delete, lists that delete without
+  being emptied ([Data model](./data-model.md) §The library).
+- The personal layer on the place card: free-text tags, a note, a rating, been / want to go —
+  own tags drawn apart from review-derived tags ([Visual design](./design.md) §Tags).
+- The library home: every place, facet filters, saved views
+  ([The notebook & the map](./map-view.md) §Home).
+- One search field: saved places first, the wider map second, leaning toward the canvas.
+- Layers: every list and saved view a named, toggleable layer; place names on pins; clusters
+  that open for good at neighbourhood zoom.
+- Phone, tablet and desktop: search first on a phone, editing and import with room on a big
+  screen, the place card taking the notebook's column on a tablet.
+- Live, versioned share pages carrying the curator's voice
+  ([Sharing & publishing](./sharing.md)).
+- Import that places rows on evidence ([Import & export](./interop.md) §The coordinate ladder).
+
+**Done when** I can save a place without choosing a list, tag and rate it, find it again by a
+tag or a word from my note on a phone, see two lists and a saved view on the map at once with
+their names, and share a list whose page shows my intro and notes and updates itself after I
+edit it.
 
 ## Cross-cutting from day one
 

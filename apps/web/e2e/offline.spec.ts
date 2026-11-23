@@ -29,7 +29,7 @@ test.describe("offline shell", () => {
     await page.reload();
 
     // The shell renders from the SW cache: the search-first top bar (home
-    // affordance + add-a-place field), map (precached local style),
+    // affordance + search field), map (precached local style),
     // attribution.
     await expect(page.getByTestId("home-link")).toBeVisible();
     await expect(page.getByTestId("add-place-field")).toBeVisible();

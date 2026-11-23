@@ -4,8 +4,9 @@
  * combobox: the listbox holds the available lists (marker glyph + name,
  * member lists excluded) filtered by the typed text, and when the text
  * exactly names no list the first option is Create "<text>". Picking is the
- * action — there is no separate submit. Every add path ends here because
- * membership is existence (spec/src/data-model.md). Fully keyboard operable
+ * action — there is no separate submit. Lists are optional
+ * (spec/src/data-model.md §The library), so this sits beside Save place, not
+ * in front of it. Fully keyboard operable
  * (spec/src/map-view.md §Accessibility and failure).
  */
 import type { List } from "@placemarks/domain";

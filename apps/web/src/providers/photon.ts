@@ -1,6 +1,6 @@
 /**
  * Photon-class forward geocoding (spec/src/data-sources.md §Geocoder): serves
- * the add-a-place field and the import ladder's Title + Address rung. Every
+ * the search field and the import ladder's Title + Address rung. Every
  * result normalizes to a domain GeocoderCandidate recording its `osmRef` —
  * geocoder results are OSM data (spec/src/data-model.md §Normative rules);
  * nameless or ref-less features are filtered out.

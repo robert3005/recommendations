@@ -19,13 +19,20 @@ DESKTOP — every route renders notebook + canvas      MOBILE — sheet over can
 ```
 
 - **The top bar is for search.** The notebook header is a small home affordance — the wordmark,
-  back to `/` — with the add-a-place field filling the remaining width, beside the pane step
-  buttons. There is no persistent nav: **Settings** hides behind a small floating gear chip
-  pinned bottom-left of the shell — a toggle that expands a collapsed notebook so the page is
-  actually visible, and returns to the page it came from when pressed again — and **Review**
+  back to `/`, shrunk to its initial on a phone — with the search field filling the remaining
+  width, beside the pane step buttons (a step that cannot be taken is not drawn) and the
+  **Settings** gear. Search results open as a panel below the *whole* bar, so they are as wide
+  as the notebook on any screen. There is no persistent nav. The gear is a toggle: it returns to
+  the page it came from when pressed again; while the desktop notebook is collapsed it floats on
+  the canvas and expands the notebook so the page is actually visible. **Review**
   is exposed only while an import batch is
   reviewing — a pill in the top bar carrying the review-queue count, gone when the queue
   closes; `/review` itself stays deep-linkable. Public pages keep the read-only chrome.
+- **Three form factors.** A phone is for *finding*: search and the map come first, the notebook
+  is a sheet, the place card a second sheet above it, and the legend starts collapsed. A tablet
+  cannot hold notebook, card and map side by side, so the card takes the notebook's column while
+  a place is open. A desktop is for *editing and importing*: notebook, card and map sit side by
+  side.
 - **Two desktop widths.** The notebook is **split** (the default) or **collapsed** (full-bleed
   map); the map is one collapse away, never a tab switch.
 - **Three mobile detents.** The notebook is a sheet over the canvas with **peek**, **half**, and
@@ -67,22 +74,50 @@ large lists stay responsive.
 
 ```text
 ┌─────────────────────────────────────────────┐
-│  Lists                                      │
+│  Places 128             + New list  ⤓ Import│
+│  [Your tags] [From reviews] [Rating]        │
+│  [Been / want] [Lists]                      │
 │                                             │
+│  LISTS & VIEWS                              │
 │  ◉ Lisbon eats                    12 places │
 │  ◆ Porto weekend                   7 places │
-│  ▲ Hikes to try                    4 places │
+│  ⬢ Date night                    view · 9   │
 │                                             │
-│  + New list  ·  ⤓ Import                    │
+│  ALL PLACES                                 │
+│  Brat ★★★ been                         ◉ ◆ │
+│  #date night  #wood fire                    │
+│  “Order the turbot for the table.”          │
 └─────────────────────────────────────────────┘
 ```
 
-The notebook opens on the lists: each row is the list's **marker**, name, and place count —
-nothing else. The home body carries the actions that feed lists: **New list** and **Import**
-([Import & Export](./interop.md)); the add-a-place field sits in the top bar above. The canvas
-overlays every list's places, each pin wearing its list's marker; a **toggle row** over the
-overlay turns individual lists on and off — all on by default, the state persisted in the
-`settings` store.
+The notebook opens on **the library**: every saved place, found by filtering. Top to bottom:
+
+- **The filter.** Facet chips — your tags, tags from reviews, rating, been / want to go, lists
+  (including "on no list") — each opening its options in place. Free text comes from the search
+  field in the top bar. With a filter active the page shows the match count, **Save as view**,
+  and **Clear**.
+- **Lists & views**, while no filter is active: each row is the group's marker, its name, and a
+  count. A list row opens the list page; a view row applies its filter.
+- **The places** the filter matches (all of them when there is none): name, the owner's rating
+  and status, the markers of the lists it is on, category and address, the owner's own tags, and
+  the note. Rows carry own tags only — review tags stay on the card and in the filter, so a list
+  of places reads as the owner's.
+
+The canvas shows exactly the same set: the filter narrows the map as it narrows the page, and
+the camera frames the results. A session opens framing the whole library; after that the home
+moves the camera only for a filter.
+
+### Layers
+
+Every list and every saved view is a **layer**: a named chip in the legend over the canvas,
+with its marker and the number of places it would draw, toggled on and off independently — all
+on by default, the state persisted in the `settings` store. Places in no list and no view sit
+under **Other places**, in a neutral marker outside the eight accents. A place shows while any
+of its layers is on, wearing the marker of the first visible one (lists before views), with the
+next peeking behind. The legend collapses to one chip, and starts collapsed on a phone.
+
+Above neighbourhood zoom the library never clusters and each pin carries its place's name, so
+the map reads without tapping, and a selected place is never hidden inside a count.
 
 ## The list page (`/list/:id`)
 
@@ -93,8 +128,9 @@ highlights and flies (selection is bidirectional). The secondary controls share 
 header row beside the title: the **Edit mode** toggle and **Export** — a single menu button
 opening an accessible menu of every artefact download plus the My Maps and uMap guided handoffs
 ([Import & Export](./interop.md)). **Edit mode** is where curation lives: reorder entries,
-rename the list, remove entries, and change the marker (swapping within free shape + colour
-pairs); its per-row controls are separate targets that never steal the row's selection. The
+rename the list, write its **intro** (shown under the title and published with the list),
+remove entries (off this list — the place stays in the library), change the marker (swapping
+within free shape + colour pairs), and **Delete list**, which asks once and keeps the places; its per-row controls are separate targets that never steal the row's selection. The
 share/publish entry point ([Sharing & Publishing](./sharing.md)) keeps its own place on the
 page. **Posts are the page's quiet alternate view**: a small, deliberately unaccented
 Places/Posts toggle under the header — muted text tabs, no accent colour. **Places** (the
@@ -124,7 +160,15 @@ reads as a listing, not a record, and its contents are, top to bottom — each o
 - The **photo** (Wikimedia-hosted, from the OSM element's tags or its Wikipedia article —
   captured at paste-time lookup or by the enrichment pass below), with a small Wikimedia
   Commons credit link; a failed load hides the photo block.
-- The **name**, then one muted line of **category · cuisine**.
+- The **name**, then one muted line of **category · cuisine**, shown as readable labels
+  ("Coffee shop · Australian", never the provider's `coffee_shop;australian`).
+- **The personal layer** — before anything a provider or a review says: the owner's rating
+  (one to three stars), **Been** / **Want to go**, their tags (free text; Enter or a comma adds
+  one, suggestions come from tags already used), and a short note. Each saves as it changes.
+  When reviews suggest tags the owner has not used, they are offered underneath, and pressing
+  one adopts it as an own tag.
+- **What people say** ([Review Insights](./reviews.md)), when the place has classified reviews —
+  its tags drawn as derived tags, never as the owner's.
 - The **description** paragraph, set with relaxed line-height — the OSM `description` tag, or
   the linked Wikipedia article's summary. Wikipedia-sourced text carries a small **Wikipedia**
   credit link to the article, titled with its CC BY-SA licence.
@@ -135,10 +179,12 @@ reads as a listing, not a record, and its contents are, top to bottom — each o
 - Deep links out: **Open in Google Maps** (the retained `googleUrl` when one exists, else a
   coordinate/name search URL), **Open in Apple Maps**, and **View on OpenStreetMap** when the
   place carries an `osmRef` — the OSM element page is also where fact corrections happen.
-- **Add to list** — pick a list or create one inline. Membership is existence
-  ([Data Model](./data-model.md)): joining a list is how a place enters the library.
+- **Lists** — the lists the place is on, each removable, and a picker to add it to another or
+  create one inline. Lists are optional ([Data Model](./data-model.md) §The library).
 - The place's posts, when any exist, plus **Write a post**, which creates a place post and opens
   the editor.
+
+- **Delete place**, last and explicit, behind one confirmation.
 
 Coordinates do not appear anywhere on the card — they were chrome, not information; the pin on
 the canvas is the coordinate display. Opening the card of a place with an `osmRef` fires one
@@ -146,16 +192,23 @@ fire-and-forget enrichment pass — capture rules and the fill-only-missing guar
 [Data Model](./data-model.md) §Normative rules — so places added before their facts were
 captured gain them the first time they are looked at.
 
-## The add-a-place field
+## The search field
 
-One field, two behaviours, both deliberately minimal: paste a Google Maps / Apple Maps / OSM URL
-(parsed, never fetched; `maps.app.goo.gl` short links ask for the expanded URL), or type to
-search: text in, geocoder results out, pick one, pick a list. Both end in "pick a list" because
-membership is existence. That sentence is the whole search spec; there is no ranking or discovery
-UX beyond it. Link parsing lives in [Import & Export](./interop.md), the geocoder in
+One field for finding a saved place and for adding a new one. Typing searches **the library
+first** — the free-text rule in [Data Model](./data-model.md) §Normative rules, so a tag, a word
+from a note, or a dish reviewers mention all find a place — and shows up to five matches under
+**Your places**, then **Show all N on the map**, which applies the text as the home filter
+(Enter with nothing highlighted does the same). Below, under **Add a new place**, are the
+geocoder's results, leaning toward what the canvas is showing, with places already saved and
+exact repeats left out. Picking a saved place opens it; picking a new one opens the confirm
+card: the name (editable), the address, and **Save place** — one press, no list — with a list
+picker beside it for putting the place straight on a list.
+
+Pasting a Google Maps / Apple Maps / OSM URL goes to the same confirm card (parsed, never
+fetched; `maps.app.goo.gl` short links ask for the expanded URL). There is no ranking beyond
+"yours first"; link parsing lives in [Import & Export](./interop.md), the geocoder in
 [Map Data & Providers](./data-sources.md). The field owns the shell's top bar, so it is
-reachable on every private route: a compact single-line input whose results, notices, and the
-confirm card open as a panel below the header.
+reachable on every private route.
 
 ## Import review
 
@@ -168,7 +221,11 @@ itself — the coordinate ladder, review queue, and import report — is specifi
 
 The same grammar with read-only chrome and no account: a published list or post renders in the
 notebook beside the canvas projecting its places, exactly as published
-([Sharing & Publishing](./sharing.md)).
+([Sharing & Publishing](./sharing.md)). A shared list leads with the curator: their name, the
+place count, the version and its date, then the intro. Each place shows the curator's rating,
+note and tags before the provider's facts, and ends with links to open it in Google Maps, Apple
+Maps and OpenStreetMap. An open page refetches on return to the tab and about once a minute, so
+a reader sees the curator's next version without reloading.
 
 ## Accessibility and failure
 

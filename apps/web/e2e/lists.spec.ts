@@ -10,7 +10,7 @@ import { expect, type Page, test } from "@playwright/test";
 const FIRST_COLOR = "#F97316"; // circle · signal orange
 const SECOND_PAIR = "diamond-#2457E6"; // diamond · cobalt
 
-/** Type into the one add-a-place field and pick a geocoder result. */
+/** Type into the one search field and pick a geocoder result. */
 async function pickCandidate(page: Page, option: RegExp) {
   const field = page.getByRole("combobox", { name: "Add a place" });
   await field.fill("cafe");
@@ -134,7 +134,7 @@ test("Edit mode reorders, renames, re-marks, and removes; reading stays read-onl
   await expect(page.getByTestId("place-total")).toHaveText("2");
 });
 
-test("a list created on the Lists home is offered in the add-a-place field", async ({ page }) => {
+test("a list created on the Lists home is offered in the search field", async ({ page }) => {
   // Lists exist on their own: created here, before any place joins.
   await page.goto("/");
   await expect(page.getByTestId("lists-page")).toBeVisible();
