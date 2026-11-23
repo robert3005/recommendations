@@ -7,13 +7,19 @@
  * stored; comparison is constant-time. GETs carry an ETag (hash of the body)
  * and a short shared-cache lifetime; DELETE tombstones and repeats as 204.
  */
-import { parsePublishedDocument } from "@placemarks/schemas";
+import {
+  libraryIdSchema,
+  parsePublishedDocument,
+  SYNC_LIMITS,
+  syncPushSchema,
+} from "@placemarks/schemas";
 import { bearerToken, sha256Hex, timingSafeEqualHex, utf8Bytes } from "@placemarks/service-kit";
 import { Hono } from "hono";
-import type { DocumentKind, ShareStorage } from "./storage";
+import type { DocumentKind, ShareStorage, SyncStorage } from "./storage";
 
 export interface ServiceOptions {
-  storage: ShareStorage;
+  /** Publishing and — when the adapter implements it — sync share one store. */
+  storage: ShareStorage & Partial<SyncStorage>;
   now?: () => string;
   /** Best-effort single-URL shared-cache purge after an update or revoke. */
   purge?: (url: string) => Promise<unknown>;
@@ -174,5 +180,126 @@ export function createShareApp({
     });
   }
 
+  mountSync(app, storage, now);
   return app;
+}
+
+/**
+ * Sync (spec/src/sync.md §The service): `/y/:library` holds a library's
+ * encrypted rows. Like a published slug, a library is claimed by its first
+ * authorised request and afterwards answers only to the same token; unlike a
+ * slug, nothing here is public — every route needs the Bearer token, and the
+ * rows are ciphertext the service cannot read.
+ *
+ *   PUT    /y/:library          claim (201) or confirm (200); 403 for a foreign token
+ *   POST   /y/:library/rows     upsert rows, each under the next sequence number
+ *   GET    /y/:library/changes  rows after ?since=N, ascending, paged
+ *   DELETE /y/:library          remove the library and its rows (204, repeatable)
+ */
+function mountSync(app: Hono, storage: ServiceOptions["storage"], now: () => string): void {
+  const sync = storage as ShareStorage & SyncStorage;
+  const supported = typeof storage.getLibrary === "function";
+
+  app.use("/y/*", async (c, next) => {
+    await next();
+    c.res.headers.set("Access-Control-Allow-Origin", "*");
+    c.res.headers.set("Cache-Control", "no-store");
+  });
+
+  app.options("/y/*", (c) =>
+    c.body(null, 204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, PUT, POST, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "authorization, content-type",
+      "Access-Control-Max-Age": "86400",
+    }),
+  );
+
+  /**
+   * Everything every sync route does first: shape, token, quota, ownership.
+   * Returns the library id and token hash, or the response that ends the request.
+   */
+  async function authorise(
+    c: {
+      req: { param(name: string): string; header(name: string): string | undefined };
+      text(body: string, status: 400 | 401 | 403 | 404 | 429 | 501): Response;
+    },
+    opts: { claim: boolean },
+  ): Promise<{ id: string; tokenHash: string; created: boolean } | Response> {
+    if (!supported) return c.text("sync is not available on this service", 501);
+    const id = c.req.param("library");
+    if (!libraryIdSchema.safeParse(id).success) return c.text("invalid library", 400);
+    const token = bearerToken(c.req.header("authorization"));
+    if (!token) return c.text("missing sync token", 401);
+    const tokenHash = await sha256Hex(token);
+    const source = c.req.header("cf-connecting-ip") ?? "local";
+    const hits = await storage.hit(`y:${id}:${source}`, 60_000, Date.now());
+    if (hits > SYNC_LIMITS.requestsPerMinute) return c.text("rate limited", 429);
+
+    let library = await sync.getLibrary(id);
+    let created = false;
+    if (!library) {
+      if (!opts.claim) return c.text("no such library", 404);
+      // The claim is one atomic INSERT; a lost race falls through to the
+      // ownership check against whatever the winner wrote.
+      created = await sync.createLibrary({ id, tokenHash, createdAt: now() });
+      library = await sync.getLibrary(id);
+      if (!library) return c.text("no such library", 404);
+    }
+    if (!timingSafeEqualHex(library.tokenHash, tokenHash)) return c.text("forbidden", 403);
+    return { id, tokenHash, created };
+  }
+
+  app.put("/y/:library", async (c) => {
+    const auth = await authorise(c, { claim: true });
+    if (auth instanceof Response) return auth;
+    return c.json({ library: auth.id }, auth.created ? 201 : 200);
+  });
+
+  app.post("/y/:library/rows", async (c) => {
+    const auth = await authorise(c, { claim: false });
+    if (auth instanceof Response) return auth;
+    const raw = await c.req.text();
+    if (utf8Bytes(raw) > SYNC_LIMITS.requestBytes) return c.text("payload too large", 413);
+    let json: unknown;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      return c.text("invalid JSON", 400);
+    }
+    const parsed = syncPushSchema.safeParse(json);
+    if (!parsed.success) return c.text("invalid rows", 400);
+    // A generous ceiling, checked before the write: an update of existing rows
+    // may be refused a little early at the very limit, never let through late.
+    const held = await sync.countRows(auth.id);
+    if (held + parsed.data.rows.length > SYNC_LIMITS.rowsPerLibrary) {
+      return c.text("library is full", 413);
+    }
+    const cursor = await sync.putRows(auth.id, parsed.data.rows);
+    return c.json({ cursor });
+  });
+
+  app.get("/y/:library/changes", async (c) => {
+    const auth = await authorise(c, { claim: false });
+    if (auth instanceof Response) return auth;
+    const sinceRaw = c.req.query("since") ?? "0";
+    if (!/^\d{1,15}$/.test(sinceRaw)) return c.text("invalid cursor", 400);
+    const since = Number.parseInt(sinceRaw, 10);
+    // One extra row answers "is there more?" without a second query.
+    const rows = await sync.changesSince(auth.id, since, SYNC_LIMITS.rowsPerPull + 1);
+    const page = rows.slice(0, SYNC_LIMITS.rowsPerPull);
+    return c.json({
+      rows: page,
+      cursor: page.length > 0 ? (page[page.length - 1]?.seq ?? since) : since,
+      more: rows.length > page.length,
+    });
+  });
+
+  app.delete("/y/:library", async (c) => {
+    const auth = await authorise(c, { claim: false });
+    // Deleting what is already gone is the same outcome: repeatable.
+    if (auth instanceof Response) return auth.status === 404 ? c.body(null, 204) : auth;
+    await sync.deleteLibrary(auth.id);
+    return c.body(null, 204);
+  });
 }

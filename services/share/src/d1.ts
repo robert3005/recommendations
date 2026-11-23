@@ -3,7 +3,14 @@
  * keeps the package free of a workers-types dependency. Columns are snake_case
  * per the schema in spec/src/sharing.md §The share service.
  */
-import type { DocumentKind, ShareStorage, StoredDocument } from "./storage";
+import type {
+  DocumentKind,
+  ShareStorage,
+  StoredDocument,
+  StoredLibrary,
+  StoredSyncRow,
+  SyncStorage,
+} from "./storage";
 
 interface D1Result {
   results?: unknown[];
@@ -14,6 +21,7 @@ interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   run(): Promise<D1Result>;
   first<T = unknown>(): Promise<T | null>;
+  all<T = unknown>(): Promise<{ results?: T[] }>;
 }
 
 export interface D1Like {
@@ -29,7 +37,7 @@ interface DocumentRow {
   updated_at: string;
 }
 
-export class D1Storage implements ShareStorage {
+export class D1Storage implements ShareStorage, SyncStorage {
   constructor(private readonly db: D1Like) {}
 
   async get(kind: DocumentKind, slug: string): Promise<StoredDocument | undefined> {
@@ -111,5 +119,75 @@ export class D1Storage implements ShareStorage {
       .bind(bucket)
       .first<{ count: number }>();
     return row?.count ?? 1;
+  }
+
+  // ---------- sync (spec/src/sync.md §The service) ----------
+
+  async getLibrary(id: string): Promise<StoredLibrary | undefined> {
+    const row = await this.db
+      .prepare("SELECT id, token_hash, created_at FROM libraries WHERE id = ?1")
+      .bind(id)
+      .first<{ id: string; token_hash: string; created_at: string }>();
+    return row ? { id: row.id, tokenHash: row.token_hash, createdAt: row.created_at } : undefined;
+  }
+
+  async createLibrary(library: StoredLibrary): Promise<boolean> {
+    try {
+      await this.db
+        .prepare("INSERT INTO libraries (id, token_hash, created_at, seq) VALUES (?1, ?2, ?3, 0)")
+        .bind(library.id, library.tokenHash, library.createdAt)
+        .run();
+      return true;
+    } catch (err) {
+      if (err instanceof Error && /UNIQUE constraint failed/i.test(err.message)) return false;
+      throw err;
+    }
+  }
+
+  async putRows(libraryId: string, rows: readonly { k: string; c: string }[]): Promise<number> {
+    // Reserve a block of sequence numbers in one atomic statement, then write
+    // each row under its own number. A reader that pulls mid-push sees a
+    // prefix of the block and picks the rest up on its next pull — numbers
+    // only ever grow, so nothing is skipped.
+    const reserved = await this.db
+      .prepare("UPDATE libraries SET seq = seq + ?1 WHERE id = ?2 RETURNING seq")
+      .bind(rows.length, libraryId)
+      .first<{ seq: number }>();
+    if (!reserved) throw new Error("library not found");
+    let seq = reserved.seq - rows.length;
+    for (const row of rows) {
+      seq += 1;
+      await this.db
+        .prepare(
+          "INSERT INTO sync_rows (library_id, k, c, seq) VALUES (?1, ?2, ?3, ?4) " +
+            "ON CONFLICT(library_id, k) DO UPDATE SET c = excluded.c, seq = excluded.seq",
+        )
+        .bind(libraryId, row.k, row.c, seq)
+        .run();
+    }
+    return reserved.seq;
+  }
+
+  async changesSince(libraryId: string, since: number, limit: number): Promise<StoredSyncRow[]> {
+    const result = await this.db
+      .prepare(
+        "SELECT k, c, seq FROM sync_rows WHERE library_id = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3",
+      )
+      .bind(libraryId, since, limit)
+      .all<StoredSyncRow>();
+    return result.results ?? [];
+  }
+
+  async countRows(libraryId: string): Promise<number> {
+    const row = await this.db
+      .prepare("SELECT COUNT(*) AS n FROM sync_rows WHERE library_id = ?1")
+      .bind(libraryId)
+      .first<{ n: number }>();
+    return row?.n ?? 0;
+  }
+
+  async deleteLibrary(id: string): Promise<void> {
+    await this.db.prepare("DELETE FROM sync_rows WHERE library_id = ?1").bind(id).run();
+    await this.db.prepare("DELETE FROM libraries WHERE id = ?1").bind(id).run();
   }
 }
