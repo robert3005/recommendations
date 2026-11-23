@@ -4,6 +4,8 @@
  * is `{color, icon}` or missing entirely — took the home page down with
  * "can't access property 'shape', marker is undefined".
  */
+
+import Dexie from "dexie";
 import { beforeEach, describe, expect, it } from "vitest";
 import { PlacemarksDb } from "./db";
 
@@ -74,6 +76,49 @@ describe("stale dev database", () => {
       updatedAt: "2026-07-26T12:00:00.000Z",
     });
     expect((await db.lists.get("l1"))?.marker.shape).toBe("circle");
+    db.close();
+  });
+
+  it("version 5 moves three-step ratings to stars, keeping updatedAt", async () => {
+    const at = "2026-07-26T12:00:00.000Z";
+    const v4 = new Dexie(name);
+    v4.version(4).stores({
+      places: "id, updatedAt, googleFeatureId, osmKey",
+      lists: "id, sourceKey",
+      listEntries: "id, listId, placeId, [listId+placeId]",
+      posts: "id, targetKey, updatedAt",
+      publications: "id, targetKey, slug",
+      importBatches: "id, status",
+      importItems: "id, batchId, status",
+      settings: "key",
+      views: "id",
+      tombstones: "key",
+      syncState: "key",
+    });
+    await v4.open();
+    const place = { name: "P", lat: 1, lng: 1, origin: "search", createdAt: at, updatedAt: at };
+    await v4.table("places").bulkPut([
+      { ...place, id: "good", rating: 1 },
+      { ...place, id: "fav", rating: 3 },
+      { ...place, id: "unrated" },
+    ]);
+    await v4.table("views").put({
+      id: "v1",
+      name: "Best",
+      marker: { shape: "star", color: "#111111" },
+      filter: { minRating: 2 },
+      createdAt: at,
+      updatedAt: at,
+    });
+    v4.close();
+
+    const db = new PlacemarksDb(name);
+    await db.open();
+    expect(await db.places.get("good")).toMatchObject({ stars: 3, updatedAt: at });
+    expect(await db.places.get("fav")).toMatchObject({ stars: 5 });
+    expect(await db.places.get("fav")).not.toHaveProperty("rating");
+    expect(await db.places.get("unrated")).not.toHaveProperty("stars");
+    expect((await db.views.get("v1"))?.filter).toEqual({ minStars: 4 });
     db.close();
   });
 });

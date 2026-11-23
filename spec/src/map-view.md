@@ -93,7 +93,8 @@ large lists stay responsive.
 The notebook opens on **the library**: every saved place, found by filtering. Top to bottom:
 
 - **The filter.** Facet chips — your tags, tags from reviews, rating, been / want to go, lists
-  (including "on no list") — each opening its options in place. Free text comes from the search
+  (including "on no list") — each opening its options in place. Rating is a minimum: 1+, 2+, 3+,
+  3.5+, 4+, 4.5+ or 5. Free text comes from the search
   field in the top bar. With a filter active the page shows the match count, **Save as view**,
   and **Clear**.
 - **Lists & views**, while no filter is active: each row is the group's marker, its name, and a
@@ -163,7 +164,8 @@ reads as a listing, not a record, and its contents are, top to bottom — each o
 - The **name**, then one muted line of **category · cuisine**, shown as readable labels
   ("Coffee shop · Australian", never the provider's `coffee_shop;australian`).
 - **The personal layer** — before anything a provider or a review says: the owner's rating
-  (one to three stars), **Been** / **Want to go**, their tags (free text; Enter or a comma adds
+  (five stars, in halves: the left half of a star is a half, the right half a whole; pressing
+  the current rating clears it; a slider to the keyboard), **Been** / **Want to go**, their tags (free text; Enter or a comma adds
   one, suggestions come from tags already used), and a short note. Each saves as it changes.
   When reviews suggest tags the owner has not used, they are offered underneath, and pressing
   one adopts it as an own tag.

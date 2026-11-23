@@ -29,7 +29,8 @@ import { useLibraryStore } from "../../state/library";
 import { useSelectionStore } from "../../state/projection";
 import { useUiStore } from "../../state/ui";
 import { useLibraryFacets } from "../library/facets";
-import { OwnTag, RatingStars } from "../library/TagChip";
+import { RatingStars } from "../library/Stars";
+import { OwnTag } from "../library/TagChip";
 import { AddToList } from "../place/AddToList";
 import { enrichPlace } from "../place/enrichment";
 
@@ -408,7 +409,7 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
                       >
                         <span className="flex items-baseline gap-2">
                           <span className="font-medium text-ink">{option.facets.place.name}</span>
-                          <RatingStars rating={option.facets.place.rating} />
+                          <RatingStars stars={option.facets.place.stars} />
                         </span>
                         <span className="block truncate text-xs text-ink/60">
                           {[placeKindLine(option.facets.place), option.facets.place.address]

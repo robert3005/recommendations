@@ -71,6 +71,15 @@ export const publishedPlaceSchema = z.object({
   // The curator's own layer, present only when the list shares it.
   note: z.string().max(600).optional(),
   tags: z.array(z.string().min(1).max(40)).max(40).optional(),
+  // Half a star to five, in half steps.
+  stars: z
+    .number()
+    .min(0.5)
+    .max(5)
+    .refine((n) => Number.isInteger(n * 2), { message: "stars go in half steps" })
+    .optional(),
+  // The three-step rating pages carried before stars (1 good · 2 great ·
+  // 3 favourite); still valid, shown as 3, 4 and 5 stars.
   rating: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
 });
 

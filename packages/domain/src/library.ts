@@ -66,7 +66,7 @@ export function isEmptyFilter(filter: PlaceFilter): boolean {
     (filter.tags ?? []).length === 0 &&
     (filter.derivedTags ?? []).length === 0 &&
     (filter.listIds ?? []).length === 0 &&
-    filter.minRating === undefined &&
+    filter.minStars === undefined &&
     filter.status === undefined &&
     filter.unlisted !== true
   );
@@ -80,7 +80,7 @@ export function compactFilter(filter: PlaceFilter): PlaceFilter {
     ...(filter.tags?.length ? { tags: normalizeTags(filter.tags) } : {}),
     ...(filter.derivedTags?.length ? { derivedTags: [...new Set(filter.derivedTags)].sort() } : {}),
     ...(filter.listIds?.length ? { listIds: [...new Set(filter.listIds)].sort() } : {}),
-    ...(filter.minRating !== undefined ? { minRating: filter.minRating } : {}),
+    ...(filter.minStars !== undefined ? { minStars: filter.minStars } : {}),
     ...(filter.status !== undefined ? { status: filter.status } : {}),
     ...(filter.unlisted === true ? { unlisted: true } : {}),
   };
@@ -98,7 +98,7 @@ export function matchesFilter(facets: PlaceFacets, filter: PlaceFilter): boolean
   if (filter.listIds?.length && !filter.listIds.some((id) => facets.listIds.includes(id))) {
     return false;
   }
-  if (filter.minRating !== undefined && (place.rating ?? 0) < filter.minRating) return false;
+  if (filter.minStars !== undefined && (place.stars ?? 0) < filter.minStars) return false;
   if (filter.status !== undefined && place.status !== filter.status) return false;
   if (filter.tags?.length) {
     const own = new Set(place.tags ?? []);

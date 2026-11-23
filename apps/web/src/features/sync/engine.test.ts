@@ -15,7 +15,7 @@ import {
   parseLibraryCode,
   seal,
 } from "./crypto";
-import { collectPending, syncOnce } from "./engine";
+import { applyRemote, collectPending, syncOnce } from "./engine";
 import { httpTransport, SyncError, type SyncTransport } from "./transport";
 
 let counter = 0;
@@ -113,7 +113,7 @@ describe("two devices", () => {
     await phone.updatePlacePersonal(added.place.id, {
       tags: ["date night"],
       note: "Order the turbot.",
-      rating: 3,
+      stars: 4.5,
       status: "been",
     });
     await phone.createView("Dates", { tags: ["date night"] });
@@ -128,7 +128,7 @@ describe("two devices", () => {
       name: "Brat",
       tags: ["date night"],
       note: "Order the turbot.",
-      rating: 3,
+      stars: 4.5,
       status: "been",
     });
     expect((await laptop.entriesOf(list.id)).map((e) => e.place.id)).toEqual([added.place.id]);
@@ -339,5 +339,50 @@ describe("failure", () => {
     const summary = await sync(laptop);
     expect(summary).toMatchObject({ pulled: 1, applied: 0 });
     expect(await laptop.listPlaceViews()).toEqual([]);
+  });
+});
+
+describe("rows from a build before five-star ratings", () => {
+  it("a three-step rating and a minRating view arrive as stars", async () => {
+    const at = "2026-11-23T09:00:00.000Z";
+    const applied = await applyRemote(
+      laptop.db,
+      [
+        {
+          t: "places",
+          id: "old-place",
+          u: at,
+          row: {
+            id: "old-place",
+            name: "Brat",
+            lat: 51.52,
+            lng: -0.07,
+            origin: "search",
+            rating: 2,
+            createdAt: at,
+            updatedAt: at,
+          },
+        },
+        {
+          t: "views",
+          id: "old-view",
+          u: at,
+          row: {
+            id: "old-view",
+            name: "Best",
+            marker: { shape: "star", color: "#111111" },
+            filter: { minRating: 3 },
+            createdAt: at,
+            updatedAt: at,
+          },
+        },
+      ],
+      now(),
+    );
+    expect(applied).toBe(2);
+    const place = await laptop.getPlace("old-place");
+    expect(place?.stars).toBe(4);
+    expect(place).not.toHaveProperty("rating");
+    expect(await laptop.listViews()).toMatchObject([{ filter: { minStars: 5 } }]);
   });
 });

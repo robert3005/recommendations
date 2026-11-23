@@ -9,4 +9,5 @@ export * from "./projection";
 export * from "./rank";
 export * from "./reviews";
 export * from "./slugs";
+export * from "./stars";
 export * from "./sync";

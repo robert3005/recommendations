@@ -217,25 +217,29 @@ describe("the personal layer", () => {
     await repo.updatePlacePersonal(id, {
       tags: ["Wine", " date  night ", "wine", "#Brunch"],
       note: "  Back bar  ",
-      rating: 3,
+      stars: 3.5,
       status: "been",
     });
     expect(await repo.getPlace(id)).toMatchObject({
       tags: ["brunch", "date night", "wine"],
       note: "Back bar",
-      rating: 3,
+      stars: 3.5,
       status: "been",
     });
 
     // An absent key leaves the field alone.
-    await repo.updatePlacePersonal(id, { rating: 2 });
-    expect(await repo.getPlace(id)).toMatchObject({ note: "Back bar", rating: 2, status: "been" });
+    await repo.updatePlacePersonal(id, { stars: 5 });
+    expect(await repo.getPlace(id)).toMatchObject({ note: "Back bar", stars: 5, status: "been" });
 
-    await repo.updatePlacePersonal(id, { tags: [], note: null, rating: null, status: null });
+    // Off the half-star scale is refused.
+    await expect(repo.updatePlacePersonal(id, { stars: 3.3 })).rejects.toThrow();
+    await expect(repo.updatePlacePersonal(id, { stars: 6 })).rejects.toThrow();
+
+    await repo.updatePlacePersonal(id, { tags: [], note: null, stars: null, status: null });
     const cleared = await repo.getPlace(id);
     expect(cleared?.tags).toBeUndefined();
     expect(cleared?.note).toBeUndefined();
-    expect(cleared?.rating).toBeUndefined();
+    expect(cleared?.stars).toBeUndefined();
     expect(cleared?.status).toBeUndefined();
   });
 
@@ -265,8 +269,8 @@ describe("saved views", () => {
     const view = await repo.createView(" Date night ", { tags: ["Wine", "wine"], text: " " });
     expect(view.name).toBe("Date night");
     expect(view.filter).toEqual({ tags: ["wine"] });
-    await repo.updateView(view.id, { name: "Dates", filter: { minRating: 2 } });
-    expect(await repo.listViews()).toMatchObject([{ name: "Dates", filter: { minRating: 2 } }]);
+    await repo.updateView(view.id, { name: "Dates", filter: { minStars: 3.5 } });
+    expect(await repo.listViews()).toMatchObject([{ name: "Dates", filter: { minStars: 3.5 } }]);
     await repo.deleteView(view.id);
     expect(await repo.listViews()).toEqual([]);
   });
@@ -286,6 +290,23 @@ describe("saved views", () => {
     const fresh = new DexieRepository(`test-db-views-${Date.now()}-${counter}`);
     await fresh.importLibrary(archive);
     expect(await fresh.listViews()).toEqual([view]);
+  });
+
+  it("an archive from before five-star ratings restores as stars", async () => {
+    const saved = placeOf(
+      await repo.addToList((await repo.createList("L")).id, { kind: "new", facts: facts() }),
+    );
+    await repo.createView("Best", { tags: ["wine"] });
+    const archive = await repo.exportLibrary({ includeCredentials: false });
+    const legacy = {
+      ...archive,
+      places: archive.places.map((p) => ({ ...p, rating: 1 })),
+      views: archive.views?.map((v) => ({ ...v, filter: { ...v.filter, minRating: 2 } })),
+    } as unknown as LibraryArchive;
+    const fresh = new DexieRepository(`test-db-stars-${Date.now()}-${counter}`);
+    await fresh.importLibrary(legacy);
+    expect((await fresh.getPlace(saved.id))?.stars).toBe(3);
+    expect(await fresh.listViews()).toMatchObject([{ filter: { tags: ["wine"], minStars: 4 } }]);
   });
 
   it("an archive written before views existed still restores", async () => {

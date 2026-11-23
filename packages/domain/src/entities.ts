@@ -36,7 +36,7 @@ export interface Place {
   // never filled by a provider, never overwritten by enrichment or import.
   tags?: string[]; // own tags, normalised by normalizeTag; sorted, unique
   note?: string; // a short private note; published only on explicit opt-in
-  rating?: PlaceRating; // 1 good · 2 great · 3 favourite
+  stars?: PlaceStars; // 0.5–5 in half steps (see stars.ts)
   status?: PlaceStatus; // "been" | "want"; absent = not said
   // When each own tag was last put on or taken off — bookkeeping that lets
   // tags merge as a set between devices (spec/src/sync.md §Merging). Never shown.
@@ -45,7 +45,8 @@ export interface Place {
   updatedAt: string;
 }
 
-export type PlaceRating = 1 | 2 | 3;
+/** Half a star to five, in half steps. */
+export type PlaceStars = number;
 export type PlaceStatus = "been" | "want";
 
 export type MarkerShape =
@@ -106,7 +107,7 @@ export interface PlaceFilter {
   tags?: string[]; // own tags — the place carries every one
   derivedTags?: string[]; // review-derived tags — the place carries every one
   listIds?: string[]; // on any of these lists
-  minRating?: PlaceRating;
+  minStars?: PlaceStars; // rated at least this many stars
   status?: PlaceStatus;
   unlisted?: boolean; // on no list at all
 }

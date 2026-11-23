@@ -14,9 +14,9 @@ The library owns places. A place is saved on its own — one press in the search
 exists whether or not anything groups it. Three kinds of group sit on top, each good at one job:
 
 - **Tags** are the loose kind: free text the owner types, any number per place, many-to-many.
-  A place also carries the owner's short **note**, a **rating**, and whether they have **been**
+  A place also carries the owner's short **note**, a **star rating** (half a star to five), and whether they have **been**
   or **want to go** — together the *personal layer*, the owner's own judgement of the place.
-- **Saved views** are filters with a name — "tagged *date night*, rated great or better" — that
+- **Saved views** are filters with a name — "tagged *date night*, rated 4 stars or more" — that
   keep themselves up to date as the library changes. They own no places.
 - **Lists** are the hand-made kind: an ordered selection with a marker, an intro, and posts.
   A list is how a curation is *shown to other people* ([Sharing & Publishing](./sharing.md)).
@@ -72,7 +72,7 @@ interface Place {
   // The personal layer: the owner's own, never filled by a provider or an import.
   tags?: string[];                             // own tags — normalised, sorted, unique
   note?: string;                               // a short note; published only with a list that shares notes
-  rating?: 1 | 2 | 3;                          // good · great · favourite
+  stars?: number;                              // 0.5–5 in half steps
   status?: "been" | "want";                    // absent = not said
   tagLog?: Record<string, { at: string; on: boolean }>;  // when each own tag was put on or
                                                // taken off — lets tags merge as a set between
@@ -122,7 +122,7 @@ interface PlaceFilter {                        // every present facet must hold
   tags?: string[];                             // own tags — all of them
   derivedTags?: string[];                      // review-derived tags — all of them
   listIds?: string[];                          // on any of these lists
-  minRating?: 1 | 2 | 3;
+  minStars?: number;                           // rated at least this many stars
   status?: "been" | "want";
   unlisted?: boolean;                          // on no list
 }
@@ -229,6 +229,12 @@ report in [Import & Export](./interop.md).
   address. There is no ranking: results are the matches, in name order.
 - **Personal layer**: tags normalise on write (trimmed, lower-cased, a leading `#` dropped,
   de-duplicated, sorted). Enrichment and import never write the personal layer.
+- **Stars**: `stars` is 0.5 to 5 in half steps; anything else is refused on write and dropped on
+  read. Libraries from before the five-star scale held a three-step `rating` (1 good · 2 great ·
+  3 favourite) and saved views a `minRating`. Every way a row comes in — the local store (schema
+  version 5 rewrites it once), sync, and a restored backup — maps good → 3, great → 4,
+  favourite → 5 and drops the old field, keeping the row's `updatedAt`, so the same row upgrades
+  the same way on every device without an edit to sync.
 - **Markers**: lists and saved views draw from one pair space. `shape` is one of the eight named shapes; with the eight accent colours the pair
   space is 64. Auto-assign the first free pair on list creation; imports take the nearest
   colour to the source style, then the first free pair; manual change in list edit mode picks shape

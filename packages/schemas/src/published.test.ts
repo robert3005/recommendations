@@ -157,10 +157,10 @@ describe("the curator's layer and the version stamp", () => {
     author: "Robert",
     version: 3,
     updatedAt: "2026-11-22T22:00:00.000Z",
-    places: [{ ...place, note: "Order the turbot.", tags: ["date night"], rating: 3 }],
+    places: [{ ...place, note: "Order the turbot.", tags: ["date night"], stars: 4.5 }],
   };
 
-  it("accepts an intro, an author, a stamp, and per-place note, tags and rating", () => {
+  it("accepts an intro, an author, a stamp, and per-place note, tags and stars", () => {
     expect(parsePublishedDocument("list", voiced)).toEqual(voiced);
     expect(parsePublishedDocument("post", { ...postDoc, version: 2 })).toMatchObject({
       version: 2,
@@ -169,11 +169,17 @@ describe("the curator's layer and the version stamp", () => {
 
   it("stays optional — a document written before these fields still parses", () => {
     expect(parsePublishedDocument("list", listDoc)).toEqual(listDoc);
+    // Pages published before five-star ratings carry the three-step rating.
+    const old = { ...listDoc, places: [{ ...place, rating: 3 }] };
+    expect(parsePublishedDocument("list", old)).toEqual(old);
   });
 
   it("refuses an out-of-range rating, a zero version, and an oversized note", () => {
     const withPlace = (extra: object) => ({ ...listDoc, places: [{ ...place, ...extra }] });
     expect(() => parsePublishedDocument("list", withPlace({ rating: 4 }))).toThrow();
+    expect(() => parsePublishedDocument("list", withPlace({ stars: 0 }))).toThrow();
+    expect(() => parsePublishedDocument("list", withPlace({ stars: 5.5 }))).toThrow();
+    expect(() => parsePublishedDocument("list", withPlace({ stars: 3.2 }))).toThrow();
     expect(() => parsePublishedDocument("list", withPlace({ note: "x".repeat(601) }))).toThrow();
     expect(() => parsePublishedDocument("list", { ...listDoc, version: 0 })).toThrow();
   });

@@ -236,17 +236,26 @@ describe("the curator's voice", () => {
     repo.settings.set(AUTHOR_NAME_KEY, "  Robert ");
     const [first] = [...repo.places.values()];
     if (!first) throw new Error("no place");
-    repo.places.set(first.id, { ...first, note: "Ask for the bica.", tags: ["coffee"], rating: 3 });
+    repo.places.set(first.id, {
+      ...first,
+      note: "Ask for the bica.",
+      tags: ["coffee"],
+      stars: 4.5,
+    });
 
     const publication = await publishList(repo, list.id);
     const doc = (await (await getHosted("lists", publication.slug)).json()) as {
       author?: string;
       description?: string;
-      places: { note?: string; tags?: string[]; rating?: number }[];
+      places: { note?: string; tags?: string[]; stars?: number }[];
     };
     expect(doc.author).toBe("Robert");
     expect(doc.description).toBe("Where I take visitors.");
-    expect(doc.places[0]).toMatchObject({ note: "Ask for the bica.", tags: ["coffee"], rating: 3 });
+    expect(doc.places[0]).toMatchObject({
+      note: "Ask for the bica.",
+      tags: ["coffee"],
+      stars: 4.5,
+    });
   });
 
   it("a list that opted out publishes no notes, tags or ratings", async () => {
@@ -255,7 +264,7 @@ describe("the curator's voice", () => {
     repo.lists.set(list.id, { ...list, shareNotes: false });
     const [first] = [...repo.places.values()];
     if (!first) throw new Error("no place");
-    repo.places.set(first.id, { ...first, note: "Private.", tags: ["mine"], rating: 2 });
+    repo.places.set(first.id, { ...first, note: "Private.", tags: ["mine"], stars: 2.5 });
 
     const publication = await publishList(repo, list.id);
     const text = await (await getHosted("lists", publication.slug)).text();

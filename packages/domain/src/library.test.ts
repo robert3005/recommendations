@@ -80,15 +80,16 @@ describe("matchesFilter", () => {
 
   it("requires every own tag, any one list, a minimum rating and the status", () => {
     const f = facets(
-      { tags: ["wine", "date night"], rating: 2, status: "been" },
+      { tags: ["wine", "date night"], stars: 3.5, status: "been" },
       { listIds: ["l1"] },
     );
     expect(matchesFilter(f, { tags: ["wine", "date night"] })).toBe(true);
     expect(matchesFilter(f, { tags: ["wine", "brunch"] })).toBe(false);
     expect(matchesFilter(f, { listIds: ["l2", "l1"] })).toBe(true);
     expect(matchesFilter(f, { listIds: ["l2"] })).toBe(false);
-    expect(matchesFilter(f, { minRating: 2 })).toBe(true);
-    expect(matchesFilter(f, { minRating: 3 })).toBe(false);
+    expect(matchesFilter(f, { minStars: 3 })).toBe(true);
+    expect(matchesFilter(f, { minStars: 3.5 })).toBe(true);
+    expect(matchesFilter(f, { minStars: 4 })).toBe(false);
     expect(matchesFilter(f, { status: "want" })).toBe(false);
   });
 
@@ -98,7 +99,7 @@ describe("matchesFilter", () => {
   });
 
   it("an unrated place fails any minimum rating", () => {
-    expect(matchesFilter(facets(), { minRating: 1 })).toBe(false);
+    expect(matchesFilter(facets(), { minStars: 1 })).toBe(false);
   });
 });
 

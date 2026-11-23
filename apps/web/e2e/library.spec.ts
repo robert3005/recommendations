@@ -141,7 +141,9 @@ test.describe("finding places", () => {
       /date night/,
       /espresso/,
     ]);
-    await details.getByTestId("rate-3").click();
+    // Left half of the fourth star: three and a half stars.
+    await details.getByTestId("rate-3.5").click();
+    await expect(details.getByTestId("star-input")).toHaveAttribute("aria-valuenow", "3.5");
     await details.getByTestId("status-been").click();
     await details.getByTestId("place-note").fill("Ask for the house blend.");
     await details.getByTestId("place-name").click(); // blur saves the note
@@ -155,7 +157,18 @@ test.describe("finding places", () => {
     await expect(mapEl).toHaveAttribute("data-pins", "2");
     // The row carries the owner's layer: stars, status, tags, the note.
     const central = page.getByTestId("library-place").filter({ hasText: "Café Central" });
-    await expect(central.getByTestId("rating-stars")).toBeVisible();
+    await expect(central.getByTestId("rating-stars")).toHaveAttribute(
+      "aria-label",
+      "Your rating: 3.5 of 5 stars",
+    );
+
+    // A minimum rating: 3.5+ keeps it, 4+ drops it.
+    await page.getByTestId("facet-rating").click();
+    await page.getByTestId("min-stars-3.5").click();
+    await expect(page.getByTestId("match-count")).toHaveText("1 of 2");
+    await page.getByTestId("min-stars-4").click();
+    await expect(page.getByTestId("library-place")).toHaveCount(0);
+    await page.getByTestId("clear-filter").click();
     await expect(central).toContainText("Ask for the house blend.");
 
     // Filter by an own tag: the notebook and the canvas narrow together.

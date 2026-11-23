@@ -18,6 +18,7 @@ import type {
   Publication,
   SavedView,
 } from "@placemarks/domain";
+import { upgradePlaceStars, upgradeViewStars } from "@placemarks/domain";
 import Dexie, { type EntityTable } from "dexie";
 
 /** googleFeatureId parses from googleUrl, osmKey from osmRef — the dedup indexes. */
@@ -107,5 +108,28 @@ export class PlacemarksDb extends Dexie {
     // Version 4 adds the two stores sync needs (spec/src/sync.md): deletion
     // markers and per-row exchange state. Additive again.
     this.version(4).stores({ ...stores, views: "id", tombstones: "key", syncState: "key" });
+    // Version 5 moves the personal rating to five stars in half steps
+    // (spec/src/data-model.md §The personal layer): the three-step `rating`
+    // becomes `stars` (good 3 · great 4 · favourite 5) and a saved view's
+    // `minRating` becomes `minStars`. Rows keep their updatedAt — the change
+    // is the same on every device, so nothing needs to sync because of it.
+    this.version(5)
+      .stores({ ...stores, views: "id", tombstones: "key", syncState: "key" })
+      .upgrade(async (tx) => {
+        await tx
+          .table<PlaceRow, string>("places")
+          .toCollection()
+          .modify((row, ref) => {
+            const next = upgradePlaceStars(row);
+            if (next !== row) ref.value = next;
+          });
+        await tx
+          .table<SavedViewRow, string>("views")
+          .toCollection()
+          .modify((row, ref) => {
+            const next = upgradeViewStars(row);
+            if (next !== row) ref.value = next;
+          });
+      });
   }
 }

@@ -13,12 +13,13 @@
  * narrows this list, and each pin wears the marker of the group it is in.
  */
 import {
+  formatStars,
   isEmptyFilter,
+  MIN_STAR_CHOICES,
   markerKey,
   matchesFilter,
   type PlaceFacets,
   type PlaceFilter,
-  type PlaceRating,
   placeKindLine,
   tagCounts,
 } from "@placemarks/domain";
@@ -29,7 +30,8 @@ import { useRepo } from "../../data/RepoContext";
 import { toggled, useLibraryStore } from "../../state/library";
 import { useCanvasProjection, useSelectionStore } from "../../state/projection";
 import { useLibraryFacets } from "../library/facets";
-import { DerivedTag, OwnTag, RatingStars, ratingLabel } from "../library/TagChip";
+import { RatingStars } from "../library/Stars";
+import { DerivedTag, OwnTag } from "../library/TagChip";
 import { MarkerGlyph } from "./MarkerGlyph";
 import { NewListForm } from "./NewListForm";
 
@@ -93,7 +95,7 @@ export function ListsPage() {
       : facet === "reviews"
         ? (filter.derivedTags?.length ?? 0)
         : facet === "rating"
-          ? Number(filter.minRating !== undefined)
+          ? Number(filter.minStars !== undefined)
           : facet === "status"
             ? Number(filter.status !== undefined)
             : (filter.listIds?.length ?? 0) + Number(filter.unlisted === true);
@@ -228,25 +230,27 @@ export function ListsPage() {
           ) : null}
           {openFacet === "rating" ? (
             <div className="mt-2 flex flex-wrap gap-1.5" data-testid="facet-panel-rating">
-              {([1, 2, 3] as PlaceRating[]).map((rating) => (
+              {MIN_STAR_CHOICES.map((min) => (
                 <button
-                  key={rating}
+                  key={min}
                   type="button"
-                  aria-pressed={filter.minRating === rating}
+                  aria-pressed={filter.minStars === min}
+                  aria-label={min < 5 ? `${formatStars(min)} stars or more` : "5 stars"}
+                  data-testid={`min-stars-${formatStars(min)}`}
                   onClick={() =>
                     applyFilter({
                       ...filter,
-                      minRating: filter.minRating === rating ? undefined : rating,
+                      minStars: filter.minStars === min ? undefined : min,
                     } as PlaceFilter)
                   }
-                  className={`rounded-pill border px-2.5 py-1 text-xs ${
-                    filter.minRating === rating
+                  className={`rounded-pill border px-2.5 py-1 font-mono text-xs ${
+                    filter.minStars === min
                       ? "border-ink bg-ink text-paper"
                       : "border-hairline text-ink hover:bg-hover"
                   }`}
                 >
-                  {"★".repeat(rating)} {ratingLabel(rating)}
-                  {rating < 3 ? " or better" : ""}
+                  ★ {formatStars(min)}
+                  {min < 5 ? "+" : ""}
                 </button>
               ))}
             </div>
@@ -522,7 +526,7 @@ function PlaceRow({
       >
         <span className="flex items-baseline gap-2">
           <span className="min-w-0 truncate font-medium text-ink">{place.name}</span>
-          <RatingStars rating={place.rating} />
+          <RatingStars stars={place.stars} />
           {place.status ? (
             <span className="shrink-0 font-mono text-[10px] text-ink/60 uppercase">
               {place.status === "been" ? "been" : "want"}

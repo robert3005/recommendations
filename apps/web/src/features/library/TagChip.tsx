@@ -130,25 +130,3 @@ export function DerivedTag({ tag, onClick, pressed, count, testId }: ChipProps &
     </Shell>
   );
 }
-
-const STAR_LABEL = ["", "Good", "Great", "Favourite"] as const;
-
-export function ratingLabel(rating: number): string {
-  return STAR_LABEL[rating] ?? "";
-}
-
-/** One to three stars; the rest drawn hollow so the scale is visible. */
-export function RatingStars({ rating }: { rating: number | undefined }) {
-  if (!rating) return null;
-  return (
-    <span
-      className="font-mono text-xs text-ink"
-      role="img"
-      aria-label={`Your rating: ${ratingLabel(rating)}`}
-      data-testid="rating-stars"
-    >
-      {"★".repeat(rating)}
-      <span className="text-ink/25">{"★".repeat(3 - rating)}</span>
-    </span>
-  );
-}

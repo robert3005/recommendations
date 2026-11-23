@@ -5,16 +5,11 @@
  * from reviews live in the review section, drawn differently; here they are
  * only suggested, and become an own tag with one deliberate press.
  */
-import {
-  normalizeTag,
-  type Place,
-  type PlaceRating,
-  type PlaceStatus,
-  vocabLabel,
-} from "@placemarks/domain";
+import { normalizeTag, type Place, type PlaceStatus, vocabLabel } from "@placemarks/domain";
 import { useEffect, useId, useState } from "react";
 import { useRepo } from "../../data/RepoContext";
-import { OwnTag, ratingLabel } from "../library/TagChip";
+import { StarInput } from "../library/Stars";
+import { OwnTag } from "../library/TagChip";
 
 export function PlacePersonal({
   place,
@@ -51,8 +46,6 @@ export function PlacePersonal({
     setDraft("");
   };
 
-  const setRating = (rating: PlaceRating) =>
-    void repo.updatePlacePersonal(place.id, { rating: place.rating === rating ? null : rating });
   const setStatus = (status: PlaceStatus) =>
     void repo.updatePlacePersonal(place.id, { status: place.status === status ? null : status });
 
@@ -61,27 +54,10 @@ export function PlacePersonal({
   return (
     <section className="mt-3 space-y-3" aria-label="Your notes" data-testid="place-personal">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <fieldset className="flex items-center gap-0.5" aria-label="Your rating">
-          {([1, 2, 3] as PlaceRating[]).map((rating) => (
-            <button
-              key={rating}
-              type="button"
-              aria-pressed={place.rating === rating}
-              aria-label={`${ratingLabel(rating)} — ${rating.toString()} of 3`}
-              title={ratingLabel(rating)}
-              onClick={() => setRating(rating)}
-              data-testid={`rate-${rating.toString()}`}
-              className={`px-0.5 text-xl leading-none ${
-                (place.rating ?? 0) >= rating ? "text-ink" : "text-ink/25 hover:text-ink/60"
-              }`}
-            >
-              ★
-            </button>
-          ))}
-          {place.rating ? (
-            <span className="ml-1.5 text-xs text-ink/70">{ratingLabel(place.rating)}</span>
-          ) : null}
-        </fieldset>
+        <StarInput
+          stars={place.stars}
+          onChange={(stars) => void repo.updatePlacePersonal(place.id, { stars })}
+        />
         <fieldset className="flex items-center gap-1.5" aria-label="Been or want to go">
           {(
             [

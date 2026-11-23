@@ -5,7 +5,7 @@
  * projection (SHA-256 of `stableStringify`, via crypto.subtle) lives in the
  * app; this module stays platform-free.
  */
-import type { List, ListMarker, OsmRef, Place, PlaceRating, Post } from "./entities";
+import type { List, ListMarker, OsmRef, Place, PlaceStars, Post } from "./entities";
 import { rewriteBodyForPublish } from "./postLinks";
 
 export interface PublishedPlace {
@@ -31,7 +31,7 @@ export interface PublishedPlace {
   // (spec/src/sharing.md §The curator's voice). Never on post documents.
   note?: string;
   tags?: string[];
-  rating?: PlaceRating;
+  stars?: PlaceStars;
 }
 
 /**
@@ -68,7 +68,7 @@ export function toPublishedPlace(p: Place, opts?: { personal?: boolean }): Publi
   return {
     ...(opts?.personal && p.note !== undefined ? { note: p.note } : {}),
     ...(opts?.personal && p.tags?.length ? { tags: p.tags } : {}),
-    ...(opts?.personal && p.rating !== undefined ? { rating: p.rating } : {}),
+    ...(opts?.personal && p.stars !== undefined ? { stars: p.stars } : {}),
     id: p.id,
     name: p.name,
     lat: p.lat,

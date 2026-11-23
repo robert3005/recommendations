@@ -139,8 +139,8 @@ never drawn alike — the difference is carried by shape and fill, not by colour
   assistive technology as "from reviews": something overheard, not something said.
 
 As filter chips the same rule holds: an unpressed own tag is an ink outline, a pressed one
-fills; a derived tag keeps its dashes in both states. The rating is one to three ink stars, the
-rest drawn faint so the scale shows. A place in no list and no view wears a neutral grey circle
+fills; a derived tag keeps its dashes in both states. The rating is five ink stars filled in half
+steps, the rest drawn faint so the scale shows. A place in no list and no view wears a neutral grey circle
 on the map — deliberately outside the eight accents, which stay with lists and views.
 
 ## Map styling

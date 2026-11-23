@@ -4,8 +4,9 @@
  * places with their coordinates, and the body — plus the offers to publish
  * linked-but-unpublished posts and a list post's list alongside.
  */
-import type { PublishedPlace } from "@placemarks/domain";
+import { formatStars, type PublishedPlace } from "@placemarks/domain";
 import type { ReactNode } from "react";
+import { starsText } from "../library/Stars";
 
 export interface PreflightOfferOption {
   id: string;
@@ -86,10 +87,12 @@ export function PreflightDialog({
             <span className="font-medium text-ink">{place.name}</span> · {String(place.lat)},{" "}
             {String(place.lng)}
             {place.address ? <span className="text-ink/60"> · {place.address}</span> : null}
-            {place.note || place.tags?.length || place.rating ? (
+            {place.note || place.tags?.length || place.stars ? (
               <span className="block text-ink/80" data-testid="preflight-personal">
                 {[
-                  place.rating ? "★".repeat(place.rating) : undefined,
+                  place.stars
+                    ? `${starsText(place.stars)} ${formatStars(place.stars)}/5`
+                    : undefined,
                   place.tags?.map((tag) => `#${tag}`).join(" "),
                   place.note ? `“${place.note}”` : undefined,
                 ]

@@ -110,7 +110,8 @@ interface PublishedPlace {
   wikipediaUrl?: string;      // the source article — the viewer's "Wikipedia" credit target
   note?: string;              // the curator's layer — lists only, and only when shared
   tags?: string[];
-  rating?: 1 | 2 | 3;
+  stars?: number;             // 0.5–5 in half steps
+  rating?: 1 | 2 | 3;         // pages from before stars; shown as 3, 4 or 5 stars
   osmRef?: OsmRef;            // attribution + OSM deep link on the public page
   imageUrl?: string;          // https + Wikimedia hosts only, enforced by the schema
 }

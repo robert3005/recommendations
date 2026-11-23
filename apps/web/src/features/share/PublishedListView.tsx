@@ -7,11 +7,12 @@
  * carries an `osmRef`.
  */
 
-import { placeKindLine } from "@placemarks/domain";
+import { placeKindLine, starsFromLegacyRating } from "@placemarks/domain";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useMemo } from "react";
-import { OwnTag, RatingStars } from "../library/TagChip";
+import { RatingStars } from "../library/Stars";
+import { OwnTag } from "../library/TagChip";
 import { NavLinks } from "../place/NavLinks";
 import { PlaceFacts } from "../place/PlaceFacts";
 import { PlaceImage } from "../place/PlaceImage";
@@ -134,7 +135,7 @@ export function PublishedListContent({ slug }: { slug: string }) {
                   <span className="font-display text-base font-semibold text-ink">
                     {place.name}
                   </span>
-                  <RatingStars rating={place.rating} />
+                  <RatingStars stars={place.stars ?? starsFromLegacyRating(place.rating)} />
                 </span>
                 {placeKindLine(place) !== "" ? (
                   <span className="block text-xs text-ink/70">{placeKindLine(place)}</span>

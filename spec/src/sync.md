@@ -108,6 +108,9 @@ Two more cases:
   without negotiating.
 - A device that holds a page's editor token never loses it to a copy of the publication that
   lacks one.
+- A place or saved view from a device on a build before five-star ratings arrives with a
+  three-step `rating` or `minRating`; it is upgraded to `stars` / `minStars` before it is merged
+  ([Data Model](./data-model.md) §Normative rules).
 
 The clock is the device's wall clock. A device whose clock is far wrong can win or lose an edit
 it should not have; that is accepted for a personal library, and is why tags — the one thing

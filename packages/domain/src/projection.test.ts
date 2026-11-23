@@ -148,18 +148,18 @@ describe("stableStringify", () => {
 });
 
 describe("the curator's layer", () => {
-  const voiced = place("p1", { note: "Order the turbot.", tags: ["date night"], rating: 3 });
+  const voiced = place("p1", { note: "Order the turbot.", tags: ["date night"], stars: 4.5 });
 
   it("a list shares notes, tags and ratings unless it opted out", () => {
     expect(projectList(list, [voiced], []).places[0]).toMatchObject({
       note: "Order the turbot.",
       tags: ["date night"],
-      rating: 3,
+      stars: 4.5,
     });
     const quiet = projectList({ ...list, shareNotes: false }, [voiced], []).places[0];
     expect(quiet).not.toHaveProperty("note");
     expect(quiet).not.toHaveProperty("tags");
-    expect(quiet).not.toHaveProperty("rating");
+    expect(quiet).not.toHaveProperty("stars");
   });
 
   it("carries the intro and a trimmed author name, and omits both when unset", () => {

@@ -24,9 +24,12 @@ import {
   type Place,
   type Post,
   type Publication,
+  type SavedView,
   SYNC_TABLES,
   type SyncRecord,
   type SyncTable,
+  upgradePlaceStars,
+  upgradeViewStars,
 } from "@placemarks/domain";
 import { SYNC_LIMITS, type SyncRow } from "@placemarks/schemas";
 import type { PlacemarksDb } from "../../data/db";
@@ -77,6 +80,13 @@ function stored(table: SyncTable, row: AnyRow): AnyRow {
   if (table === "publications") {
     return toPublicationRow(row as unknown as Publication) as unknown as AnyRow;
   }
+  return row;
+}
+
+/** A row from a device on an older build, in today's shape (five-star ratings). */
+function upgraded(table: SyncTable, row: AnyRow): AnyRow {
+  if (table === "places") return upgradePlaceStars(row as unknown as Place) as unknown as AnyRow;
+  if (table === "views") return upgradeViewStars(row as unknown as SavedView) as unknown as AnyRow;
   return row;
 }
 
@@ -160,8 +170,8 @@ export async function applyRemote(
         continue;
       }
 
-      const incoming = record.row;
-      if (!incoming || !wellFormed(record.t, incoming)) continue;
+      if (!record.row || !wellFormed(record.t, record.row)) continue;
+      const incoming = upgraded(record.t, record.row);
       // Deleted here at or after this version: the deletion stands (and is sent, or was).
       if (tombstone && deletionWins(tombstone.deletedAt, incoming)) continue;
 

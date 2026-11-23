@@ -28,7 +28,7 @@ import type {
   Place,
   PlaceFilter,
   PlaceId,
-  PlaceRating,
+  PlaceStars,
   PlaceStatus,
   Post,
   PostTarget,
@@ -41,6 +41,7 @@ import {
   compactFilter,
   compareByRank,
   googleFeatureId,
+  isStars,
   logTagChange,
   markerKey,
   normalizeName,
@@ -50,6 +51,7 @@ import {
   publicationTargetKey,
   rankAfter,
   rankBetween,
+  upgradeViewStars,
 } from "@placemarks/domain";
 import { newId } from "../lib/id";
 import { nowIso } from "../lib/time";
@@ -124,7 +126,7 @@ export type SaveResult =
 export interface PlacePersonalPatch {
   tags?: string[];
   note?: string | null;
-  rating?: PlaceRating | null;
+  stars?: PlaceStars | null;
   status?: PlaceStatus | null;
 }
 
@@ -322,14 +324,7 @@ export class DexieRepository implements LocalRepository {
     await this.db.transaction("rw", [this.db.places], async () => {
       const row = await this.db.places.get(id);
       if (!row) throw new Error("place not found");
-      const {
-        tags: _t,
-        tagLog: _l,
-        note: _n,
-        rating: _r,
-        status: _s,
-        ...rest
-      } = stripPlaceRow(row);
+      const { tags: _t, tagLog: _l, note: _n, stars: _r, status: _s, ...rest } = stripPlaceRow(row);
       const current = stripPlaceRow(row);
       const stamp = nowIso();
       const tags = patch.tags !== undefined ? normalizeTags(patch.tags) : (current.tags ?? []);
@@ -338,12 +333,9 @@ export class DexieRepository implements LocalRepository {
       const tagLog = patch.tags !== undefined ? logTagChange(current, tags, stamp) : current.tagLog;
       const note =
         patch.note === undefined ? current.note : patch.note === null ? undefined : patch.note;
-      const rating =
-        patch.rating === undefined
-          ? current.rating
-          : patch.rating === null
-            ? undefined
-            : patch.rating;
+      if (patch.stars != null && !isStars(patch.stars)) throw new Error("stars go 0.5–5 in halves");
+      const stars =
+        patch.stars === undefined ? current.stars : patch.stars === null ? undefined : patch.stars;
       const status =
         patch.status === undefined
           ? current.status
@@ -355,7 +347,7 @@ export class DexieRepository implements LocalRepository {
         ...(tags.length > 0 ? { tags } : {}),
         ...(tagLog !== undefined ? { tagLog } : {}),
         ...(note !== undefined && note.trim() !== "" ? { note: note.trim() } : {}),
-        ...(rating !== undefined ? { rating } : {}),
+        ...(stars !== undefined ? { stars } : {}),
         ...(status !== undefined ? { status } : {}),
         updatedAt: stamp,
       };
@@ -765,7 +757,7 @@ export class DexieRepository implements LocalRepository {
   // ---------- saved views ----------
 
   async listViews(): Promise<SavedView[]> {
-    return (await this.db.views.toArray()).sort(byCreation);
+    return (await this.db.views.toArray()).map(upgradeViewStars).sort(byCreation);
   }
 
   async createView(name: string, filter: PlaceFilter): Promise<SavedView> {
@@ -1028,7 +1020,7 @@ export class DexieRepository implements LocalRepository {
           listEntries: (await this.db.listEntries.toArray()).sort(byId),
           posts: (await this.db.posts.toArray()).map(stripPostRow).sort(byId),
           publications: publications.sort(byId),
-          views: (await this.db.views.toArray()).sort(byId),
+          views: (await this.db.views.toArray()).map(upgradeViewStars).sort(byId),
         };
       },
     );
@@ -1048,7 +1040,7 @@ export class DexieRepository implements LocalRepository {
         this.db.tombstones,
       ],
       async () => {
-        const incomingViews = a.views ?? [];
+        const incomingViews = (a.views ?? []).map(upgradeViewStars);
         const counts = await Promise.all([
           this.db.places.count(),
           this.db.lists.count(),
