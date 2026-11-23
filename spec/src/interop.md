@@ -3,16 +3,15 @@
 Placemarks meets people where their places already live. Import brings saved places in from
 Google Maps — one place via a pasted link, whole lists via Takeout, custom maps via My Maps KML —
 and export hands curated lists back out to Google Maps, Apple Maps, and the OSM ecosystem, as
-custom POI maps and as deep links. Both directions are explicit, file-shaped, repeatable actions;
-neither ever calls a proprietary API.
+custom POI maps and as deep links. Both directions are explicit, file-shaped, repeatable actions.
 
 ## Import
 
 ### One place via a link
 
 The search field ([the notebook & the map](./map-view.md)) accepts a pasted Google Maps,
-Apple Maps, or OpenStreetMap URL. Parsing is pure string work — the pasted URL is never fetched.
-Two parsing judgements worth recording: Google's `!3d`/`!4d` pair (the pin) is preferred over
+Apple Maps, or OpenStreetMap URL. Parsing is pure string work on the device; no map page is ever
+fetched. Two parsing judgements worth recording: Google's `!3d`/`!4d` pair (the pin) is preferred over
 `@lat,lng` (the camera) because they differ, and a coordinate pair sitting in the name slot is
 not a name.
 
@@ -21,8 +20,11 @@ not a name.
 - An **OSM element URL** yields an `osmRef` and fetches that element's facts through the
   geocoder's exact `lookup` — the one network call at paste time. Offline it fails politely:
   nothing queues, and the user retries online.
-- A **`maps.app.goo.gl` short link** reveals nothing without following a redirect, so the app
-  asks for the expanded URL instead; we never fetch.
+- A **`maps.app.goo.gl` short link** (or a legacy `goo.gl/maps/…` one) reveals nothing until its
+  redirect is followed, and a browser cannot read a cross-origin redirect. The share service
+  follows it (`GET /s/resolve-link`, [Sharing & Publishing](./sharing.md)) and returns only the
+  full URL the link points at, which is then parsed like any pasted Google link. Offline or
+  failing, the field offers Retry and falls back to asking for the full address-bar URL.
 
 Every variant ends in one press of **Save place**, with a list picker offered beside it — a
 list is optional ([data model](./data-model.md) §The library).

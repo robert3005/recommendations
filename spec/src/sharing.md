@@ -185,6 +185,11 @@ tables (`documents` and `rate`); the same Worker also carries sync, with two mor
   update or revoke the worker purges that single URL.
 - `DELETE …/:slug` — Bearer; tombstones the slug. Repeating a DELETE is 204 — idempotent by
   nature.
+- `GET /s/resolve-link?url=…` — public, never cached, rate-limited per source. Expands a pasted
+  Google Maps short link ([Import & Export](./interop.md)): it requests only
+  `maps.app.goo.gl` and `goo.gl/maps/…`, follows redirects by hand, reads no response body, and
+  answers `{ "url": … }` only when the link lands on a Google Maps URL. Anything else is 400
+  (not a short link), 422 (did not resolve) or 502 (upstream unreachable) — never an open proxy.
 
 Documents are schema-validated; requests are subject to size and rate limits; slugs are
 normalised and reserved names rejected. The service maintains an abuse/takedown path — which is

@@ -70,8 +70,11 @@ A responsive web app with:
   library archive ([Import & Export](./interop.md)) moves one to the other.
 - No social graph or feeds, and no reviews written in the app. Other people's reviews are
   classification input only, never displayed ([Review Insights](./reviews.md)).
-- No proprietary API calls and no link scraping. Parsing files the user exported of their own
-  data, and URLs the user pastes, is portability; fetching a vendor's pages is not.
+- No vendor lock on place facts and no page scraping in the web app. Search uses only providers
+  whose terms let a saved place be kept for good and shown on our map
+  ([Map Data & Providers](./data-sources.md)). Parsing files the user exported of their own data,
+  and URLs the user pastes, is portability — following a pasted short link's redirect to learn the
+  full URL included; fetching a vendor's pages is not.
 - No turn-by-turn navigation or routing.
 - No media in posts: posts are text plus places. Place cards show harvested photos with credits
   ([Review Insights](./reviews.md)).

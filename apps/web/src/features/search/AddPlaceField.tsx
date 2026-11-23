@@ -3,8 +3,9 @@
  * finding a place you saved and for adding a new one. Typing searches the
  * library first — name, your tags and notes, facts, and review text — and
  * the wider map second, biased toward what the canvas is showing. Paste a
- * Google Maps / Apple Maps / OSM URL instead and it is parsed, never fetched;
- * `maps.app.goo.gl` short links ask for the expanded URL. A new place is
+ * Google Maps / Apple Maps / OSM URL instead and it is parsed locally; a
+ * `maps.app.goo.gl` short link is first expanded by the share service, which
+ * follows its redirect and returns only the full URL. A new place is
  * saved to the library with one press; putting it on a list is optional
  * (spec/src/data-model.md §The library).
  *
@@ -13,9 +14,10 @@
  * confirm card all open as a floating panel below the header — nothing here
  * may grow the header row.
  *
- * An OSM element URL is the one network call at paste time: the geocoder's
- * exact `lookup` fetches that element's facts. Offline it fails politely —
- * nothing queues; the user retries online (spec/src/interop.md).
+ * Two pastes make a network call: an OSM element URL (the geocoder's exact
+ * `lookup` fetches that element's facts) and a short link (the expansion
+ * above). Offline both fail politely — nothing queues; the user retries
+ * online (spec/src/interop.md).
  */
 import type { GeocoderCandidate, OsmRef, PlaceFacets } from "@placemarks/domain";
 import { matchesFilter, parsePastedLink, placeKindLine } from "@placemarks/domain";
@@ -33,11 +35,14 @@ import { RatingStars } from "../library/Stars";
 import { OwnTag } from "../library/TagChip";
 import { AddToList } from "../place/AddToList";
 import { enrichPlace } from "../place/enrichment";
+import { expandShortLink } from "./resolveLink";
 
 type Pending =
   | { mode: "notice"; text: string }
   | { mode: "lookup"; ref: OsmRef }
   | { mode: "lookup-error"; ref: OsmRef; message: string }
+  | { mode: "expand"; url: string }
+  | { mode: "expand-error"; url: string }
   | { mode: "confirm"; facts: Omit<NewPlaceFacts, "name">; suggestedName?: string };
 
 function useDebounced<T>(value: T, delayMs: number): T {
@@ -83,6 +88,8 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
   const debouncedQuery = useDebounced(query.trim(), 250);
   const listboxId = useId();
   const fieldRef = useRef<HTMLDivElement>(null);
+  /** Counts short-link expansions so a late answer never lands on a newer state. */
+  const expandRun = useRef(0);
 
   // The results are a transient dropdown: pressing anywhere outside the field
   // (the map, a list, the gear, the home link) or moving focus elsewhere puts
@@ -213,18 +220,35 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
     }
   };
 
+  /**
+   * A short link reveals nothing until its redirect is followed: the share
+   * service does that and the full URL it returns goes through the same local
+   * parsing as a pasted one. A stale answer (the user moved on) is dropped.
+   */
+  const expandLink = async (url: string) => {
+    const run = ++expandRun.current;
+    setPending({ mode: "expand", url });
+    let expanded: string | undefined;
+    try {
+      expanded = await expandShortLink(url);
+    } catch {
+      expanded = undefined;
+    }
+    if (run !== expandRun.current) return;
+    const parsed = expanded ? parsePastedLink(expanded) : undefined;
+    if (!parsed || parsed.kind !== "google") {
+      setPending({ mode: "expand-error", url });
+      return;
+    }
+    takeLink(expanded as string);
+  };
+
   /** Returns true when the input was taken as a map link. */
   const takeLink = (raw: string): boolean => {
     const parsed = parsePastedLink(raw);
     if (!parsed) return false;
     if (parsed.kind === "short-link") {
-      // Reveals nothing without following a redirect — ask, never fetch.
-      setPending({
-        mode: "notice",
-        text:
-          "This is a shortened share link, which cannot be read without following it. " +
-          "Open it once in Google Maps, then paste the full address-bar URL instead.",
-      });
+      void expandLink(parsed.url);
       return true;
     }
     if (parsed.kind === "osm") {
@@ -283,6 +307,7 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
   };
 
   const reset = () => {
+    expandRun.current++;
     setPending(undefined);
     setQuery("");
     setName("");
@@ -513,6 +538,35 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
               onClick={() => void lookupOsm(pending.ref)}
               className="font-medium underline"
               data-testid="osm-lookup-retry"
+            >
+              Retry
+            </button>
+            <button type="button" onClick={reset} className="underline">
+              Cancel
+            </button>
+          </span>
+        </output>
+      ) : null}
+
+      {pending?.mode === "expand" ? (
+        <output
+          className={`${PANEL} block p-2 text-xs text-ink/60`}
+          data-testid="link-expand-pending"
+        >
+          Opening this share link…
+        </output>
+      ) : null}
+
+      {pending?.mode === "expand-error" ? (
+        <output className={`${PANEL} block p-2 text-xs text-ink`} data-testid="link-expand-error">
+          Could not open this share link. Try again when you are online, or open it in Google Maps
+          and paste the full address-bar URL instead.
+          <span className="ml-2 inline-flex gap-2">
+            <button
+              type="button"
+              onClick={() => void expandLink(pending.url)}
+              className="font-medium underline"
+              data-testid="link-expand-retry"
             >
               Retry
             </button>

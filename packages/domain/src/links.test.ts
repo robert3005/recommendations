@@ -54,9 +54,15 @@ describe("parsePastedLink — Google Maps", () => {
   });
 
   it("flags a share-sheet short link instead of failing silently", () => {
-    // A short link carries nothing until it is followed, and we never fetch.
-    expect(parsePastedLink("https://maps.app.goo.gl/aBcDeFgHiJk")).toEqual({ kind: "short-link" });
-    expect(parsePastedLink("https://goo.gl/maps/aBcDeFg")).toEqual({ kind: "short-link" });
+    // A short link carries nothing until the share service follows it.
+    expect(parsePastedLink("https://maps.app.goo.gl/aBcDeFgHiJk")).toEqual({
+      kind: "short-link",
+      url: "https://maps.app.goo.gl/aBcDeFgHiJk",
+    });
+    expect(parsePastedLink(" https://goo.gl/maps/aBcDeFg ")).toEqual({
+      kind: "short-link",
+      url: "https://goo.gl/maps/aBcDeFg",
+    });
   });
 
   it("only counts https Google hosts as Google links", () => {

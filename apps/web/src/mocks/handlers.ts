@@ -10,6 +10,7 @@ import {
   peliasCafeResponse,
   photonCafeResponse,
   photonMigradoResponse,
+  SHORT_LINK_FIXTURE,
   wikipediaSummaryCafeCentral,
 } from "./fixtures";
 
@@ -62,11 +63,23 @@ class PersistentMemoryStorage extends MemoryStorage {
   }
 }
 
-const shareApp = createShareApp({ storage: new PersistentMemoryStorage() });
+/**
+ * Short-link expansion against the real route with a canned upstream: the
+ * fixture share link redirects to its Google Maps place URL; anything else
+ * answers without a redirect, which the route reports as unresolved.
+ */
+const shareApp = createShareApp({
+  storage: new PersistentMemoryStorage(),
+  fetchUpstream: async (url) =>
+    url === SHORT_LINK_FIXTURE.short
+      ? new Response(null, { status: 302, headers: { location: SHORT_LINK_FIXTURE.expanded } })
+      : new Response("", { status: 200 }),
+});
 
 export const handlers = [
   // The whole /s surface — reads, mutations, and CORS preflights.
   http.all(/\/s\/(lists|posts)(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
+  http.all(/\/s\/resolve-link(\?.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
   // The sync surface of the same service (spec/src/sync.md §The service). The
   // mock keeps a library in memory only, which is all one browser needs.
   http.all(/\/y\/[0-9a-f]{32}(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),

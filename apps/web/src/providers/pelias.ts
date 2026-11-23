@@ -1,15 +1,16 @@
 /**
  * Pelias-class forward geocoding (spec/src/data-sources.md §Geocoder): the
- * Pelias HTTP API as served by Stadia Maps, Geoapify, geocode.earth, or a
- * self-hosted Pelias — real POI/venue autocomplete where the Photon demo is
- * not. Only features whose `source` is openstreetmap (with a parseable
- * element id) record an `osmRef`; other open sources (openaddresses,
- * whosonfirst) yield candidates without one, which the model treats like
+ * Pelias HTTP API as served by Stadia Maps (`/geocoding/v1/autocomplete`),
+ * geocode.earth, or a self-hosted Pelias — real POI/venue autocomplete where
+ * the Photon demo is not. Only features whose `source` is openstreetmap (with
+ * a parseable element id) record an `osmRef`; other sources (openaddresses,
+ * whosonfirst, Stadia's foursquare) yield candidates without one, which the
+ * model treats like
  * manual coordinates — no ODbL claim, no OSM deep link
  * (spec/src/data-model.md §Normative rules). Nameless features are filtered.
  */
 import type { GeocoderCandidate, OsmRef } from "@placemarks/domain";
-import { PELIAS_KEY } from "../config";
+import { PELIAS_KEY, PELIAS_SOURCES } from "../config";
 
 interface PeliasFeature {
   geometry?: { type: string; coordinates?: [number, number] };
@@ -70,6 +71,8 @@ export class PeliasGeocoder {
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey: string | undefined = PELIAS_KEY,
+    /** Comma-separated upstream sources to search; absent, the upstream's default set. */
+    private readonly sources: string | undefined = PELIAS_SOURCES,
   ) {}
 
   async search(
@@ -86,7 +89,8 @@ export class PeliasGeocoder {
       url.searchParams.set("focus.point.lat", String(bias.lat));
       url.searchParams.set("focus.point.lon", String(bias.lng));
     }
-    // The key travels as a query param (Geoapify style) — never a header.
+    if (this.sources) url.searchParams.set("sources", this.sources);
+    // The key travels as a query param — never a header.
     if (this.apiKey) url.searchParams.set("api_key", this.apiKey);
     // One retry for a transient upstream failure — adapter policy, so callers
     // do not recreate it (spec/src/data-sources.md: the adapter owns retry).

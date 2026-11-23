@@ -15,6 +15,7 @@ import {
 } from "@placemarks/schemas";
 import { bearerToken, sha256Hex, timingSafeEqualHex, utf8Bytes } from "@placemarks/service-kit";
 import { Hono } from "hono";
+import { type FetchLike, resolveShortLink } from "./resolveLink";
 import type { DocumentKind, ShareStorage, SyncStorage } from "./storage";
 
 export interface ServiceOptions {
@@ -23,6 +24,8 @@ export interface ServiceOptions {
   now?: () => string;
   /** Best-effort single-URL shared-cache purge after an update or revoke. */
   purge?: (url: string) => Promise<unknown>;
+  /** Upstream fetch for short-link expansion; absent, the route answers 501. */
+  fetchUpstream?: FetchLike;
 }
 
 /** Request/abuse limits. Document-level limits live in @placemarks/schemas. */
@@ -31,6 +34,8 @@ export const LIMITS = {
   requestBytes: 1_048_576,
   /** Mutations per (token, source) per minute. */
   mutationsPerMinute: 30,
+  /** Short-link expansions per source per minute. */
+  resolvesPerMinute: 20,
 } as const;
 
 /** Public slugs: normalised (domain slugFromTitle), never secrets. */
@@ -70,6 +75,7 @@ export function createShareApp({
   storage,
   now = () => new Date().toISOString(),
   purge,
+  fetchUpstream,
 }: ServiceOptions) {
   const app = new Hono();
 
@@ -89,6 +95,26 @@ export function createShareApp({
       "Access-Control-Max-Age": "86400",
     }),
   );
+
+  // Short-link expansion (spec/src/interop.md §One place via a link): follows
+  // a Google Maps share link's redirect and returns only the URL it points
+  // at. Never cached — the answer is one person's paste.
+  app.get("/s/resolve-link", async (c) => {
+    if (!fetchUpstream) return c.text("not available", 501, MUTATION_HEADERS);
+    const source = c.req.header("cf-connecting-ip") ?? "local";
+    const hits = await storage.hit(`r:${source}`, 60_000, Date.now());
+    if (hits > LIMITS.resolvesPerMinute) return c.text("rate limited", 429, MUTATION_HEADERS);
+    const result = await resolveShortLink(c.req.query("url") ?? "", fetchUpstream);
+    if (result.ok) return c.json({ url: result.url }, 200, MUTATION_HEADERS);
+    if (result.reason === "not-a-short-link") {
+      return c.text("not a short link", 400, MUTATION_HEADERS);
+    }
+    return c.text(
+      result.reason === "upstream" ? "upstream unreachable" : "link did not resolve",
+      result.reason === "upstream" ? 502 : 422,
+      MUTATION_HEADERS,
+    );
+  });
 
   for (const collection of ["lists", "posts"] as const) {
     const kind: DocumentKind = collection === "lists" ? "list" : "post";

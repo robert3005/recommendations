@@ -252,3 +252,10 @@ export const osmNode599 = {
     },
   ],
 };
+
+/** A share-sheet short link and the place URL its redirect points at. */
+export const SHORT_LINK_FIXTURE = {
+  short: "https://maps.app.goo.gl/ahHp1Y6MdgxDMFfb9",
+  expanded:
+    "https://www.google.com/maps/place/Colonna+&+Small's/@51.5216362,-0.1125268,17z/data=!3m1!4b1!4m6!3m5!1s0x48761b6656cb87d5:0x2e6defda184b96ec!8m2!3d51.5216329!4d-0.1099519!16s%2Fg%2F11l20l2p36",
+} as const;

@@ -115,6 +115,23 @@ describe("PhotonGeocoder back-off", () => {
 });
 
 describe("PeliasGeocoder.search", () => {
+  it("sends the configured sources filter, and none by default", async () => {
+    const seen: (string | null)[] = [];
+    server.use(
+      http.get("https://pelias-sources.test/v1/autocomplete", ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get("sources"));
+        return HttpResponse.json({ type: "FeatureCollection", features: [] });
+      }),
+    );
+    await new PeliasGeocoder("https://pelias-sources.test", undefined, undefined).search("cafe");
+    await new PeliasGeocoder(
+      "https://pelias-sources.test",
+      undefined,
+      "openstreetmap,foursquare",
+    ).search("cafe");
+    expect(seen).toEqual([null, "openstreetmap,foursquare"]);
+  });
+
   it("records osmRef only for openstreetmap-sourced features, filtering nameless ones", async () => {
     const results = await new PeliasGeocoder(PELIAS_TEST_URL, undefined).search("cafe");
     expect(results).toHaveLength(4); // the fifth fixture has neither name nor label

@@ -23,7 +23,7 @@ function searchProvider(): PeliasGeocoder | PhotonGeocoder {
     if (!PELIAS_URL) {
       throw new Error(
         "VITE_GEOCODER=pelias requires VITE_PELIAS_URL (spec/src/data-sources.md §Geocoder) — " +
-          "point it at Stadia Maps, Geoapify, geocode.earth, or a self-hosted Pelias.",
+          "point it at Stadia Maps, geocode.earth, or a self-hosted Pelias.",
       );
     }
     return new PeliasGeocoder(PELIAS_URL);

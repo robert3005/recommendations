@@ -3,7 +3,8 @@
  * module for deep links): the place card, every export writer, the public
  * viewer, and the search field all build and parse the same URLs here.
  *
- * Everything is pure string work — a pasted URL is never fetched. Recorded
+ * Everything here is pure string work; the one link this module cannot read,
+ * a share-sheet short link, is flagged for the caller to expand. Recorded
  * judgements: Google's `!3d`/`!4d` pair (the pin) beats `@lat,lng` (the
  * camera); a coordinate pair sitting in the name slot is not a name; only
  * https Google hosts count as Google links.
@@ -15,7 +16,7 @@ export type ParsedLink =
   | { kind: "google"; lat?: number; lng?: number; name?: string; featureId?: string; url: string }
   | { kind: "apple"; lat: number; lng: number; name?: string; url: string }
   | { kind: "osm"; ref: OsmRef }
-  | { kind: "short-link" } // maps.app.goo.gl — ask for the expanded URL, never fetch
+  | { kind: "short-link"; url: string } // maps.app.goo.gl — expanded by the share service
   | undefined;
 
 const GOOGLE_HOSTS = /^((www\.|maps\.)?google\.[a-z]{2,3}(\.[a-z]{2})?|maps\.app\.goo\.gl)$/;
@@ -126,8 +127,9 @@ export function parsePastedLink(input: string): ParsedLink {
   // Only https Google hosts count as Google links.
   if (parsed.protocol !== "https:") return undefined;
   // A share-sheet short link carries nothing until it is followed, and the
-  // browser cannot follow the redirect cross-origin: ask, never fetch.
-  if (SHORT_LINK_HOSTS.test(parsed.hostname)) return { kind: "short-link" };
+  // browser cannot read a cross-origin redirect: the caller has the share
+  // service expand it (spec/src/interop.md §One place via a link).
+  if (SHORT_LINK_HOSTS.test(parsed.hostname)) return { kind: "short-link", url: trimmed };
   if (GOOGLE_HOSTS.test(parsed.hostname)) {
     const coords = googleCoords(trimmed);
     const name = googleName(parsed.pathname);

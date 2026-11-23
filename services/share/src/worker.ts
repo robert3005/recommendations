@@ -19,6 +19,8 @@ export default {
       // On update or revoke the worker purges that single URL
       // (spec/src/sharing.md §The share service); s-maxage bounds the rest.
       purge: edgeCache ? (url) => edgeCache.delete(url) : undefined,
+      // Short-link expansion follows Google's share-link redirect by hand.
+      fetchUpstream: (url, init) => fetch(url, init),
     });
     return app.fetch(request);
   },

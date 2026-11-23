@@ -20,9 +20,10 @@ and no attempt to replicate Google Places — just import, curation, editorial, 
   locally. Remote state is published documents, plus — only if the owner turns sync on — an
   encrypted copy of the library that keeps their devices in step
   ([Sync Between Devices](./sync.md)).
-- **Open data.** Map tiles and geocoding come from OpenStreetMap-derived services, attributed
-  under ODbL wherever OSM facts travel. No proprietary API calls and no scraping: pasted Google
-  and Apple links are parsed, never fetched.
+- **Open data first.** Map tiles come from OpenStreetMap, and search from OSM plus other sources
+  whose terms let a saved place be kept for good; OSM facts are attributed under ODbL wherever
+  they travel. Pasted Google and Apple links are parsed on the device, and a short share link is
+  expanded to its full URL first — no map page is ever fetched.
 - **Explicit publish.** Nothing leaves the device until the owner presses Publish, and a shared
   link changes only when the owner publishes an update. Unpublish revokes the page.
 - **Web-first.** A responsive web app built on one layout grammar — the notebook beside the

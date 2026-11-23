@@ -33,9 +33,10 @@ transaction that performs the write:
 ## Offline behaviour
 
 The service worker precaches the app shell, so an already-installed app opens offline. All local
-reading and editing works from IndexedDB. Pasted map links are parsed, never fetched, so link
-paste works offline too — except the OSM element lookup, which needs the geocoder: it fails
-politely, nothing queues, and the user retries online. The UI states capability per surface:
+reading and editing works from IndexedDB. Pasted map links are parsed on the device, so link
+paste works offline too — except the OSM element lookup, which needs the geocoder, and a short
+share link, which needs the share service to expand it: both fail politely, nothing queues, and
+the user retries online. The UI states capability per surface:
 
 | Capability | Offline behaviour |
 |---|---|

@@ -1,11 +1,19 @@
 # Map Data & Providers
 
-Placemarks reads geographic facts from OpenStreetMap and OSM-derived services, and stores the
-user's own copy of those facts on their places. It builds no second public POI database, and the
-web app calls no proprietary API: pasted Google and Apple Maps URLs are parsed locally and never
-fetched. Google Maps reviews are downloaded only by the local harvester, outside the web app, as
-private input for classification ([Review Harvest](./harvest.md)). The one network call at paste time is the geocoder `lookup(osmRef)` for OSM element
-URLs, and it fails politely offline (nothing queues; retry online).
+Placemarks reads geographic facts from OpenStreetMap first, and from other place sources where
+OSM has a gap, and stores the user's own copy of those facts on their places. It builds no second
+public POI database. The one test a search provider must pass is the **keep-and-show rule**: its
+terms let a saved place's name, position and address be kept for good and drawn on our own map.
+Open datasets pass by licence (OSM, Foursquare OS Places, Overture); a hosted provider passes on
+a plan that permits permanent storage. Providers whose terms forbid either — Google Places, HERE
+and TomTom at the time of writing — stay out for that reason alone.
+
+Pasted Google and Apple Maps URLs are parsed locally. Two pastes make a network call: an OSM
+element URL (the geocoder `lookup(osmRef)`), and a `maps.app.goo.gl` short link, whose redirect
+the share service follows to learn the full URL — never a page ([Import & Export](./interop.md)).
+Both fail politely offline (nothing queues; retry online). Google Maps reviews are downloaded
+only by the local harvester, outside the web app, as private input for classification
+([Review Harvest](./harvest.md)).
 
 ## Map tiles
 
@@ -45,8 +53,15 @@ One adapter, two calls, possibly two endpoints:
 
 A search candidate records the result's `osmRef` whenever the upstream sources it from OSM
 ([Data Model](./data-model.md)); Photon-class results always do. Pelias-class results may come
-from other open sources (OpenAddresses, Who's on First) and then carry no `osmRef` — such a pick
-behaves like manual placement: no ODbL attribution claim, no OSM element link. The adapter owns
+from other sources (OpenAddresses, Who's on First, Foursquare OS Places) and then carry no
+`osmRef` — such a pick behaves like manual placement: no ODbL attribution claim, no OSM element
+link. `VITE_PELIAS_SOURCES` optionally names the upstream sources to search, for a provider whose
+extra venue data is opt-in.
+
+Pelias-class endpoints are Stadia Maps (`https://api.stadiamaps.com/geocoding`, OSM plus
+Foursquare OS Places venues; keyless on localhost, and permanent storage of results needs its
+Standard plan), geocode.earth, and a self-hosted Pelias. Geoapify has its own API shape and would
+need its own adapter. The adapter owns
 debouncing, cancellation, result normalisation, and retry; callers see plain candidate lists.
 
 Public endpoints such as photon.komoot.io and nominatim.openstreetmap.org carry strict usage
@@ -76,10 +91,11 @@ Each provider observes exactly one slice of activity:
 - Wikipedia sees only the article title an OSM element itself names — never search text, place
   names, or anything the user wrote;
 - the share service sees the documents the owner explicitly publishes
-  ([Sharing & Publishing](./sharing.md)).
+  ([Sharing & Publishing](./sharing.md)), and each short link pasted for expansion;
+- Google sees one request per pasted short link, from the share service — not from the device,
+  and carrying nothing but the link itself;
 - Google sees the harvester's anonymous browsing of the places and searches the owner asks it to
-  fetch, from the owner's machine ([Review Harvest](./harvest.md)); the web app sends Google
-  nothing.
+  fetch, from the owner's machine ([Review Harvest](./harvest.md)).
 
 Nothing else leaves the device. Post bodies and list names never go to map or search providers.
 
@@ -90,3 +106,8 @@ OSM-derived facts appear: on the map canvas, on public list and post pages, and 
 exports attribute OSM (ODbL) exactly when `osmRef` is present ([Import & Export](./interop.md)).
 Corrections flow upstream, not in-app: the place card links to the element's openstreetmap.org
 page whenever `osmRef` exists. Google-derived facts never pre-fill anything sent to OSM.
+
+A place picked from a non-OSM source carries no `osmRef` and so no ODbL claim. Foursquare OS
+Places is Apache 2.0 and Overture places are CDLA Permissive 2.0 or Apache 2.0 by source: both
+allow keeping and republishing the facts. A hosted provider's own attribution line, where its
+terms require one, sits with the search results it produced.

@@ -49,7 +49,7 @@ export const MAP_STYLE_URL: string =
 /**
  * Geocoder `search` kind (spec/src/data-sources.md §Geocoder): Photon-class by
  * default (keyless dev demo), or a Pelias-class autocomplete endpoint for real
- * POI/venue search (Stadia Maps, Geoapify, geocode.earth, self-hosted Pelias).
+ * POI/venue search (Stadia Maps, geocode.earth, self-hosted Pelias).
  */
 export const GEOCODER_KIND: "photon" | "pelias" =
   import.meta.env.VITE_GEOCODER === "pelias" ? "pelias" : "photon";
@@ -62,6 +62,13 @@ export const PELIAS_URL: string | undefined = import.meta.env.VITE_PELIAS_URL;
 
 /** Optional Pelias key, sent as the `api_key` query param only — never a header. */
 export const PELIAS_KEY: string | undefined = import.meta.env.VITE_PELIAS_KEY;
+
+/**
+ * Optional comma-separated Pelias `sources` filter, e.g.
+ * `openstreetmap,foursquare,openaddresses` to opt in to a provider's extra
+ * venue data. Unset = the provider's default source set.
+ */
+export const PELIAS_SOURCES: string | undefined = import.meta.env.VITE_PELIAS_SOURCES || undefined;
 
 /** Geocoder `lookup` — exact element fetch for OSM element URL paste. */
 export const OSM_API_URL: string =

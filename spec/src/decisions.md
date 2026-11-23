@@ -16,6 +16,20 @@ produces a union-of-all-designs codebase: roughly 8,500 lines of it, removed ove
 
 ---
 
+## 2026-11-23 — search beyond OSM, and short links resolve
+
+A place the owner wanted (a London coffee shop, shared as a `maps.app.goo.gl` link) could not be
+added: the Photon demo did not find it and the short link was refused. Two rules went.
+
+- **"OSM-derived search only" became the keep-and-show rule.** A provider is allowed when its
+  terms let a saved place be kept for good and drawn on our map. That admits Foursquare OS Places
+  and Overture (open licences) and Stadia Maps' Pelias-class endpoint, which serves OSM plus
+  Foursquare venues. It still excludes Google Places, HERE and TomTom — now for their caching and
+  display terms, not on principle. Geoapify was wrongly listed as Pelias-class and was removed.
+- **"Pasted links are never fetched" became "no map page is ever fetched".** The share service
+  follows a short link's redirect and returns only the full URL, which is parsed on the device as
+  before. The cost is one request to Google per pasted short link, from the service.
+
 ## 2026-11-23 — sync returns, small
 
 Sync between devices was built once and removed on 2026-07-26 with its transport, mutation

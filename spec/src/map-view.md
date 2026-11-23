@@ -206,8 +206,8 @@ exact repeats left out. Picking a saved place opens it; picking a new one opens 
 card: the name (editable), the address, and **Save place** — one press, no list — with a list
 picker beside it for putting the place straight on a list.
 
-Pasting a Google Maps / Apple Maps / OSM URL goes to the same confirm card (parsed, never
-fetched; `maps.app.goo.gl` short links ask for the expanded URL). There is no ranking beyond
+Pasting a Google Maps / Apple Maps / OSM URL goes to the same confirm card (parsed on the
+device; a `maps.app.goo.gl` short link is expanded to its full URL first). There is no ranking beyond
 "yours first"; link parsing lives in [Import & Export](./interop.md), the geocoder in
 [Map Data & Providers](./data-sources.md). The field owns the shell's top bar, so it is
 reachable on every private route.

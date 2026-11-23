@@ -1,8 +1,8 @@
 /**
  * The paste half of the search field (spec/src/map-view.md §The
- * search field): links are parsed, never fetched — except an OSM element
- * URL, whose facts come through the geocoder's exact lookup; short links ask
- * for the expanded URL.
+ * search field): links are parsed locally. Two pastes call out — an OSM
+ * element URL, whose facts come through the geocoder's exact lookup, and a
+ * short link, which the share service expands to its full URL first.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -14,6 +14,8 @@ import { AddPlaceField } from "./AddPlaceField";
 
 const geocoder = vi.hoisted(() => ({ search: vi.fn(), lookup: vi.fn() }));
 vi.mock("../../providers", () => ({ geocoder }));
+const expandShortLink = vi.hoisted(() => vi.fn());
+vi.mock("./resolveLink", () => ({ expandShortLink }));
 
 function renderField() {
   const repo = {
@@ -37,18 +39,47 @@ function renderField() {
 beforeEach(() => {
   geocoder.search.mockReset();
   geocoder.lookup.mockReset();
+  expandShortLink.mockReset();
   // The shared enrichment pass attempts each place once per session.
   resetEnrichmentAttempts();
 });
 
 describe("pasting map links", () => {
-  it("asks for the expanded URL on a maps.app.goo.gl short link, and never fetches", async () => {
+  it("expands a maps.app.goo.gl short link and opens the confirm card from the full URL", async () => {
+    expandShortLink.mockResolvedValue(
+      "https://www.google.com/maps/place/Colonna+&+Small's/@51.5216362,-0.1125268,17z/data=!3d51.5216329!4d-0.1099519",
+    );
     renderField();
     await userEvent.click(screen.getByRole("combobox", { name: "Add a place" }));
     await userEvent.paste("https://maps.app.goo.gl/AbCdEf123");
-    expect(screen.getByTestId("link-notice").textContent).toContain("full address-bar URL");
+    const card = await screen.findByTestId("add-place-confirm");
+    expect(expandShortLink).toHaveBeenCalledWith("https://maps.app.goo.gl/AbCdEf123");
+    expect(card.textContent).toContain("51.52163");
+    expect(screen.getByTestId("confirm-name")).toHaveValue("Colonna & Small's");
     expect(geocoder.search).not.toHaveBeenCalled();
     expect(geocoder.lookup).not.toHaveBeenCalled();
+  });
+
+  it("offers retry and the full-URL fallback when a short link cannot be expanded", async () => {
+    expandShortLink.mockRejectedValueOnce(new Error("offline"));
+    expandShortLink.mockResolvedValueOnce(
+      "https://www.google.com/maps/place/Cervejaria+Ramiro/@38.7,-9.14,17z/data=!3d38.72331!4d-9.13539",
+    );
+    renderField();
+    await userEvent.click(screen.getByRole("combobox", { name: "Add a place" }));
+    await userEvent.paste("https://maps.app.goo.gl/AbCdEf123");
+    const error = await screen.findByTestId("link-expand-error");
+    expect(error.textContent).toContain("full address-bar URL");
+    await userEvent.click(screen.getByTestId("link-expand-retry"));
+    expect(await screen.findByTestId("confirm-name")).toHaveValue("Cervejaria Ramiro");
+  });
+
+  it("does not trust an expansion that is not a Google Maps place", async () => {
+    expandShortLink.mockResolvedValue("https://example.com/somewhere");
+    renderField();
+    await userEvent.click(screen.getByRole("combobox", { name: "Add a place" }));
+    await userEvent.paste("https://maps.app.goo.gl/AbCdEf123");
+    expect(await screen.findByTestId("link-expand-error")).toBeInTheDocument();
   });
 
   it("opens the confirm card from a Google place URL, preferring the !3d/!4d pin", async () => {
