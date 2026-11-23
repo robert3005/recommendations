@@ -43,11 +43,12 @@ in any of the three external maps from its card.
 - The import report: every source row and Saved Places entry accounted for.
 - Source-list binding and idempotent re-import: re-import adds what is new and never deletes.
 - Google My Maps import via KML/KMZ: folders become lists, styles map to the nearest accent.
-- The Post entity exists from this phase — CSV Notes materialise as place posts; the post
+- The Post entity exists from this phase (CSV Notes were place posts until the place gained a
+  note field — [Import & export](./interop.md)); the post
   authoring and reading UI lands in Phase 4 ([Posts](./posts.md)).
 
 **Done when** a real Takeout archive imports with every row placed, in review, or skipped and
-none silently dropped, CSV Notes are stored as place posts, and re-importing the same archive
+none silently dropped, CSV Notes are kept as the places' notes, and re-importing the same archive
 changes nothing.
 
 ## Phase 3 — Export

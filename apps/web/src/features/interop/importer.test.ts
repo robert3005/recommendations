@@ -1,6 +1,6 @@
 /**
  * Import pipeline invariants at unit level (spec/src/interop.md §Testing):
- * each ladder rung, the geocoder-error pause, Note→place-post-once, the
+ * each ladder rung, the geocoder-error pause, Note→place-note-once, the
  * "Saved places" auto list, source-key binding through renames, the
  * name+proximity prompt, and the idempotent re-import convergence contract —
  * driven through an in-memory LocalRepository that implements the pinned
@@ -150,6 +150,12 @@ class MemoryRepo {
     this.places.set(place.id, place);
     this.entries.push({ id: this.id("e"), listId, placeId: place.id });
     return { status: "added", place };
+  }
+  updatePlacePersonal(id: string, patch: { note?: string | null }): Promise<void> {
+    const place = this.places.get(id);
+    if (place && typeof patch.note === "string")
+      this.places.set(id, { ...place, note: patch.note });
+    return Promise.resolve();
   }
   postsFor(target: PostTarget): Promise<Post[]> {
     return Promise.resolve(
@@ -306,12 +312,9 @@ describe("the coordinate ladder", () => {
       true,
     );
 
-    // The Note became a place post titled with the place's name.
-    const posts = repo.posts.filter(
-      (p) => postTargetKey(p.target) === `place:${central?.id ?? ""}`,
-    );
-    expect(posts).toHaveLength(1);
-    expect(posts[0]).toMatchObject({ title: "Café Central", body: "Great bica" });
+    // The Note became the place's own note — not a post.
+    expect(repo.places.get(central?.id ?? "")?.note).toBe("Great bica");
+    expect(repo.posts).toHaveLength(0);
 
     const batch = [...repo.batches.values()][0];
     expect(batch?.status).toBe("done");
@@ -447,7 +450,7 @@ describe("review resolution", () => {
     expect(place?.osmRef).toEqual({ type: "node", id: "77" });
     expect(place?.lat).toBe(38.72);
     // The note rode along at resolution time.
-    expect(repo.posts[0]).toMatchObject({ title: "Mystery Bar", body: "hidden door" });
+    expect(repo.places.get(place?.id ?? "")?.note).toBe("hidden door");
     expect([...repo.batches.values()][0]?.status).toBe("done");
   });
 
@@ -570,13 +573,13 @@ describe("idempotent re-import", () => {
       NOW,
     );
 
-    // The user renames the bound list and edits the imported note's post.
+    // The user renames the bound list and edits the imported note.
     const trip = repo.lists.find((l) => l.sourceKey === "Lisbon trip.csv");
     expect(trip).toBeDefined();
     if (trip) trip.name = "Renamed trip";
-    const post = repo.posts[0];
-    expect(post).toBeDefined();
-    await repo.updatePost(post?.id ?? "", { body: "edited locally" });
+    const noted = [...repo.places.values()].find((p) => p.note !== undefined);
+    expect(noted).toBeDefined();
+    if (noted) repo.places.set(noted.id, { ...noted, note: "edited locally" });
 
     const placesBefore = repo.places.size;
     const entriesBefore = repo.entries.length;
@@ -586,13 +589,13 @@ describe("idempotent re-import", () => {
     expect(second.placed).toBe(0);
     expect(second.alreadyPresent).toBe(4); // every row converged on its membership
     expect(second.review).toBe(0);
-    expect(second.droppedNotes).toBe(1); // the place already has a post — dropped and reported
+    expect(second.droppedNotes).toBe(1); // the place has a different note — dropped and reported
 
     expect(repo.places.size).toBe(placesBefore);
     expect(repo.entries.length).toBe(entriesBefore);
     expect(repo.lists.length).toBe(listsBefore); // the rename held: sourceKey bound the re-import
-    expect(repo.posts).toHaveLength(1);
-    expect(repo.posts[0]?.body).toBe("edited locally"); // local edits are canon
+    expect(repo.posts).toHaveLength(0);
+    expect(repo.places.get(noted?.id ?? "")?.note).toBe("edited locally"); // local edits are canon
     expect([...repo.batches.values()].every((b) => b.status === "done")).toBe(true);
   });
 });

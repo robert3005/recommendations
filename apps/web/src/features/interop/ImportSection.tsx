@@ -21,7 +21,7 @@ function reportLine(report: ImportReport): string {
     ...(report.geocodePending > 0 ? [`${report.geocodePending} waiting on the geocoder`] : []),
     ...(report.skipped > 0 ? [`${report.skipped} unusable rows`] : []),
     ...(report.droppedNotes > 0
-      ? [`${report.droppedNotes} notes dropped (place already has a post)`]
+      ? [`${report.droppedNotes} notes dropped (place already has a different note)`]
       : []),
   ];
   return `Imported ${report.fileName} (${report.rows} rows): ${parts.join(", ")}.`;

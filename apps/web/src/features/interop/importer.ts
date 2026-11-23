@@ -115,21 +115,28 @@ async function addExisting(
 }
 
 /**
- * CSV Note → place post, only when the deduped place has no place post yet;
- * otherwise dropped and reported. Per-place, so it needs no import provenance:
- * re-import never duplicates and never overwrites local edits.
+ * CSV Note → the place's own note (spec/src/interop.md §CSV Note → the
+ * place's note), only while the place has none; a place that already carries
+ * a different note keeps it, and the import reports the one it dropped.
+ * Per-place, so it needs no import provenance: re-import changes nothing and
+ * never overwrites a note edited here.
  */
+export const IMPORTED_NOTE_MAX = 600;
+
 async function importNote(
   repo: LocalRepository,
   place: Place,
   note: string | undefined,
 ): Promise<"created" | "dropped" | "none"> {
-  if (!note) return "none";
-  const existing = await repo.postsFor({ kind: "place", placeId: place.id });
-  if (existing.length > 0) return "dropped";
-  const post = await repo.createPost({ kind: "place", placeId: place.id }, place.name);
-  await repo.updatePost(post.id, { body: note });
-  return "created";
+  const text = note?.trim().slice(0, IMPORTED_NOTE_MAX);
+  if (!text) return "none";
+  // Read the place fresh: an earlier row of this same file may have set it.
+  const current = (await repo.getPlace(place.id))?.note;
+  if (current === undefined) {
+    await repo.updatePlacePersonal(place.id, { note: text });
+    return "created";
+  }
+  return current === text ? "none" : "dropped";
 }
 
 type Point = { lat: number; lng: number };

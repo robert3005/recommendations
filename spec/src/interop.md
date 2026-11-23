@@ -48,13 +48,15 @@ so an import can always be seen, re-imported and undone as one group. The
 auto-created list binds to the GeoJSON filename as its `sourceKey`, so re-imports converge into
 it, and the import report accounts for these entries exactly like CSV rows.
 
-### CSV Note → place post
+### CSV Note → the place's note
 
-The Note column is the user's own writing. It becomes a **place post** titled with the place's
-name ([posts](./posts.md)). The rule is per place, so it needs no import provenance to enforce: a
-Note materialises as a place post only when the deduped place has no place post yet; otherwise
-the Note is dropped and the import report says so. Re-import therefore never creates a duplicate
-and never overwrites a post edited in Placemarks — local edits are canon.
+The Note column is the user's own writing about a place, so it becomes the place's **note**
+([data model](./data-model.md) §The library), trimmed to the note's length. The rule is per
+place, so it needs no import provenance to enforce: a Note is taken only while the deduped place
+has no note; a place that already carries the same note is left alone, and one that carries a
+different note keeps it — the incoming Note is dropped and the import report says so. Re-import
+therefore changes nothing and never overwrites a note edited in Placemarks — local edits are
+canon. (Until 2026-11-23 a Note became a place post, because a place had no note field.)
 
 ### Google My Maps via KML/KMZ
 

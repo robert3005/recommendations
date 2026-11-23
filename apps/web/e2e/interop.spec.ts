@@ -2,7 +2,7 @@
  * Import & export (spec/src/interop.md): a Takeout archive imports through the
  * coordinate ladder into a list (CSV rows joined to Saved Places geometry by
  * Google feature id), the review queue resolves by clicking the canvas, a CSV
- * Note becomes a place post once per place, re-import converges, and the list
+ * Note becomes the place's note once per place, re-import converges, and the list
  * exports as My Maps-compatible KML/KMZ with the guided handoff. ODbL
  * attribution rides exports exactly when OSM-derived facts are present.
  */
@@ -100,8 +100,8 @@ test("a Takeout archive imports through the ladder; review resolves on the canva
   await expect(page.getByTestId("place-item")).toHaveCount(3);
   await expect(page.getByTestId("list-page")).toContainText("Café Central");
 
-  // The CSV Note became a place post titled with the place's name
-  // (spec/src/interop.md §CSV Note → place post).
+  // The CSV Note became the place's own note
+  // (spec/src/interop.md §CSV Note → the place's note).
   await page
     .getByTestId("place-item")
     .filter({ hasText: "Café Central" })
@@ -109,7 +109,8 @@ test("a Takeout archive imports through the ladder; review resolves on the canva
     .click();
   const details = page.getByTestId("place-details");
   await expect(details).toBeVisible();
-  await expect(details.getByTestId("place-post-link")).toHaveText("Café Central");
+  await expect(details.getByTestId("place-note")).toHaveValue("Great bica");
+  await expect(details.getByTestId("place-post-link")).toHaveCount(0);
   await details.getByRole("button", { name: "Close" }).click();
 
   // Export as KML — behind the one Export menu (spec/src/map-view.md §The
@@ -132,18 +133,15 @@ test("a Takeout archive imports through the ladder; review resolves on the canva
   await expect(page.getByTestId("map-canvas")).toHaveAttribute("data-pins", "3");
 });
 
-test("re-importing the same archive converges; a Note becomes a post only once", async ({
-  page,
-}) => {
+test("re-importing the same archive converges; a Note is not imported twice", async ({ page }) => {
   await importFile(page, takeoutFile());
   await expect(page.getByTestId("import-report")).toContainText("2 placed");
 
   await page.getByLabel("Import places file").setInputFiles(takeoutFile());
   const report = page.getByTestId("import-report");
   await expect(report).toContainText("2 already present");
-  // The deduped place already has its place post — the Note is dropped and
-  // the report says so (local edits are canon).
-  await expect(report).toContainText("notes dropped");
+  // The place already carries exactly this note: nothing to do, nothing dropped.
+  await expect(report).not.toContainText("notes dropped");
 
   await page.getByTestId("home-link").click();
   // One list, not two (sourceKey binding), and no duplicated members.
