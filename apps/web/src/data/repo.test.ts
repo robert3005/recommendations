@@ -243,6 +243,20 @@ describe("the personal layer", () => {
     expect(cleared?.status).toBeUndefined();
   });
 
+  it("adds and removes tags against the stored row, so quick edits all land", async () => {
+    const saved = await repo.savePlace(facts());
+    if (saved.status !== "saved") throw new Error("unreachable");
+    const id = saved.place.id;
+    // Two adds sent before either write is read back — a card typing fast.
+    await Promise.all([
+      repo.updatePlacePersonal(id, { addTags: ["Indian"] }),
+      repo.updatePlacePersonal(id, { addTags: ["breakfast"] }),
+    ]);
+    expect((await repo.getPlace(id))?.tags).toEqual(["breakfast", "indian"]);
+    await repo.updatePlacePersonal(id, { removeTags: ["indian"], addTags: ["late night"] });
+    expect((await repo.getPlace(id))?.tags).toEqual(["breakfast", "late night"]);
+  });
+
   it("enrichment-style fact patches never touch the personal layer", async () => {
     const saved = await repo.savePlace(facts());
     if (saved.status !== "saved") throw new Error("unreachable");

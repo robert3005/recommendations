@@ -125,6 +125,12 @@ export type SaveResult =
  */
 export interface PlacePersonalPatch {
   tags?: string[];
+  /**
+   * Tags to put on or take off, applied to the stored row inside the write —
+   * two quick edits from a card holding a stale copy both land.
+   */
+  addTags?: string[];
+  removeTags?: string[];
   note?: string | null;
   stars?: PlaceStars | null;
   status?: PlaceStatus | null;
@@ -327,10 +333,16 @@ export class DexieRepository implements LocalRepository {
       const { tags: _t, tagLog: _l, note: _n, stars: _r, status: _s, ...rest } = stripPlaceRow(row);
       const current = stripPlaceRow(row);
       const stamp = nowIso();
-      const tags = patch.tags !== undefined ? normalizeTags(patch.tags) : (current.tags ?? []);
+      const tagsTouched =
+        patch.tags !== undefined || patch.addTags !== undefined || patch.removeTags !== undefined;
+      const removed = new Set(normalizeTags(patch.removeTags ?? []));
+      const tags = normalizeTags([
+        ...(patch.tags ?? current.tags ?? []),
+        ...(patch.addTags ?? []),
+      ]).filter((tag) => !removed.has(tag));
       // Each tag put on or taken off is stamped, so two devices' tag edits
       // merge as a set instead of one overwriting the other.
-      const tagLog = patch.tags !== undefined ? logTagChange(current, tags, stamp) : current.tagLog;
+      const tagLog = tagsTouched ? logTagChange(current, tags, stamp) : current.tagLog;
       const note =
         patch.note === undefined ? current.note : patch.note === null ? undefined : patch.note;
       if (patch.stars != null && !isStars(patch.stars)) throw new Error("stars go 0.5–5 in halves");

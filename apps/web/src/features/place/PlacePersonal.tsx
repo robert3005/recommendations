@@ -6,7 +6,7 @@
  * only suggested, and become an own tag with one deliberate press.
  */
 import { normalizeTag, type Place, type PlaceStatus, vocabLabel } from "@placemarks/domain";
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useRepo } from "../../data/RepoContext";
 import { StarInput } from "../library/Stars";
 import { OwnTag } from "../library/TagChip";
@@ -29,11 +29,47 @@ export function PlacePersonal({
   const noteId = useId();
   const tags = place.tags ?? [];
 
+  // The note saves as it is typed (after a pause), when the field loses focus,
+  // when the page is hidden and when the card closes — a phone user who types
+  // a note and switches apps keeps it. `savedNote` is what the store holds as
+  // far as this card knows, so its own write echoing back does not reset the
+  // field mid-word (the store trims; the draft keeps a trailing space).
+  const savedNote = useRef(place.note ?? "");
+  const noteDraft = useRef(note);
+  noteDraft.current = note;
+  const saveNote = useCallback(() => {
+    const trimmed = noteDraft.current.trim();
+    if (trimmed === savedNote.current) return;
+    savedNote.current = trimmed;
+    void repo.updatePlacePersonal(place.id, { note: trimmed === "" ? null : trimmed });
+  }, [repo, place.id]);
+
   // The note changed elsewhere (an import, another tab): follow the store.
   // The card remounts this component per place, so a draft never crosses places.
   useEffect(() => {
-    setNote(place.note ?? "");
+    const incoming = place.note ?? "";
+    if (incoming === savedNote.current) return;
+    savedNote.current = incoming;
+    setNote(incoming);
   }, [place.note]);
+
+  useEffect(() => {
+    const timer = setTimeout(saveNote, 600);
+    return () => clearTimeout(timer);
+  }, [note, saveNote]);
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") saveNote();
+    };
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", saveNote);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", saveNote);
+      saveNote();
+    };
+  }, [saveNote]);
 
   const addTags = (raw: string) => {
     const incoming = raw
@@ -41,7 +77,7 @@ export function PlacePersonal({
       .map(normalizeTag)
       .filter((tag) => tag !== "" && !tags.includes(tag));
     if (incoming.length > 0) {
-      void repo.updatePlacePersonal(place.id, { tags: [...tags, ...incoming] });
+      void repo.updatePlacePersonal(place.id, { addTags: incoming });
     }
     setDraft("");
   };
@@ -91,7 +127,7 @@ export function PlacePersonal({
               key={tag}
               tag={tag}
               onRemove={() =>
-                void repo.updatePlacePersonal(place.id, { tags: tags.filter((t) => t !== tag) })
+                void repo.updatePlacePersonal(place.id, { removeTags: [tag] })
               }
             />
           ))}
@@ -160,11 +196,7 @@ export function PlacePersonal({
           id={noteId}
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          onBlur={() => {
-            if (note.trim() !== (place.note ?? "")) {
-              void repo.updatePlacePersonal(place.id, { note: note.trim() === "" ? null : note });
-            }
-          }}
+          onBlur={saveNote}
           rows={2}
           maxLength={600}
           placeholder="Why it's here, what to order, who told you…"
