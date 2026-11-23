@@ -130,16 +130,53 @@ function sendEncodedAsIs(response: Response): Response {
   } as ResponseInit);
 }
 
+/**
+ * Edge-cache entries hold the stored bytes with no Content-Encoding: the
+ * Cache API compressed an already-gzip body a second time on the way back
+ * out, so browsers got gzip inside gzip and MapLibre could not parse it.
+ * The encoding rides in its own header and is restored on a hit. The key
+ * carries a version so entries from the earlier layout are never read.
+ */
+const STORED_ENCODING = "X-Stored-Encoding";
+const CACHE_LAYOUT = "2";
+
+function cacheKey(request: Request): Request {
+  const url = new URL(request.url);
+  url.searchParams.set("_layout", CACHE_LAYOUT);
+  return new Request(url.toString(), { method: "GET" });
+}
+
+export function toCacheEntry(data: ArrayBuffer, response: Response): Response {
+  const headers = new Headers(response.headers);
+  const encoding = headers.get("Content-Encoding");
+  headers.delete("Content-Encoding");
+  if (encoding) headers.set(STORED_ENCODING, encoding);
+  return new Response(data, { status: response.status, headers });
+}
+
+export async function fromCacheEntry(hit: Response): Promise<Response> {
+  const data = await hit.arrayBuffer();
+  const headers = new Headers(hit.headers);
+  const encoding = headers.get(STORED_ENCODING);
+  headers.delete(STORED_ENCODING);
+  if (!encoding) return new Response(data, { status: hit.status, headers });
+  headers.set("Content-Encoding", encoding);
+  return sendEncodedAsIs(new Response(data, { status: hit.status, headers }));
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContextLike): Promise<Response> {
     const edge = (globalThis as unknown as { caches?: { default?: EdgeCache } }).caches?.default;
     const cacheable = request.method === "GET" && edge !== undefined;
+    const key = cacheable ? cacheKey(request) : request;
     if (cacheable) {
-      const hit = await edge.match(request);
-      if (hit) return hit;
+      const hit = await edge.match(key);
+      if (hit) return fromCacheEntry(hit);
     }
-    const response = sendEncodedAsIs(await handleTileRequest(request, deps(env)));
-    if (cacheable && response.status === 200) ctx.waitUntil(edge.put(request, response.clone()));
-    return response;
+    const fresh = await handleTileRequest(request, deps(env));
+    if (!cacheable || fresh.status !== 200) return sendEncodedAsIs(fresh);
+    const data = await fresh.arrayBuffer();
+    ctx.waitUntil(edge.put(key, toCacheEntry(data, fresh)));
+    return sendEncodedAsIs(new Response(data, { status: fresh.status, headers: fresh.headers }));
   },
 };
