@@ -1,0 +1,9 @@
+# The web app's test deployment: the built single-page app as static assets,
+# with unknown paths answered by index.html so client-side routes deep-link.
+# Deployed by `pnpm run deploy` (scripts/deploy.mjs) — see OPERATIONS.md.
+name = "placemarks-web"
+compatibility_date = "2026-07-01"
+
+[assets]
+directory = "./dist"
+not_found_handling = "single-page-application"
