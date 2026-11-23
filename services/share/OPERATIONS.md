@@ -5,7 +5,8 @@ Deployment notes for the hosted share service (`wrangler.toml`, `migrations/`).
 ## Database migrations and deployment
 
 The ordered D1 migrations are the only production schema-upgrade path. There
-are two — the baseline and `0002-sync.sql`, which adds the sync tables — and no
+are three — the baseline, `0002-sync.sql`, which adds the sync tables, and
+`0003-insights.sql`, which adds the review-insights cache — and no
 upgrade of a live predecessor yet, because the first deployment (a test one, 2026-11-23) was created with both
 already written, so no database exists that predates the current schema. Migrations that upgrade a live predecessor start
 being written the day one exists.
@@ -31,6 +32,31 @@ migration and verify the command reports it applied before deploying the Worker.
 `schema.sql` is the current-schema reference/snapshot only. Do **not** execute it
 as an upgrade once a deployment exists: `CREATE TABLE IF NOT EXISTS` cannot
 replace an existing table's CHECK constraint.
+
+## Review insights
+
+`POST /i/places` reads a Google place's reviews and returns what was learned
+(spec/src/reviews.md §Hosted on import). It needs three secrets and answers
+501 until all are set:
+
+```sh
+cd services/share
+# A random access key; paste the same value in the app under Settings → Review insights.
+openssl rand -base64 32 | tr '+/' '-_' | tr -d '=' | tee /dev/stderr | pnpm exec wrangler secret put INSIGHTS_ACCESS_KEY
+pnpm exec wrangler secret put SERPAPI_KEY < ~/.config/placemarks/serpapi-key
+pnpm exec wrangler secret put ANTHROPIC_API_KEY   # paste the key when asked
+```
+
+Plain settings in `wrangler.toml` under `[vars]`: `INSIGHTS_DAILY_PLACES`
+(places fetched per rolling day, 100) and `INSIGHTS_MAX_REVIEWS` (reviews read
+per place, 50, about four SerpApi credits). A cached answer costs nothing.
+
+Rotating the access key: put a new secret and paste it in the app again. Every
+browser holding the old key stops at its next lookup with "access key is wrong".
+
+The `insights` table (migration `0003-insights.sql`) holds one row per Google
+place: place facts, photo links and the profile as JSON. It never holds review
+text. Rows may be deleted at any time; the next lookup refetches.
 
 ## Data retention
 

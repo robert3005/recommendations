@@ -230,6 +230,15 @@ importers:
 
   services/share:
     dependencies:
+      '@placemarks/classify':
+        specifier: workspace:*
+        version: link:../../packages/classify
+      '@placemarks/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@placemarks/harvester':
+        specifier: workspace:*
+        version: link:../../tools/harvester
       '@placemarks/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas

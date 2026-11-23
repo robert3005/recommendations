@@ -27,6 +27,8 @@ export interface AnthropicClassifierOptions {
   model?: string;
   effort?: "low" | "medium" | "high";
   chunkSize?: number;
+  /** Explicit key (the hosted service's secret); absent, the SDK's usual lookup. */
+  apiKey?: string;
   client?: Pick<Anthropic, "messages">;
 }
 
@@ -42,7 +44,7 @@ export class AnthropicClassifier implements ReviewClassifier {
     this.effort = opts.effort ?? "low";
     this.chunkSize = opts.chunkSize ?? 20;
     this.id = `anthropic:${this.model}`;
-    this.client = opts.client ?? new Anthropic();
+    this.client = opts.client ?? new Anthropic(opts.apiKey ? { apiKey: opts.apiKey } : {});
   }
 
   async classify(reviews: ReviewInput[], ctx: { placeName?: string }): Promise<ReviewExtraction[]> {

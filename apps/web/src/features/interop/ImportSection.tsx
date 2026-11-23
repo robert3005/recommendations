@@ -11,6 +11,7 @@ import { useRef, useState } from "react";
 import { useRepo } from "../../data/RepoContext";
 import { nowIso } from "../../lib/time";
 import { geocoder } from "../../providers";
+import { queueMissingInsights } from "../insights/remote";
 import { type ImportReport, listReviewItems, runImport } from "./importer";
 
 function reportLine(report: ImportReport): string {
@@ -46,6 +47,8 @@ export function ImportSection() {
         nowIso(),
       );
       setMessage(reportLine(report));
+      // Hosted review insights for the newly placed Google places (no key: nothing happens).
+      void queueMissingInsights(repo, nowIso).catch(() => undefined);
     } catch (err) {
       setMessage(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

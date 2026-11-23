@@ -5,9 +5,17 @@
 name = "placemarks-share"
 main = "src/worker.ts"
 compatibility_date = "2026-07-01"
+# The harvester's normalizer hashes with node:crypto (createHash).
+compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
 binding = "SHARE_DB"
 database_name = "placemarks-share"
 database_id = "803072ab-a67c-4012-beb5-af8d299235da"
 migrations_dir = "migrations"
+
+# Review insights (OPERATIONS.md §Review insights). Secrets, set with
+# `wrangler secret put`: INSIGHTS_ACCESS_KEY, SERPAPI_KEY, ANTHROPIC_API_KEY.
+[vars]
+INSIGHTS_DAILY_PLACES = "100"
+INSIGHTS_MAX_REVIEWS = "50"

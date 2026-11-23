@@ -16,6 +16,19 @@ produces a union-of-all-designs codebase: roughly 8,500 lines of it, removed ove
 
 ---
 
+## 2026-11-23 — reviews are read on import, by the share service
+
+Running `pnpm classify run` and then loading a data folder was too many steps. The owner weighed
+three options: one local command with the app remembering the folder, classifying in the browser
+with a pasted API key, or a hosted step on import. They chose the hosted step. The share service now
+fetches a place's newest reviews through SerpApi, classifies them with Claude Haiku and returns
+only what it learned ([Review Insights](./reviews.md) §Hosted on import). This changes two things
+the 2026-11-21 entry promised. Review text now passes through a service the owner runs, held
+only in memory for one request and never stored. And the web app now triggers proprietary calls,
+always made by the service and never by the browser. The access key and the daily budget exist
+because every lookup costs money. Signing in with a Claude or ChatGPT subscription was ruled out:
+neither is open to an app like this one.
+
 ## 2026-11-23 — search beyond OSM, and short links resolve
 
 A place the owner wanted (a London coffee shop, shared as a `maps.app.goo.gl` link) could not be

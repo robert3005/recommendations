@@ -4,6 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "description": "Local CLI that downloads Google Maps place facts and reviews into the on-disk harvest dataset (spec/src/harvest.md).",
+  "exports": {
+    "./serpapi-client": "./src/providers/serpapi-client.ts"
+  },
   "bin": {
     "placemarks-harvest": "./src/cli.ts"
   },

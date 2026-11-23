@@ -15,12 +15,15 @@ import {
 } from "@placemarks/schemas";
 import { bearerToken, sha256Hex, timingSafeEqualHex, utf8Bytes } from "@placemarks/service-kit";
 import { Hono } from "hono";
+import { type InsightsOptions, mountInsights } from "./insights";
 import { type FetchLike, resolveShortLink } from "./resolveLink";
-import type { DocumentKind, ShareStorage, SyncStorage } from "./storage";
+import type { DocumentKind, InsightsCache, ShareStorage, SyncStorage } from "./storage";
 
 export interface ServiceOptions {
   /** Publishing and — when the adapter implements it — sync share one store. */
-  storage: ShareStorage & Partial<SyncStorage>;
+  storage: ShareStorage & Partial<SyncStorage> & Partial<InsightsCache>;
+  /** Hosted review insights; absent, /i/places answers 501. */
+  insights?: Omit<InsightsOptions, "storage">;
   now?: () => string;
   /** Best-effort single-URL shared-cache purge after an update or revoke. */
   purge?: (url: string) => Promise<unknown>;
@@ -76,8 +79,16 @@ export function createShareApp({
   now = () => new Date().toISOString(),
   purge,
   fetchUpstream,
+  insights,
 }: ServiceOptions) {
   const app = new Hono();
+
+  if (storage.getInsights && storage.putInsights) {
+    mountInsights(app, {
+      ...insights,
+      storage: storage as ShareStorage & InsightsCache,
+    });
+  }
 
   // The web client may be hosted separately — every /s response (not just the
   // preflight) must carry the CORS grant or the browser discards it. No

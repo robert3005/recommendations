@@ -6,9 +6,43 @@ Reviews are **input only**. The app never displays review text; it displays clas
 
 ## Where it runs
 
-Everything runs on the owner's machine. The Google import (see the harvest chapter) writes one
-folder per place under `~/placemarks-data/places/<dir>/` with `place.json`, `reviews.jsonl` and
-`photos.jsonl`. The local classify command reads those files and writes its results beside them:
+Two routes lead to the same place card.
+
+### Hosted on import (the default)
+
+When places with a Google Maps link enter the library (a Takeout import, or a row placed from
+the review queue), the app asks the share service for each one at `POST /i/places`, two at a
+time, while the app is open. Settings → Review insights also offers to read every Google place
+that has no insights yet, and a place card without insights has a "Read what reviewers say"
+button.
+
+For each place the service:
+
+1. looks the listing up on SerpApi by its Google feature id and coordinates (or by name near
+   the coordinates, accepting only the listing whose id matches);
+2. pages through its newest reviews, 50 by default (`INSIGHTS_MAX_REVIEWS`);
+3. classifies them with Claude Haiku 5.5 through the same pipeline as the local command
+   (`packages/classify/src/pipeline.ts`), then writes the summary;
+4. answers with the place facts, up to 24 photo links with their credits, the review counts and
+   the profile, and caches that answer in D1 (`insights`) for 30 days.
+
+Review text exists only in that request's memory: it is never stored by the service and never
+sent to the app. Every lookup costs SerpApi credits (about four per place) and model tokens, so
+the route takes the operator's access key (`INSIGHTS_ACCESS_KEY`, kept in each browser's local
+storage, never in the library, sync or anything published) and stops at a daily budget of places
+(`INSIGHTS_DAILY_PLACES`, 100 by default). A cached answer is free; `refresh` refetches one only
+when it is older than a week. A wrong key, an exhausted budget or a service without keys stops
+the queue at once instead of failing every place.
+
+Consumer subscriptions cannot pay for this: Anthropic does not allow third-party apps to sign in
+with a Claude plan, and "Sign in with ChatGPT" is open only to approved partners (checked
+November 2026). The service uses API keys.
+
+### Local
+
+The harvester (see the harvest chapter) writes one folder per place under
+`~/placemarks-data/places/<dir>/` with `place.json`, `reviews.jsonl` and `photos.jsonl`. The
+local classify command reads those files and writes its results beside them:
 
 | File | Written by | Read by the app |
 |---|---|---|
@@ -24,11 +58,15 @@ pnpm --filter @placemarks/classify classify run [--with haiku|jev|luna] [--place
 pnpm --filter @placemarks/classify classify compare --with haiku,luna
 ```
 
-The app loads the folder from Settings → Review insights into its own IndexedDB database,
-`placemarks-reviews`, separate from the library: the library archive, the repository invariants and
-publishing never touch it. A library place joins its insights by the Google feature id parsed from
-its `googleUrl`, which is the harvest's `sourcePlaceKey`. Published pages carry no review data or
-review photos.
+Settings → Review insights loads that folder. This route stays for comparison runs, other
+classifiers and places the service cannot reach.
+
+### In the browser
+
+Either way, insights land in the app's own IndexedDB database, `placemarks-reviews`, separate
+from the library: the library archive, the repository invariants and publishing never touch it.
+A library place joins its insights by the Google feature id parsed from its `googleUrl`, which is
+the harvest's `sourcePlaceKey`. Published pages carry no review data or review photos.
 
 ## Classifiers
 
@@ -79,4 +117,5 @@ on every photo), then "What people say": the Google rating and price, the summar
 aspect meters with mention counts, the top dishes, atmosphere, good-for and dietary tags, practical
 notes, and a provenance line naming the classifier and how many reviews it read. Meters and tags are
 drawn in ink and hairlines; the eight accents stay with lists. A place whose reviews are downloaded
-but not yet classified says so and names the command to run.
+but not yet classified says so and names the command to run; one the service read with no
+written reviews says that.

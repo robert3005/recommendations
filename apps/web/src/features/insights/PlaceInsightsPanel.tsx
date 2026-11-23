@@ -92,9 +92,15 @@ export function PlaceInsightsPanel({
       <section className="mt-4" data-testid="place-insights">
         {rated ? <RatingLine source={rated} /> : null}
         <p className="mt-2 text-xs text-ink/60" data-testid="insights-pending">
-          Reviews are downloaded but not classified yet. Run{" "}
-          <code className="font-mono">pnpm classify run</code>, then load the data folder in
-          Settings.
+          {source?.origin === "service" ? (
+            "Google shows no written reviews for this place yet."
+          ) : (
+            <>
+              Reviews are downloaded but not classified yet. Run{" "}
+              <code className="font-mono">pnpm classify run</code>, then load the data folder in
+              Settings.
+            </>
+          )}
         </p>
       </section>
     );

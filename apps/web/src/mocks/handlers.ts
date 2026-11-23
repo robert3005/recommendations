@@ -1,7 +1,9 @@
 import { createShareApp, MemoryStorage, type StoredDocument } from "@placemarks/share-service";
 import { HttpResponse, http } from "msw";
 import { OSM_API_URL, STADIA_URL } from "../config";
+import { sampleProfile } from "../features/insights/sample";
 import {
+  MOCK_INSIGHTS_ACCESS_KEY,
   osmNode101,
   osmNode102,
   osmNode599,
@@ -76,6 +78,26 @@ const shareApp = createShareApp({
     url === SHORT_LINK_FIXTURE.short
       ? new Response(null, { status: 302, headers: { location: SHORT_LINK_FIXTURE.expanded } })
       : new Response("", { status: 200 }),
+  // Hosted review insights with sample data in place of SerpApi and the model.
+  insights: {
+    accessKey: MOCK_INSIGHTS_ACCESS_KEY,
+    fetchPlace: async (request) => ({
+      place: {
+        name: request.name ?? "Sample place",
+        rating: 4.4,
+        ratingCount: 1289,
+        priceLevel: 1,
+      },
+      reviews: [{ id: "rev_sample", text: "Sample review.", contentHash: "sample" }],
+      photos: [1, 2, 3, 4, 5].map((n) => ({
+        id: `pho_sample_${n}`,
+        url: `/sample-insights/photo-${n}.jpg`,
+        attribution: { name: "Sample photo" },
+        source: "sample",
+      })),
+    }),
+    classify: async (place) => sampleProfile(place.sourcePlaceKey, new Date().toISOString()),
+  },
 });
 
 const STADIA_PLACES: StadiaPlaceFixture[] = [
@@ -97,6 +119,7 @@ export const handlers = [
   // The whole /s surface — reads, mutations, and CORS preflights.
   http.all(/\/s\/(lists|posts)(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
   http.all(/\/s\/resolve-link(\?.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
+  http.all(/\/i\/places$/, ({ request }) => shareApp.fetch(request.clone())),
   // The sync surface of the same service (spec/src/sync.md §The service). The
   // mock keeps a library in memory only, which is all one browser needs.
   http.all(/\/y\/[0-9a-f]{32}(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),

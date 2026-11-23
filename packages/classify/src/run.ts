@@ -13,21 +13,15 @@
  *   profile.<classifier>.json     the same, per classifier (for comparisons)
  *
  * Re-runs only send reviews whose analysis is missing or stale (changed
- * review text, prompt version or model).
+ * review text, prompt version or model). The classification itself lives in
+ * pipeline.ts, which touches no file system so the hosted service can run it.
  */
 import { readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  buildPlaceProfile,
-  type PlaceProfile,
-  type ReviewAnalysis,
-  type ReviewInput,
-  reviewsNeedingAnalysis,
-} from "@placemarks/domain";
+import type { PlaceProfile, ReviewAnalysis, ReviewInput } from "@placemarks/domain";
 import { harvestReviewSchema, placeSnapshotSchema } from "@placemarks/schemas";
-import { ClassifierError, type ReviewClassifier } from "./classifiers/types";
-import { PROMPT_VERSION } from "./prompt";
-import { toAnalysis, toSummary } from "./schema";
+import type { ReviewClassifier } from "./classifiers/types";
+import { type ClassifyOptions, classifyPlace } from "./pipeline";
 
 export interface PlaceFolder {
   dir: string;
@@ -122,34 +116,9 @@ export async function listPlaceDirs(dataDir: string): Promise<string[]> {
     .sort();
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
-
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  attempts = 3,
-  sleep = (ms: number) => new Promise((r) => setTimeout(r, ms)),
-): Promise<T> {
-  for (let i = 1; ; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      if (!(err instanceof ClassifierError && err.retryable) || i >= attempts) throw err;
-      await sleep(1000 * 2 ** i);
-    }
-  }
-}
-
-export interface AnalyseOptions {
-  now?: () => string;
-  summarise?: boolean;
+export interface AnalyseOptions extends ClassifyOptions {
   /** Also write profile.json (the one the app loads). Off for comparison runs. */
   writeDefaultProfile?: boolean;
-  log?: (msg: string) => void;
-  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface AnalyseResult {
@@ -167,53 +136,13 @@ export async function analysePlace(
   classifier: ReviewClassifier,
   opts: AnalyseOptions = {},
 ): Promise<AnalyseResult> {
-  const now = opts.now ?? (() => new Date().toISOString());
-  const log = opts.log ?? (() => {});
   const analysesPath = join(folder.dir, `analyses.${classifierSlug(classifier.id)}.jsonl`);
+  const perClassifierPath = join(folder.dir, `profile.${classifierSlug(classifier.id)}.json`);
   const existing = await readJsonl<ReviewAnalysis>(analysesPath);
-  const todo = reviewsNeedingAnalysis(folder.reviews, existing, classifier.id, PROMPT_VERSION);
-  const byId = new Map(folder.reviews.map((r) => [r.id, r]));
-  const noText = folder.reviews.filter((r) => r.text.trim() === "").length;
-  const skipped = folder.reviews.length - noText - todo.length;
+  const previous = await readJson<PlaceProfile>(perClassifierPath);
 
-  const fresh: ReviewAnalysis[] = [];
-  let failed = 0;
-  for (const part of chunk(todo, classifier.chunkSize)) {
-    try {
-      const out = await withRetry(
-        () => classifier.classify(part, { placeName: folder.name }),
-        3,
-        opts.sleep,
-      );
-      const wanted = new Set(part.map((r) => r.id));
-      const analysedAt = now();
-      for (const x of out) {
-        const review = byId.get(x.id);
-        if (!review || !wanted.has(x.id)) continue;
-        wanted.delete(x.id);
-        fresh.push(
-          toAnalysis(x, review, {
-            sourcePlaceKey: folder.sourcePlaceKey,
-            classifier: classifier.id,
-            promptVersion: PROMPT_VERSION,
-            analysedAt,
-          }),
-        );
-      }
-      if (wanted.size > 0) {
-        failed += wanted.size;
-        log(`  ${wanted.size} review(s) missing from the response; they will be retried next run`);
-      }
-    } catch (err) {
-      failed += part.length;
-      log(`  chunk of ${part.length} failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  // Latest analysis per review wins; analyses of reviews that disappeared are dropped.
-  const merged = new Map<string, ReviewAnalysis>();
-  for (const a of [...existing, ...fresh]) if (byId.has(a.reviewId)) merged.set(a.reviewId, a);
-  const analyses = [...merged.values()];
+  const result = await classifyPlace({ ...folder, existing, previous }, classifier, opts);
+  const { analyses, fresh, profile } = result;
   if (fresh.length > 0 || analyses.length !== existing.length) {
     await writeAtomic(
       analysesPath,
@@ -221,78 +150,23 @@ export async function analysePlace(
     );
   }
 
-  const profile = buildPlaceProfile(
-    folder.sourcePlaceKey,
-    folder.reviews,
-    analyses.filter((a) => a.promptVersion === PROMPT_VERSION),
-    now(),
-  );
-
-  const perClassifierPath = join(folder.dir, `profile.${classifierSlug(classifier.id)}.json`);
   // Nothing analysed (every call failed, or no review text): leave existing profiles alone.
-  if (analyses.length === 0) {
-    return {
-      sourcePlaceKey: folder.sourcePlaceKey,
-      analysed: 0,
-      skipped,
-      noText,
-      failed,
-      profile,
-    };
-  }
-  const previous = await readJson<PlaceProfile>(perClassifierPath);
-  const summarise = classifier.summarise?.bind(classifier);
-  if (opts.summarise !== false && summarise && profile.usefulCount > 0) {
-    if (fresh.length === 0 && previous?.summary && previous.usefulCount === profile.usefulCount) {
-      profile.summary = previous.summary;
-    } else {
-      try {
-        const evidence = summaryEvidence(analyses);
-        const out = await withRetry(
-          () => summarise(profile, evidence, { placeName: folder.name }),
-          3,
-          opts.sleep,
-        );
-        profile.summary = toSummary(out, new Set(byId.keys()), classifier.id, now());
-      } catch (err) {
-        log(`  summary failed: ${err instanceof Error ? err.message : String(err)}`);
-        if (previous?.summary) profile.summary = previous.summary;
-      }
+  if (analyses.length > 0) {
+    const json = `${JSON.stringify(profile, null, 2)}\n`;
+    await writeAtomic(perClassifierPath, json);
+    if (opts.writeDefaultProfile !== false) {
+      await writeAtomic(join(folder.dir, "profile.json"), json);
     }
-  } else if (previous?.summary) {
-    // Summaries off (e.g. a compare run): keep the one already written.
-    profile.summary = previous.summary;
   }
-
-  const json = `${JSON.stringify(profile, null, 2)}\n`;
-  await writeAtomic(perClassifierPath, json);
-  if (opts.writeDefaultProfile !== false) await writeAtomic(join(folder.dir, "profile.json"), json);
 
   return {
     sourcePlaceKey: folder.sourcePlaceKey,
     analysed: fresh.length,
-    skipped,
-    noText,
-    failed,
+    skipped: result.skipped,
+    noText: result.noText,
+    failed: result.failed,
     profile,
   };
 }
 
-/** Short verbatim phrases the summary may lean on, at most 40, spread across reviews. */
-export function summaryEvidence(
-  analyses: ReviewAnalysis[],
-): { reviewId: string; kind: string; quote: string }[] {
-  const out: { reviewId: string; kind: string; quote: string }[] = [];
-  for (const a of analyses) {
-    if (!a.useful) continue;
-    const items = [
-      ...a.aspects.map((x) => ({ kind: x.aspect, quote: x.quote })),
-      ...a.dishes.map((x) => ({ kind: `dish:${x.name}`, quote: x.quote })),
-      ...a.redFlags.map((x) => ({ kind: `flag:${x.flag}`, quote: x.quote })),
-    ];
-    for (const it of items.slice(0, 3))
-      if (it.quote) out.push({ reviewId: a.reviewId, kind: it.kind, quote: it.quote });
-    if (out.length >= 40) break;
-  }
-  return out.slice(0, 40);
-}
+export { summaryEvidence } from "./pipeline";

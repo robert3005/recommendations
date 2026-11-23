@@ -4,6 +4,7 @@ export * from "./classifiers/codex";
 export * from "./classifiers/types";
 export * from "./classifiers/typesafe";
 export * from "./compare";
+export * from "./pipeline";
 export * from "./prompt";
 export * from "./run";
 export * from "./schema";

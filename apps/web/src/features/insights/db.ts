@@ -1,8 +1,9 @@
 /**
  * The review-insights store (spec/src/reviews.md): a second IndexedDB
  * database, separate from the library. It holds third-party data and what was
- * learned from it — place snapshots, photos, and per-place profiles — loaded
- * from the folder the local classify command writes. It is kept out of the
+ * learned from it — place snapshots, photos, and per-place profiles — fetched
+ * from the hosted insights service or loaded from the folder the local
+ * classify command writes. It is kept out of the
  * library so the archive, the repository invariants and publishing never
  * touch it. Review text is never loaded into the browser.
  */
@@ -19,6 +20,13 @@ export interface PlaceSourceRow {
   ratingCount?: number;
   priceLevel?: number;
   loadedAt: string;
+  /** "service": fetched by the hosted service; absent: loaded from a data folder. */
+  origin?: "service";
+  /** When the service read the reviews. */
+  fetchedAt?: string;
+  /** Reviews the service read, and how many of them had text to classify. */
+  reviewCount?: number;
+  writtenCount?: number;
 }
 
 export interface PhotoRow {

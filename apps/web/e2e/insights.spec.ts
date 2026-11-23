@@ -4,6 +4,69 @@
  * real harvest.
  */
 import { expect, test } from "@playwright/test";
+import { strToU8, zipSync } from "fflate";
+import { MOCK_INSIGHTS_ACCESS_KEY } from "../src/mocks/fixtures";
+
+const PLACE_URL =
+  "https://www.google.com/maps/place/Caf%C3%A9+Central/data=!4m2!3m1!1s0x1f9a2b:0xdeadbeef";
+
+/** One Google place with coordinates (Saved Places.json), in one Saved list. */
+function takeoutZip(): Buffer {
+  const csv = ["Title,Note,URL", `"Café Central",,"${PLACE_URL}"`].join("\n");
+  const savedPlaces = JSON.stringify({
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [-9.142, 38.712] },
+        properties: { Title: "Café Central", "Google Maps URL": PLACE_URL },
+      },
+    ],
+  });
+  return Buffer.from(
+    zipSync({
+      "Takeout/Saved/Coffee stops.csv": strToU8(csv),
+      "Takeout/Maps (your places)/Saved Places.json": strToU8(savedPlaces),
+    }),
+  );
+}
+
+test("importing a Google place reads its reviews through the service", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByTestId("insights-access-key").fill(MOCK_INSIGHTS_ACCESS_KEY);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByTestId("insights-message")).toContainText("Access key saved");
+
+  await page
+    .getByLabel("Import places file")
+    .setInputFiles({ name: "takeout.zip", mimeType: "application/zip", buffer: takeoutZip() });
+  await expect(page.getByTestId("import-report")).toContainText("1 placed");
+  await expect(page.getByTestId("insights-queue")).toContainText("1 of 1 read");
+  await expect(page.getByTestId("insights-counts")).toContainText("1 places · 1 classified");
+  await expect(page.getByTestId("fetch-missing-insights")).toContainText(
+    "Every Google place has insights",
+  );
+
+  await page.goto("/");
+  await page.getByRole("link", { name: /Coffee stops/ }).click();
+  await page.getByTestId("place-item").first().click();
+  const insights = page.getByTestId("place-details").getByTestId("place-insights");
+  await expect(insights.getByTestId("insights-summary")).toContainText("custard tarts");
+  await expect(insights.getByTestId("aspect-meter")).toHaveCount(5);
+});
+
+test("a wrong access key stops the queue with a plain message", async ({ page }) => {
+  await page.goto("/settings");
+  await page.getByTestId("insights-access-key").fill("x".repeat(43));
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page
+    .getByLabel("Import places file")
+    .setInputFiles({ name: "takeout.zip", mimeType: "application/zip", buffer: takeoutZip() });
+  await expect(page.getByTestId("insights-queue-error")).toContainText("access key is wrong");
+  await expect(page.getByTestId("fetch-missing-insights")).toContainText(
+    "Read reviews for 1 place",
+  );
+});
 
 test("sample insights render on the place card with a photo lightbox", async ({ page }) => {
   await page.goto("/");

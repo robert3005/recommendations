@@ -23,6 +23,7 @@ import { useRepo } from "../../data/RepoContext";
 import { TeardownRefusedError } from "../../data/repo";
 import { geocoder } from "../../providers";
 import { useSelectionStore } from "../../state/projection";
+import { FetchInsights } from "../insights/FetchInsights";
 import { usePhotoUrls, usePlaceInsights } from "../insights/hooks";
 import { type GalleryPhoto, PhotoGallery } from "../insights/PhotoGallery";
 import { PlaceInsightsPanel } from "../insights/PlaceInsightsPanel";
@@ -165,7 +166,11 @@ export function PlaceDetailsSheet({
         derivedTags={insights?.profile?.tags.map((t) => t.tag) ?? []}
         knownTags={knownTags}
       />
-      {insights ? <PlaceInsightsPanel source={insights.source} profile={insights.profile} /> : null}
+      {insights ? (
+        <PlaceInsightsPanel source={insights.source} profile={insights.profile} />
+      ) : insights === null ? (
+        <FetchInsights place={place} />
+      ) : null}
       <PlaceFacts
         description={place.description}
         wikipediaUrl={place.wikipediaUrl}

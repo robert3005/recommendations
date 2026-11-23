@@ -66,8 +66,27 @@ export interface SyncStorage {
   deleteLibrary(id: string): Promise<void>;
 }
 
-export class MemoryStorage implements ShareStorage, SyncStorage {
+/**
+ * Hosted review insights (spec/src/reviews.md §Hosted on import): one cached
+ * answer per Google place — place facts, photo links and the profile, never
+ * review text.
+ */
+export interface InsightsCache {
+  getInsights(sourcePlaceKey: string): Promise<{ body: string; fetchedAt: string } | undefined>;
+  putInsights(sourcePlaceKey: string, body: string, fetchedAt: string): Promise<void>;
+}
+
+export class MemoryStorage implements ShareStorage, SyncStorage, InsightsCache {
   private docs = new Map<string, StoredDocument>();
+  private insights = new Map<string, { body: string; fetchedAt: string }>();
+
+  async getInsights(sourcePlaceKey: string) {
+    return this.insights.get(sourcePlaceKey);
+  }
+
+  async putInsights(sourcePlaceKey: string, body: string, fetchedAt: string): Promise<void> {
+    this.insights.set(sourcePlaceKey, { body, fetchedAt });
+  }
   private buckets = new Map<string, { resetAt: number; count: number }>();
   private libraries = new Map<string, StoredLibrary>();
   private syncRows = new Map<string, Map<string, StoredSyncRow>>();

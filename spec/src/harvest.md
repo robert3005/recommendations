@@ -21,8 +21,10 @@ your machine                                       browser
 ```
 
 The harvester and the classifier are command-line tools that run on the owner's machine. The web
-app gains no network call: it loads place facts, photos and classifier output from the dataset,
-the same file-shaped way it imports Takeout. Review text stays on disk.
+app loads place facts, photos and classifier output from the dataset, the same file-shaped way it
+imports Takeout. Review text stays on disk. The share service runs the same SerpApi provider and
+classifier pipeline for places as they are imported ([Review Insights](./reviews.md) §Hosted on
+import), so this local route is now for comparison runs and places the service cannot reach.
 
 ## Inputs
 

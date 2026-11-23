@@ -192,3 +192,9 @@ export const SHORT_LINK_FIXTURE = {
   expanded:
     "https://www.google.com/maps/place/Colonna+&+Small's/@51.5216362,-0.1125268,17z/data=!3m1!4b1!4m6!3m5!1s0x48761b6656cb87d5:0x2e6defda184b96ec!8m2!3d51.5216329!4d-0.1099519!16s%2Fg%2F11l20l2p36",
 } as const;
+
+/**
+ * The mock share service's review-insights access key (dev and e2e only): paste
+ * it in Settings → Review insights to see the hosted flow with sample data.
+ */
+export const MOCK_INSIGHTS_ACCESS_KEY = "dev-insights-key-not-a-secret-0000000000000";

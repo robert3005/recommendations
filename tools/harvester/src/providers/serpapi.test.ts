@@ -8,6 +8,7 @@ import {
   llParam,
   normalizeSerpReview,
   type SerpPlace,
+  serpApiClient,
   serpApiProvider,
 } from "./serpapi";
 import type { HarvestOptions } from "./types";
@@ -224,6 +225,43 @@ describe("SerpApi provider", () => {
       fetch: empty.fetchImpl,
     }).harvest([{ query: "nothing here", kind: "search" }], options);
     expect(result).toEqual({ places: [], failures: [] });
+  });
+});
+
+describe("SerpApi client: one known place", () => {
+  it("looks a feature id up by coordinates, with no file system", async () => {
+    const { fetchImpl, requests } = fakeFetch(() => ({ place_results: katz }));
+    const client = serpApiClient({ apiKey: "k", maxReviews: 10, fetch: fetchImpl });
+    const found = await client.placeByKey(
+      { sourcePlaceKey: DATA_ID, name: "Katz's", lat: 40.7222, lng: -73.9874 },
+      { language: "en", depth: 1 },
+    );
+    expect(found?.title).toBe("Katz's Delicatessen");
+    expect(requests[0]?.get("data")).toBe(`!4m5!3m4!1s${DATA_ID}!8m2!3d40.7222!4d-73.9874`);
+  });
+
+  it("searches by name near the place and never returns a different listing", async () => {
+    const other = { ...katz, data_id: "0x1:0x2", data_cid: "1" };
+    const { fetchImpl, requests } = fakeFetch(() => ({ local_results: [other] }));
+    const client = serpApiClient({ apiKey: "k", maxReviews: 10, fetch: fetchImpl });
+    const target = {
+      sourcePlaceKey: "cid:3545819340560108778",
+      name: "Katz's",
+      lat: 40.7,
+      lng: -74,
+    };
+    expect(await client.placeByKey(target, { language: "en", depth: 1 })).toBeUndefined();
+    expect(requests[0]?.get("ll")).toBe("@40.7,-74,1000m");
+
+    const { fetchImpl: ok } = fakeFetch(() => ({ local_results: [other, katz] }));
+    const found = await serpApiClient({ apiKey: "k", maxReviews: 10, fetch: ok }).placeByKey(
+      target,
+      {
+        language: "en",
+        depth: 1,
+      },
+    );
+    expect(found?.data_cid).toBe("3545819340560108778");
   });
 });
 

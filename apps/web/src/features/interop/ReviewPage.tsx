@@ -13,6 +13,7 @@ import { nowIso } from "../../lib/time";
 import { geocoder } from "../../providers";
 import { paneCovered, usePaneStore } from "../../state/pane";
 import { useCanvasProjection, useProjectionStore } from "../../state/projection";
+import { queueMissingInsights } from "../insights/remote";
 import {
   type ConflictResolution,
   isGeocodePending,
@@ -88,6 +89,7 @@ export function ReviewPage() {
           });
         }
         if (outcome.status === "resolved") {
+          void queueMissingInsights(repo, nowIso).catch(() => undefined);
           setConflict(undefined);
           setPlacing(false);
           if (outcome.droppedNote) {

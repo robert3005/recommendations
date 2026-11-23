@@ -14,6 +14,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@placemarks/classify": "workspace:*",
+    "@placemarks/domain": "workspace:*",
+    "@placemarks/harvester": "workspace:*",
     "@placemarks/schemas": "workspace:*",
     "@placemarks/service-kit": "workspace:*",
     "hono": "^4.6.0"

@@ -5,6 +5,7 @@
  */
 import type {
   DocumentKind,
+  InsightsCache,
   ShareStorage,
   StoredDocument,
   StoredLibrary,
@@ -37,8 +38,26 @@ interface DocumentRow {
   updated_at: string;
 }
 
-export class D1Storage implements ShareStorage, SyncStorage {
+export class D1Storage implements ShareStorage, SyncStorage, InsightsCache {
   constructor(private readonly db: D1Like) {}
+
+  async getInsights(sourcePlaceKey: string) {
+    const row = await this.db
+      .prepare("SELECT body, fetched_at FROM insights WHERE source_place_key = ?1")
+      .bind(sourcePlaceKey)
+      .first<{ body: string; fetched_at: string }>();
+    return row ? { body: row.body, fetchedAt: row.fetched_at } : undefined;
+  }
+
+  async putInsights(sourcePlaceKey: string, body: string, fetchedAt: string): Promise<void> {
+    await this.db
+      .prepare(
+        "INSERT INTO insights (source_place_key, body, fetched_at) VALUES (?1, ?2, ?3) " +
+          "ON CONFLICT(source_place_key) DO UPDATE SET body = ?2, fetched_at = ?3",
+      )
+      .bind(sourcePlaceKey, body, fetchedAt)
+      .run();
+  }
 
   async get(kind: DocumentKind, slug: string): Promise<StoredDocument | undefined> {
     const row = await this.db
