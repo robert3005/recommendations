@@ -87,6 +87,16 @@ There is one shadow, `--shadow-lift`: a wide, soft lift reserved for things that
 over the map, popups and menus, and the primary action. Everything else is flat; elevation is
 otherwise drawn with hairlines.
 
+### Icons
+
+The shell's controls — hide or show the panel, move the phone's sheet down or up, Settings —
+are **drawn**, not typed: small stroke icons in `currentColor`, one weight, round joins. A
+Unicode arrow or gear is whatever the device's font makes of it, thin on one machine and an
+emoji on the next. Each control is a 32px round target with a hairline edge and the hover fill,
+and it shows what it does on the device in hand: on a phone the notebook is a sheet, so the
+controls are a chevron down and a chevron up; on a wider screen it is a panel, so the control is
+a window with its side panel tucking away. A step that cannot be taken is not drawn.
+
 ## Type
 
 All faces are open-licensed and self-hosted with the app (Latin and Latin Extended subsets), so

@@ -27,6 +27,13 @@ import { AddPlaceField } from "./features/search/AddPlaceField";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { PublishedListView } from "./features/share/PublishedListView";
 import { PublishedPostView } from "./features/share/PublishedPostView";
+import {
+  ChevronDownIcon,
+  ChevronUpIcon,
+  GearIcon,
+  PanelCloseIcon,
+  PanelOpenIcon,
+} from "./lib/icons";
 import { MapCanvas } from "./map/MapCanvas";
 import { type DesktopPane, type SheetDetent, usePaneStore } from "./state/pane";
 import { useSelectionStore } from "./state/projection";
@@ -53,6 +60,15 @@ function paneClasses(desktop: DesktopPane, sheet: SheetDetent, placeOpen: boolea
 export function mapCanvasClasses(): string {
   return "absolute inset-0 md:relative md:inset-auto md:order-3 md:h-full md:min-w-0 md:flex-1";
 }
+
+/**
+ * One look for every control in the top bar: a 32px round target with a drawn
+ * icon, a hairline edge, and the hover fill. A step that cannot be taken is
+ * not drawn — the width goes to search.
+ */
+const CHROME_BUTTON =
+  "flex size-8 shrink-0 items-center justify-center rounded-pill border border-hairline text-ink " +
+  "hover:bg-hover focus-visible:border-ink disabled:hidden";
 
 export function isPublicViewerPath(pathname: string): boolean {
   return pathname.startsWith("/l/") || pathname.startsWith("/p/");
@@ -127,9 +143,10 @@ function RootLayout() {
             type="button"
             data-testid="pane-reopen"
             onClick={() => setDesktop("split")}
-            className="absolute bottom-16 left-3 z-10 hidden rounded-pill border border-hairline bg-paper px-3.5 py-1.5 text-sm font-medium text-ink shadow-lift md:block"
+            className="absolute bottom-16 left-3 z-10 hidden items-center gap-2 rounded-pill border border-hairline bg-paper py-1.5 pr-3.5 pl-2.5 text-sm font-medium text-ink shadow-lift hover:bg-hover md:flex"
           >
-            {readOnly ? "⟩ Shared page" : "⟩ Lists"}
+            <PanelOpenIcon />
+            {readOnly ? "Shared page" : "Show panel"}
           </button>
         ) : null}
       </div>
@@ -145,7 +162,7 @@ function RootLayout() {
           className="flex h-5 shrink-0 items-center justify-center md:hidden"
           onClick={() => (sheet === "full" ? collapse() : expand())}
         >
-          <span aria-hidden="true" className="h-1 w-10 rounded-full bg-hairline" />
+          <span aria-hidden="true" className="h-1.5 w-11 rounded-full bg-ink/25" />
         </button>
         {/* The top bar is for SEARCH: the wordmark home affordance, the search
             field filling the rest, the review pill only while an import batch
@@ -194,27 +211,30 @@ function RootLayout() {
           {/* One step toward the map / toward the content — the map is one
               collapse away, never a tab switch. A step that cannot be taken is
               not drawn: the width goes to search. */}
+          {/* The control says what it does on the device in hand: on a phone
+              the notebook is a sheet that moves down and up; on a wider screen
+              it is a panel that tucks away to the side. */}
           <button
             type="button"
             aria-label="Show more map"
-            title="Show more map"
+            title={mode === "desktop" ? "Hide the panel" : "Show more map"}
             data-testid="pane-collapse"
             disabled={atMapEnd}
             onClick={collapse}
-            className="flex size-7 shrink-0 items-center justify-center rounded-pill border border-hairline text-xs text-ink hover:bg-hover disabled:hidden"
+            className={CHROME_BUTTON}
           >
-            ⟨
+            {mode === "desktop" ? <PanelCloseIcon /> : <ChevronDownIcon />}
           </button>
           <button
             type="button"
             aria-label="Show more content"
-            title="Show more content"
+            title={mode === "desktop" ? "Show the panel" : "Show more of the page"}
             data-testid="pane-expand"
             disabled={atContentEnd}
             onClick={expand}
-            className="flex size-7 shrink-0 items-center justify-center rounded-pill border border-hairline text-xs text-ink hover:bg-hover disabled:hidden"
+            className={CHROME_BUTTON}
           >
-            ⟩
+            {mode === "desktop" ? <PanelOpenIcon /> : <ChevronUpIcon />}
           </button>
           {/* Settings sits in the top bar, so nothing floats over the page. */}
           {!readOnly ? (
@@ -224,11 +244,9 @@ function RootLayout() {
               aria-pressed={onSettings}
               data-testid="settings-gear"
               onClick={toggleSettings}
-              className={`flex size-7 shrink-0 items-center justify-center rounded-pill border border-hairline text-sm ${
-                onSettings ? "bg-ink text-paper" : "text-ink hover:bg-hover"
-              }`}
+              className={`${CHROME_BUTTON} ${onSettings ? "border-ink bg-ink text-paper hover:bg-ink" : ""}`}
             >
-              <span aria-hidden="true">⚙</span>
+              <GearIcon />
             </button>
           ) : null}
         </header>
@@ -254,9 +272,9 @@ function RootLayout() {
           aria-pressed={onSettings}
           data-testid="settings-gear-floating"
           onClick={toggleSettings}
-          className="absolute bottom-3 left-3 z-30 rounded-pill border border-hairline bg-paper px-2.5 py-1.5 text-sm text-ink shadow-lift"
+          className="absolute bottom-3 left-3 z-30 flex size-9 items-center justify-center rounded-pill border border-hairline bg-paper text-ink shadow-lift hover:bg-hover"
         >
-          <span aria-hidden="true">⚙</span>
+          <GearIcon />
         </button>
       ) : null}
     </div>
