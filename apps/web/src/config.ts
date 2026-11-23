@@ -47,28 +47,15 @@ export const MAP_STYLE_URL: string =
   import.meta.env.VITE_MAP_STYLE_URL ?? "https://tiles.openfreemap.org/styles/positron";
 
 /**
- * Geocoder `search` kind (spec/src/data-sources.md §Geocoder): Photon-class by
- * default (keyless dev demo), or a Pelias-class autocomplete endpoint for real
- * POI/venue search (Stadia Maps, geocode.earth, self-hosted Pelias).
+ * Place search (spec/src/data-sources.md §Geocoder): Stadia Maps' geocoder —
+ * the `/v2/…` endpoints live under this base. Keyless from localhost; a
+ * deployed site registers its domain with Stadia or sets VITE_STADIA_KEY.
  */
-export const GEOCODER_KIND: "photon" | "pelias" =
-  import.meta.env.VITE_GEOCODER === "pelias" ? "pelias" : "photon";
+export const STADIA_URL: string =
+  import.meta.env.VITE_STADIA_URL || "https://api.stadiamaps.com/geocoding";
 
-/** Geocoder `search` — Photon-class forward geocoding (spec/src/data-sources.md). */
-export const PHOTON_URL: string = import.meta.env.VITE_PHOTON_URL ?? "https://photon.komoot.io";
-
-/** Pelias-class endpoint base. No default — Pelias has no keyless public demo. */
-export const PELIAS_URL: string | undefined = import.meta.env.VITE_PELIAS_URL;
-
-/** Optional Pelias key, sent as the `api_key` query param only — never a header. */
-export const PELIAS_KEY: string | undefined = import.meta.env.VITE_PELIAS_KEY;
-
-/**
- * Optional comma-separated Pelias `sources` filter, e.g.
- * `openstreetmap,foursquare,openaddresses` to opt in to a provider's extra
- * venue data. Unset = the provider's default source set.
- */
-export const PELIAS_SOURCES: string | undefined = import.meta.env.VITE_PELIAS_SOURCES || undefined;
+/** Optional Stadia key, sent as the `api_key` query param only — never a header. */
+export const STADIA_KEY: string | undefined = import.meta.env.VITE_STADIA_KEY || undefined;
 
 /** Geocoder `lookup` — exact element fetch for OSM element URL paste. */
 export const OSM_API_URL: string =

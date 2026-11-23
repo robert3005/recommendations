@@ -10,7 +10,6 @@ function build(extra: Record<string, string>) {
   const env: Record<string, string | undefined> = {
     ...process.env,
     NODE_ENV: "production",
-    VITE_PHOTON_URL: "https://photon.example",
     VITE_OSM_API_URL: "https://osm.example",
     ...extra,
   };

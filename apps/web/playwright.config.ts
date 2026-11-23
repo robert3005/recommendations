@@ -36,7 +36,7 @@ export default defineConfig({
       env: {
         // Deterministic, network-free basemap for map-display tests.
         VITE_MAP_STYLE_URL: "/test-style.json",
-        // OSM/Photon served by MSW fixtures — e2e never hits public services.
+        // Search and OSM lookup served by MSW fixtures — e2e never hits public services.
         VITE_ENABLE_MSW: "true",
       },
     },
@@ -49,7 +49,6 @@ export default defineConfig({
         VITE_MAP_STYLE_URL: "/test-style.json",
         // The production build fails closed without explicit provider config;
         // the offline test never touches these, they just must be explicit.
-        VITE_PHOTON_URL: "http://localhost:4319",
         VITE_OSM_API_URL: "http://localhost:4319",
       },
     },

@@ -41,35 +41,41 @@ on no basemap layer schema, so switching providers is a configuration change.
 
 ## Geocoder
 
-One adapter, two calls, possibly two endpoints:
+One interface, two providers. Place search runs on **Stadia Maps' geocoder (v2)**, which serves
+OSM plus Foursquare OS Places venues, deduplicated; exact element lookup runs on the OSM API.
 
-- `search(text, bias?)` — forward geocoding via a Photon-class **or** Pelias-class autocomplete
-  endpoint, selected by `VITE_GEOCODER` (`photon` is the keyless development default; `pelias`
-  requires `VITE_PELIAS_URL`, with an optional `VITE_PELIAS_KEY` sent as a query parameter).
-  Serves the search field and the Title + Address step of the import coordinate ladder
-  ([Import & Export](./interop.md)).
-- `lookup(osmRef)` — exact element fetch via a Nominatim `/lookup`-class endpoint or the OSM API.
-  Serves OSM element URL paste.
+- `suggest(text, bias?)` — `/v2/autocomplete`, the search field's dropdown. One credit per
+  keystroke, and deliberately slim: a name, a coarse "where" line and a `gid` — **no
+  coordinates**.
+- `resolve(gid)` — `/v2/place_details` for the one suggestion the user picks: its position and
+  address. The confirm card opens only once this answers; failing, the field offers Retry.
+- `search(text, bias?)` — `/v2/search`, full records in one call. Serves the Title + Address step
+  of the import coordinate ladder ([Import & Export](./interop.md)), which needs every result's
+  position. Asked for a name and an address across all layers, Stadia answers with the
+  address record alone, so the adapter asks for venues first and widens to addresses, streets and
+  localities only when no venue matches.
+- `lookup(osmRef)` — exact element fetch on the OSM API. Serves OSM element URL paste and
+  add-time enrichment.
 
-A search candidate records the result's `osmRef` whenever the upstream sources it from OSM
-([Data Model](./data-model.md)); Photon-class results always do. Pelias-class results may come
-from other sources (OpenAddresses, Who's on First, Foursquare OS Places) and then carry no
+A result records its `osmRef` whenever Stadia sources it from OSM ([Data Model](./data-model.md)).
+A result from any other source (Foursquare OS Places, OpenAddresses, Who's on First) carries no
 `osmRef` — such a pick behaves like manual placement: no ODbL attribution claim, no OSM element
-link. `VITE_PELIAS_SOURCES` optionally names the upstream sources to search, for a provider whose
-extra venue data is opt-in.
+link, and often only a coarse location for an address. The adapter owns cancellation, result
+normalisation, and retry; the field owns debouncing; callers see plain lists.
 
-Pelias-class endpoints are Stadia Maps (`https://api.stadiamaps.com/geocoding`, OSM plus
-Foursquare OS Places venues; keyless on localhost, and permanent storage of results needs its
-Standard plan), geocode.earth, and a self-hosted Pelias. Geoapify has its own API shape and would
-need its own adapter. The adapter owns
-debouncing, cancellation, result normalisation, and retry; callers see plain candidate lists.
+Stadia needs no key from localhost. A deployed site authenticates by registering its domain in
+the Stadia dashboard — nothing secret in the bundle — or with `VITE_STADIA_KEY`, sent as a query
+parameter. `VITE_STADIA_URL` points the adapter at another host serving the same API. Keeping
+saved results permanently needs Stadia's Standard plan; below it, storage is temporary only.
 
-Public endpoints such as photon.komoot.io and nominatim.openstreetmap.org carry strict usage
-policies and are development-only configurations. Production configuration is explicit and fails
-closed with either geocoder kind: a production build with any capability unconfigured refuses to
-run against public defaults. A personal test deployment counts as a development configuration:
-building with `PLACEMARKS_TEST_DEPLOY=1` lets search and lookup point at the public demo
-geocoders, at development volumes. The basemap never qualifies.
+The self-hosting exit is an index of Overture places plus OSM behind the same four calls — not
+another hosted geocoder. Photon-class and Pelias v1 adapters existed until 2026-11-23 and were
+removed with this choice.
+
+The public OSM API carries a strict usage policy and is a development-only configuration: a
+production build refuses to run against it. A personal test deployment counts as a development
+configuration: building with `PLACEMARKS_TEST_DEPLOY=1` lets lookup point at the public OSM API,
+at development volumes. The basemap never qualifies.
 
 ## Wikipedia summaries
 
@@ -87,7 +93,8 @@ changes.
 Each provider observes exactly one slice of activity:
 
 - tile servers see requested tile coordinates and network metadata;
-- the geocoder sees typed search text and, during the import ladder, a row's Title and Address;
+- Stadia Maps, the search provider, sees typed search text and, during the import ladder, a row's
+  Title and Address; the OSM API sees the element ids looked up;
 - Wikipedia sees only the article title an OSM element itself names — never search text, place
   names, or anything the user wrote;
 - the share service sees the documents the owner explicitly publishes

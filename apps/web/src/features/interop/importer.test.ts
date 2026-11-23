@@ -213,7 +213,7 @@ class MemoryRepo {
 
 function geocoderStub(
   byQuery: Record<string, GeocoderCandidate[]>,
-): Geocoder & { calls: string[] } {
+): Pick<Geocoder, "search"> & { calls: string[] } {
   const calls: string[] = [];
   return {
     calls,
@@ -221,11 +221,10 @@ function geocoderStub(
       calls.push(text);
       return Promise.resolve(byQuery[text] ?? []);
     },
-    lookup: () => Promise.resolve(undefined),
   };
 }
 
-function failingGeocoder(): Geocoder & { calls: string[] } {
+function failingGeocoder(): Pick<Geocoder, "search"> & { calls: string[] } {
   const calls: string[] = [];
   return {
     calls,
@@ -233,7 +232,6 @@ function failingGeocoder(): Geocoder & { calls: string[] } {
       calls.push(text);
       return Promise.reject(new Error("geocoder down"));
     },
-    lookup: () => Promise.resolve(undefined),
   };
 }
 

@@ -11,7 +11,6 @@ test("a production build rejects the known development/demo provider path", () =
     ...process.env,
     NODE_ENV: "production",
     VITE_MAP_STYLE_URL: "https://tiles.openfreemap.org/styles/bright",
-    VITE_PHOTON_URL: "https://photon.komoot.io",
     VITE_OSM_API_URL: "https://api.openstreetmap.org",
   };
   delete env.PLACEMARKS_STORYBOOK;
@@ -31,14 +30,13 @@ test("a production build rejects the known development/demo provider path", () =
   }
 }, 30_000);
 
-test("a test deployment may search with the demo geocoders, never draw a demo basemap", () => {
+test("a test deployment may look up on the public OSM API, never draw a demo basemap", () => {
   const outDir = mkdtempSync(join(tmpdir(), "placemarks-test-deploy-build-"));
   const base: Record<string, string | undefined> = {
     ...process.env,
     NODE_ENV: "production",
     PLACEMARKS_TEST_DEPLOY: "1",
     VITE_MAP_STYLE_URL: "https://tiles.example/style.json",
-    VITE_PHOTON_URL: "https://photon.komoot.io",
     VITE_OSM_API_URL: "https://api.openstreetmap.org",
   };
   delete base.PLACEMARKS_STORYBOOK;
@@ -65,3 +63,28 @@ test("a test deployment may search with the demo geocoders, never draw a demo ba
     rmSync(outDir, { recursive: true, force: true });
   }
 }, 60_000);
+
+test("an overriding search endpoint is checked like every other provider URL", () => {
+  const outDir = mkdtempSync(join(tmpdir(), "placemarks-search-url-build-"));
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    NODE_ENV: "production",
+    VITE_MAP_STYLE_URL: "https://tiles.example/style.json",
+    VITE_OSM_API_URL: "https://osm.example",
+    VITE_STADIA_URL: "https://nominatim.openstreetmap.org",
+  };
+  delete env.PLACEMARKS_STORYBOOK;
+
+  try {
+    const result = spawnSync(
+      "pnpm",
+      ["exec", "vite", "build", "--emptyOutDir", "--outDir", outDir],
+      { cwd: process.cwd(), encoding: "utf8", env },
+    );
+    const output = [result.stdout, result.stderr].filter(Boolean).join("\n");
+    expect(result.status, output).not.toBe(0);
+    expect(output).toMatch(/VITE_STADIA_URL/);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+}, 30_000);

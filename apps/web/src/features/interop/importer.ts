@@ -14,7 +14,8 @@ import type { Geocoder } from "../../providers";
 import { type ParsedItem, type ParsedList, parseImportFile } from "./parse";
 
 export interface ImportDeps {
-  geocoder: Geocoder;
+  /** The ladder needs every result's position, so it uses the full `search`. */
+  geocoder: Pick<Geocoder, "search">;
 }
 
 export interface ImportReport {
@@ -155,7 +156,7 @@ function candidateKey(c: GeocoderCandidate): string {
  * only one when the first settles it.
  */
 async function geocodeAndDecide(
-  geocoder: Geocoder,
+  geocoder: Pick<Geocoder, "search">,
   row: { title: string; address?: string },
   anchors: readonly Point[] = [],
 ): Promise<{ decision: Decision; candidates: GeocoderCandidate[] }> {

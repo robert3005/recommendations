@@ -10,7 +10,6 @@ test("a production build fails closed when required provider configuration is ab
   const env: Record<string, string | undefined> = { ...process.env, NODE_ENV: "production" };
   for (const key of [
     "VITE_MAP_STYLE_URL",
-    "VITE_PHOTON_URL",
     "VITE_OSM_API_URL",
     "VITE_ENABLE_MSW",
     "PLACEMARKS_STORYBOOK",
@@ -36,12 +35,7 @@ test("a production build fails closed when required provider configuration is ab
 test("the Storybook static build does not require production provider credentials", () => {
   const outDir = mkdtempSync(join(tmpdir(), "placemarks-phase01-storybook-"));
   const env = { ...process.env };
-  for (const key of [
-    "VITE_MAP_STYLE_URL",
-    "VITE_PHOTON_URL",
-    "VITE_OSM_API_URL",
-    "PLACEMARKS_STORYBOOK",
-  ]) {
+  for (const key of ["VITE_MAP_STYLE_URL", "VITE_OSM_API_URL", "PLACEMARKS_STORYBOOK"]) {
     delete env[key];
   }
 

@@ -23,9 +23,15 @@ added: the Photon demo did not find it and the short link was refused. Two rules
 
 - **"OSM-derived search only" became the keep-and-show rule.** A provider is allowed when its
   terms let a saved place be kept for good and drawn on our map. That admits Foursquare OS Places
-  and Overture (open licences) and Stadia Maps' Pelias-class endpoint, which serves OSM plus
-  Foursquare venues. It still excludes Google Places, HERE and TomTom — now for their caching and
-  display terms, not on principle. Geoapify was wrongly listed as Pelias-class and was removed.
+  and Overture (open licences) and Stadia Maps, which serves OSM plus Foursquare venues. It still
+  excludes Google Places, HERE and TomTom — now for their caching and display terms, not on
+  principle.
+- **Search is Stadia Maps, v2, and nothing else.** A live check found the shop through Stadia
+  (from Foursquare) and confirmed it is absent from OSM. The Photon and Pelias v1 adapters and
+  the `VITE_GEOCODER` switch were deleted rather than kept as options: if search is ever
+  self-hosted it will be an Overture-plus-OSM index, not another hosted geocoder. v2 autocomplete
+  costs a twentieth of v1 per keystroke but returns no coordinates, so the field shows
+  suggestions and fetches the full record only for the one picked.
 - **"Pasted links are never fetched" became "no map page is ever fetched".** The share service
   follows a short link's redirect and returns only the full URL, which is parsed on the device as
   before. The cost is one request to Google per pasted short link, from the service.

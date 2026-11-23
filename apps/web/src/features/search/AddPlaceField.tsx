@@ -26,7 +26,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useLists } from "../../data/hooks";
 import { useRepo } from "../../data/RepoContext";
 import type { NewPlaceFacts } from "../../data/repo";
-import { geocoder } from "../../providers";
+import { geocoder, type PlaceSuggestion } from "../../providers";
 import { useLibraryStore } from "../../state/library";
 import { useSelectionStore } from "../../state/projection";
 import { useUiStore } from "../../state/ui";
@@ -43,6 +43,8 @@ type Pending =
   | { mode: "lookup-error"; ref: OsmRef; message: string }
   | { mode: "expand"; url: string }
   | { mode: "expand-error"; url: string }
+  | { mode: "resolve"; suggestion: PlaceSuggestion }
+  | { mode: "resolve-error"; suggestion: PlaceSuggestion }
   | { mode: "confirm"; facts: Omit<NewPlaceFacts, "name">; suggestedName?: string };
 
 function useDebounced<T>(value: T, delayMs: number): T {
@@ -71,7 +73,7 @@ const PANEL =
 type Option =
   | { kind: "library"; facets: PlaceFacets }
   | { kind: "all"; count: number }
-  | { kind: "geo"; candidate: GeocoderCandidate };
+  | { kind: "geo"; suggestion: PlaceSuggestion };
 
 export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps) {
   const repo = useRepo();
@@ -88,8 +90,8 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
   const debouncedQuery = useDebounced(query.trim(), 250);
   const listboxId = useId();
   const fieldRef = useRef<HTMLDivElement>(null);
-  /** Counts short-link expansions so a late answer never lands on a newer state. */
-  const expandRun = useRef(0);
+  /** Counts paste/pick fetches so a late answer never lands on a newer state. */
+  const asyncRun = useRef(0);
 
   // The results are a transient dropdown: pressing anywhere outside the field
   // (the map, a list, the gear, the home link) or moving focus elsewhere puts
@@ -132,11 +134,11 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
 
   const searchQuery = useQuery({
     queryKey: ["geocode", debouncedQuery, bias?.lat, bias?.lng],
-    queryFn: () => geocoder.search(debouncedQuery, bias),
+    queryFn: () => geocoder.suggest(debouncedQuery, bias),
     enabled: debouncedQuery.length >= 2,
     placeholderData: (prev) => prev,
   });
-  const results: GeocoderCandidate[] = debouncedQuery.length >= 2 ? (searchQuery.data ?? []) : [];
+  const results: PlaceSuggestion[] = debouncedQuery.length >= 2 ? (searchQuery.data ?? []) : [];
 
   // The library answers instantly and comes first: what you saved outranks
   // anything the wider map knows.
@@ -149,11 +151,11 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
     ),
   );
   // A geocoder hit that is already saved is not offered as "new"; identical
-  // name + address repeats collapse to one row.
+  // name + location repeats collapse to one row.
   const seenGeo = new Set<string>();
   const freshResults = results.filter((c) => {
     if (c.osmRef && savedOsm.has(`${c.osmRef.type}/${c.osmRef.id}`)) return false;
-    const key = `${c.name}|${c.address ?? ""}`;
+    const key = `${c.name}|${c.where ?? ""}`;
     if (seenGeo.has(key)) return false;
     seenGeo.add(key);
     return true;
@@ -165,7 +167,7 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
     ...(libraryMatches.length > 0 && onShowAll
       ? [{ kind: "all", count: libraryMatches.length } as const]
       : []),
-    ...freshResults.map((candidate) => ({ kind: "geo", candidate }) as const),
+    ...freshResults.map((suggestion) => ({ kind: "geo", suggestion }) as const),
   ];
 
   const showAll = () => {
@@ -185,7 +187,7 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
     } else if (option.kind === "all") {
       showAll();
     } else {
-      pickCandidate(option.candidate);
+      void pickSuggestion(option.suggestion);
     }
   };
 
@@ -226,7 +228,7 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
    * parsing as a pasted one. A stale answer (the user moved on) is dropped.
    */
   const expandLink = async (url: string) => {
-    const run = ++expandRun.current;
+    const run = ++asyncRun.current;
     setPending({ mode: "expand", url });
     let expanded: string | undefined;
     try {
@@ -234,7 +236,7 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
     } catch {
       expanded = undefined;
     }
-    if (run !== expandRun.current) return;
+    if (run !== asyncRun.current) return;
     const parsed = expanded ? parsePastedLink(expanded) : undefined;
     if (!parsed || parsed.kind !== "google") {
       setPending({ mode: "expand-error", url });
@@ -289,11 +291,29 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
     return true;
   };
 
-  const pickCandidate = (candidate: GeocoderCandidate) => {
+  /**
+   * A suggestion is only a name and a rough "where": the pick fetches the full
+   * record — its position and address — before the confirm card can open. A
+   * stale answer (the user moved on) is dropped.
+   */
+  const pickSuggestion = async (suggestion: PlaceSuggestion) => {
+    const run = ++asyncRun.current;
     setOpen(false);
     setActiveIndex(-1);
-    // Geocoder results are OSM data: the pick records its osmRef
-    // (spec/src/data-model.md §Normative rules).
+    setPending({ mode: "resolve", suggestion });
+    let candidate: GeocoderCandidate | undefined;
+    try {
+      candidate = await geocoder.resolve(suggestion.id);
+    } catch {
+      candidate = undefined;
+    }
+    if (run !== asyncRun.current) return;
+    if (!candidate) {
+      setPending({ mode: "resolve-error", suggestion });
+      return;
+    }
+    // A result sourced from OSM records its osmRef; any other source carries
+    // none (spec/src/data-model.md §Normative rules).
     confirmFacts(
       {
         lat: candidate.lat,
@@ -307,7 +327,7 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
   };
 
   const reset = () => {
-    expandRun.current++;
+    asyncRun.current++;
     setPending(undefined);
     setQuery("");
     setName("");
@@ -410,7 +430,7 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
                         ? `lib-${option.facets.place.id}`
                         : option.kind === "all"
                           ? "all"
-                          : `geo-${index.toString()}-${option.candidate.lat}-${option.candidate.lng}`
+                          : `geo-${option.suggestion.id}`
                     }
                     role="presentation"
                   >
@@ -470,10 +490,10 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
                         onMouseEnter={() => setActiveIndex(index)}
                         className={`block w-full px-3 py-2 text-left text-sm ${active}`}
                       >
-                        <span className="font-medium text-ink">{option.candidate.name}</span>
-                        {option.candidate.address ? (
+                        <span className="font-medium text-ink">{option.suggestion.name}</span>
+                        {option.suggestion.where ? (
                           <span className="block text-xs text-ink/60">
-                            {option.candidate.address}
+                            {option.suggestion.where}
                           </span>
                         ) : null}
                       </button>
@@ -567,6 +587,34 @@ export function AddPlaceField({ bias: biasProp, onShowAll }: AddPlaceFieldProps)
               onClick={() => void expandLink(pending.url)}
               className="font-medium underline"
               data-testid="link-expand-retry"
+            >
+              Retry
+            </button>
+            <button type="button" onClick={reset} className="underline">
+              Cancel
+            </button>
+          </span>
+        </output>
+      ) : null}
+
+      {pending?.mode === "resolve" ? (
+        <output
+          className={`${PANEL} block p-2 text-xs text-ink/60`}
+          data-testid="place-resolve-pending"
+        >
+          Finding {pending.suggestion.name}…
+        </output>
+      ) : null}
+
+      {pending?.mode === "resolve-error" ? (
+        <output className={`${PANEL} block p-2 text-xs text-ink`} data-testid="place-resolve-error">
+          Could not load {pending.suggestion.name}. Try again when you are online.
+          <span className="ml-2 inline-flex gap-2">
+            <button
+              type="button"
+              onClick={() => void pickSuggestion(pending.suggestion)}
+              className="font-medium underline"
+              data-testid="place-resolve-retry"
             >
               Retry
             </button>

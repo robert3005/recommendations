@@ -19,10 +19,10 @@ test("basemap and geocoder failures keep the shell usable with designed states",
     route.fulfill({ status: 503, contentType: "application/json", body: "{}" }),
   );
   // With MSW blocked, keep the geocoder failure local and deterministic. Pin
-  // the route to the geocoder HOST: a bare /photon/ pattern would also abort
-  // the dev server's own /src/providers/photon.ts module request and the app
+  // the route to the geocoder HOST: a bare /stadia/ pattern would also abort
+  // the dev server's own /src/providers/stadia.ts module request and the app
   // would never mount.
-  await page.route("**://photon.komoot.io/**", (route) => route.abort());
+  await page.route("**://api.stadiamaps.com/**", (route) => route.abort());
 
   await page.goto("/");
 

@@ -1,204 +1,226 @@
 /**
  * Geocoder adapter tests against MSW fixtures (spec/src/data-sources.md
- * §Geocoder): search and lookup normalize to domain GeocoderCandidate.
- * Photon results always record an osmRef; Pelias-class results record one
- * only when sourced from OSM — other open sources yield candidates without
- * one, treated like manual coordinates.
+ * §Geocoder). Stadia v2 search: slim suggestions without coordinates, the
+ * full record for a picked gid, full results for the import ladder — an
+ * osmRef only when the result is sourced from OSM, other sources treated like
+ * manual coordinates. OSM API lookup normalizes an element to a candidate.
  */
 import { HttpResponse, http } from "msw";
 import { describe, expect, it, vi } from "vitest";
-import { PELIAS_TEST_URL } from "../mocks/fixtures";
+import {
+  stadiaCafePlaces,
+  stadiaCollection,
+  stadiaFoursquarePlace,
+  stadiaSuggestion,
+} from "../mocks/fixtures";
 import { server } from "../mocks/server";
 import { OsmApiGeocoder } from "./osmApi";
-import { PeliasGeocoder } from "./pelias";
-import { PhotonGeocoder } from "./photon";
+import { StadiaGeocoder } from "./stadia";
 import { wikipediaSummary } from "./wikipedia";
 
-describe("PhotonGeocoder.search", () => {
-  it("normalizes features to candidates recording osmRef, dropping ref-less ones", async () => {
-    const results = await new PhotonGeocoder().search("cafe");
-    expect(results).toHaveLength(2); // the third fixture has no osm_id
-    expect(results[0]).toMatchObject({
-      name: "Café Central",
-      address: "Rua Example 12, Lisboa 1100-000",
-      osmRef: { type: "node", id: "101" },
+const STADIA_TEST_URL = "https://stadia.test";
+
+/** Serve one v2 endpoint at the test base, recording the request URLs. */
+function serve(endpoint: string, features: unknown[], seen: URL[] = []): URL[] {
+  server.use(
+    http.get(`${STADIA_TEST_URL}/v2/${endpoint}`, ({ request }) => {
+      seen.push(new URL(request.url));
+      return HttpResponse.json(stadiaCollection(features));
+    }),
+  );
+  return seen;
+}
+
+describe("StadiaGeocoder.suggest", () => {
+  it("reads slim autocomplete rows — no coordinates — taking the osmRef from the gid", async () => {
+    serve("autocomplete", [
+      stadiaSuggestion(stadiaFoursquarePlace),
+      ...stadiaCafePlaces.map(stadiaSuggestion),
+      { type: "Feature", geometry: null, properties: { gid: "x:y:z" } }, // nameless
+      { type: "Feature", geometry: null, properties: { name: "No handle" } }, // no gid
+    ]);
+    const results = await new StadiaGeocoder(STADIA_TEST_URL, undefined).suggest("caf");
+    expect(results).toEqual([
+      {
+        id: "foursquare:venue:652285383d92070f5588d28b",
+        name: "Colonna & Small’s",
+        where: "London, England",
+      },
+      {
+        id: "openstreetmap:venue:node/101",
+        name: "Café Central",
+        where: "Lisboa, Portugal",
+        osmRef: { type: "node", id: "101" },
+      },
+      {
+        id: "openstreetmap:venue:way/201",
+        name: "Café do Rio",
+        where: "Lisboa, Portugal",
+        osmRef: { type: "way", id: "201" },
+      },
+    ]);
+  });
+
+  it("sends text, size, layers, focus bias and api_key as query params — never a header", async () => {
+    let authorization: string | null = "unset";
+    const seen: URL[] = [];
+    server.use(
+      http.get(`${STADIA_TEST_URL}/v2/autocomplete`, ({ request }) => {
+        seen.push(new URL(request.url));
+        authorization = request.headers.get("authorization");
+        return HttpResponse.json(stadiaCollection([]));
+      }),
+    );
+    await new StadiaGeocoder(STADIA_TEST_URL, "k-123").suggest(
+      "cafe",
+      { lat: 38.7, lng: -9.1 },
+      { limit: 3 },
+    );
+    const params = seen[0]?.searchParams;
+    expect(params?.get("text")).toBe("cafe");
+    expect(params?.get("size")).toBe("3");
+    expect(params?.get("layers")).toBe("poi,address,street,locality");
+    expect(params?.get("focus.point.lat")).toBe("38.7");
+    expect(params?.get("focus.point.lon")).toBe("-9.1");
+    expect(params?.get("api_key")).toBe("k-123");
+    expect(authorization).toBeNull();
+
+    await new StadiaGeocoder(STADIA_TEST_URL, undefined).suggest("cafe");
+    expect(seen[1]?.searchParams.has("api_key")).toBe(false);
+    expect(seen[1]?.searchParams.has("focus.point.lat")).toBe(false);
+  });
+
+  it("enforces the caller's result budget when the upstream ignores its size", async () => {
+    serve("autocomplete", stadiaCafePlaces.map(stadiaSuggestion));
+    const results = await new StadiaGeocoder(STADIA_TEST_URL, undefined).suggest("caf", undefined, {
+      limit: 1,
     });
-    expect(results[1]?.osmRef).toEqual({ type: "way", id: "201" });
-  });
-
-  it("enforces the caller's result budget when the upstream ignores its limit", async () => {
-    const baseUrl = "https://search-budget.test";
-    server.use(
-      http.get(`${baseUrl}/api`, () =>
-        HttpResponse.json({
-          features: Array.from({ length: 5 }, (_, index) => ({
-            type: "Feature",
-            geometry: { type: "Point", coordinates: [-0.12 + index / 10_000, 51.5] },
-            properties: { osm_type: "N", osm_id: index + 1, name: `Café ${index + 1}` },
-          })),
-        }),
-      ),
-    );
-
-    const results = await new PhotonGeocoder(baseUrl).search("cafe", undefined, { limit: 2 });
-    expect(results).toHaveLength(2);
-  });
-
-  it("retries a transient upstream failure once — adapter policy, not caller policy", async () => {
-    const baseUrl = "https://search-retry.test";
-    let requests = 0;
-    server.use(
-      http.get(`${baseUrl}/api`, () => {
-        requests += 1;
-        return requests === 1
-          ? HttpResponse.text("upstream unavailable", { status: 503 })
-          : HttpResponse.json({
-              features: [
-                {
-                  type: "Feature",
-                  geometry: { type: "Point", coordinates: [-0.12, 51.5] },
-                  properties: { osm_type: "N", osm_id: 7, name: "Café Retry" },
-                },
-              ],
-            });
-      }),
-    );
-
-    const results = await new PhotonGeocoder(baseUrl).search("cafe");
-    expect(requests).toBe(2);
-    expect(results[0]?.name).toBe("Café Retry");
-  });
-});
-
-describe("PhotonGeocoder back-off", () => {
-  const feature = {
-    type: "Feature",
-    geometry: { type: "Point", coordinates: [-0.12, 51.5] },
-    properties: { osm_type: "N", osm_id: 9, name: "Café Patient" },
-  };
-
-  it("stands off and retries once after a rate limit", async () => {
-    const baseUrl = "https://photon-429.test";
-    let requests = 0;
-    server.use(
-      http.get(`${baseUrl}/api`, () => {
-        requests += 1;
-        return requests === 1
-          ? HttpResponse.text("slow down", { status: 429 })
-          : HttpResponse.json({ features: [feature] });
-      }),
-    );
-    const results = await new PhotonGeocoder(baseUrl, 0).search("cafe");
-    expect(requests).toBe(2);
-    expect(results[0]?.name).toBe("Café Patient");
-  });
-
-  it("retries once when the network drops the request — a browser's view of a bare rate limit", async () => {
-    const baseUrl = "https://photon-drop.test";
-    let requests = 0;
-    server.use(
-      http.get(`${baseUrl}/api`, () => {
-        requests += 1;
-        return requests === 1 ? HttpResponse.error() : HttpResponse.json({ features: [feature] });
-      }),
-    );
-    const results = await new PhotonGeocoder(baseUrl, 0).search("cafe");
-    expect(requests).toBe(2);
     expect(results).toHaveLength(1);
   });
 
-  it("gives up after the one retry", async () => {
-    const baseUrl = "https://photon-down.test";
-    server.use(http.get(`${baseUrl}/api`, () => HttpResponse.text("no", { status: 429 })));
-    await expect(new PhotonGeocoder(baseUrl, 0).search("cafe")).rejects.toThrow("photon 429");
+  it("forwards the caller's AbortSignal to fetch", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    serve("autocomplete", []);
+    const controller = new AbortController();
+    await new StadiaGeocoder(STADIA_TEST_URL, undefined).suggest("cafe", undefined, {
+      signal: controller.signal,
+    });
+    expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+    fetchSpy.mockRestore();
+  });
+
+  it("retries a transient upstream failure once, then gives up", async () => {
+    let calls = 0;
+    server.use(
+      http.get(`${STADIA_TEST_URL}/v2/autocomplete`, () => {
+        calls++;
+        return calls === 1
+          ? HttpResponse.text("busy", { status: 503 })
+          : HttpResponse.json(stadiaCollection(stadiaCafePlaces.map(stadiaSuggestion)));
+      }),
+    );
+    const geocoder = new StadiaGeocoder(STADIA_TEST_URL, undefined);
+    expect(await geocoder.suggest("caf")).toHaveLength(2);
+    expect(calls).toBe(2);
+
+    server.use(
+      http.get(`${STADIA_TEST_URL}/v2/autocomplete`, () =>
+        HttpResponse.text("no", { status: 401 }),
+      ),
+    );
+    await expect(geocoder.suggest("caf")).rejects.toThrow("stadia 401");
   });
 });
 
-describe("PeliasGeocoder.search", () => {
-  it("sends the configured sources filter, and none by default", async () => {
-    const seen: (string | null)[] = [];
-    server.use(
-      http.get("https://pelias-sources.test/v1/autocomplete", ({ request }) => {
-        seen.push(new URL(request.url).searchParams.get("sources"));
-        return HttpResponse.json({ type: "FeatureCollection", features: [] });
-      }),
+describe("StadiaGeocoder.resolve", () => {
+  it("fetches the picked gid's full record: position, address, and its OSM source", async () => {
+    const seen = serve("place_details", [stadiaCafePlaces[0]]);
+    const candidate = await new StadiaGeocoder(STADIA_TEST_URL, undefined).resolve(
+      "openstreetmap:venue:node/101",
     );
-    await new PeliasGeocoder("https://pelias-sources.test", undefined, undefined).search("cafe");
-    await new PeliasGeocoder(
-      "https://pelias-sources.test",
-      undefined,
-      "openstreetmap,foursquare",
-    ).search("cafe");
-    expect(seen).toEqual([null, "openstreetmap,foursquare"]);
-  });
-
-  it("records osmRef only for openstreetmap-sourced features, filtering nameless ones", async () => {
-    const results = await new PeliasGeocoder(PELIAS_TEST_URL, undefined).search("cafe");
-    expect(results).toHaveLength(4); // the fifth fixture has neither name nor label
-    expect(results[0]).toMatchObject({
-      name: "Café Pelias",
+    expect(seen[0]?.searchParams.get("ids")).toBe("openstreetmap:venue:node/101");
+    expect(candidate).toEqual({
+      name: "Café Central",
+      lat: 38.7139,
+      lng: -9.1394,
       address: "12 Rua Example, Lisboa 1100-000",
-      osmRef: { type: "node", id: "301" },
+      osmRef: { type: "node", id: "101" },
     });
-    expect(results[1]?.osmRef).toEqual({ type: "way", id: "401" });
-    // Label minus name when the structured address fields are absent.
-    expect(results[1]?.address).toBe("Lisboa, Portugal");
-    // Open sources that are not OSM — candidates without an osmRef, treated
-    // like manual coordinates: no ODbL claim, no OSM deep link.
-    expect(results[2]).toMatchObject({ name: "14 Rua Aberta" });
-    expect(results[2]?.osmRef).toBeUndefined();
-    expect(results[3]?.osmRef).toBeUndefined();
   });
 
-  it("sends text, size, layers, focus bias, and api_key as query params — never a header", async () => {
-    const baseUrl = "https://pelias-params.test";
-    let captured: URL | undefined;
-    let authorization: string | null = null;
+  it("keeps a Foursquare venue without an osmRef, its coarse location as the address", async () => {
+    serve("place_details", [stadiaFoursquarePlace]);
+    const candidate = await new StadiaGeocoder(STADIA_TEST_URL, undefined).resolve(
+      "foursquare:venue:652285383d92070f5588d28b",
+    );
+    expect(candidate).toEqual({
+      name: "Colonna & Small’s",
+      lat: 51.521636,
+      lng: -0.110035,
+      address: "London, England",
+    });
+  });
+
+  it("answers undefined when the gid no longer resolves", async () => {
+    serve("place_details", []);
+    expect(
+      await new StadiaGeocoder(STADIA_TEST_URL, undefined).resolve("openstreetmap:venue:node/1"),
+    ).toBeUndefined();
+  });
+});
+
+describe("StadiaGeocoder.search", () => {
+  it("asks for venues first and widens to every place layer only on a miss", async () => {
+    const layers: (string | null)[] = [];
     server.use(
-      http.get(`${baseUrl}/v1/autocomplete`, ({ request }) => {
-        captured = new URL(request.url);
-        authorization = request.headers.get("authorization");
-        return HttpResponse.json({ type: "FeatureCollection", features: [] });
+      http.get(`${STADIA_TEST_URL}/v2/search`, ({ request }) => {
+        const asked = new URL(request.url).searchParams.get("layers");
+        layers.push(asked);
+        return HttpResponse.json(stadiaCollection(asked === "poi" ? [] : [stadiaCafePlaces[1]]));
       }),
     );
-
-    await new PeliasGeocoder(baseUrl, "test-key").search(
-      "cafe",
-      { lat: 38.7139, lng: -9.1394 },
-      { limit: 5 },
-    );
-
-    expect(captured?.searchParams.get("text")).toBe("cafe");
-    expect(captured?.searchParams.get("size")).toBe("5");
-    expect(captured?.searchParams.get("layers")).toBe("venue,address,street,locality");
-    expect(captured?.searchParams.get("focus.point.lat")).toBe("38.7139");
-    expect(captured?.searchParams.get("focus.point.lon")).toBe("-9.1394");
-    expect(captured?.searchParams.get("api_key")).toBe("test-key");
-    expect(authorization).toBeNull();
+    const geocoder = new StadiaGeocoder(STADIA_TEST_URL, undefined);
+    expect((await geocoder.search("Rua Example 12")).map((r) => r.name)).toEqual(["Café do Rio"]);
+    expect(layers).toEqual(["poi", "poi,address,street,locality"]);
   });
 
-  it("enforces the caller's result budget when the upstream ignores its limit", async () => {
-    const results = await new PeliasGeocoder(PELIAS_TEST_URL, undefined).search("cafe", undefined, {
-      limit: 2,
+  it("strips a venue's own name from its formatted address line", async () => {
+    serve("search", [
+      {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [-0.10952, 51.51995] },
+        properties: {
+          gid: "openstreetmap:venue:node/4185611903",
+          name: "Prufrock Coffee",
+          coarse_location: "London, England",
+          formatted_address_line: "Prufrock Coffee, London, United Kingdom",
+        },
+      },
+    ]);
+    const [result] = await new StadiaGeocoder(STADIA_TEST_URL, undefined).search("Prufrock");
+    expect(result?.address).toBe("London, United Kingdom");
+    expect(result?.osmRef).toEqual({ type: "node", id: "4185611903" });
+  });
+
+  it("returns full candidates in one call, dropping features without a position", async () => {
+    const seen = serve("search", [
+      ...stadiaCafePlaces,
+      stadiaSuggestion(stadiaFoursquarePlace), // geometry: null
+    ]);
+    const results = await new StadiaGeocoder(STADIA_TEST_URL, undefined).search("cafe, Lisboa", {
+      lat: 38.7,
+      lng: -9.1,
     });
-    expect(results).toHaveLength(2);
-  });
-
-  it("forwards the caller's AbortSignal to fetch", async () => {
-    // The MSW/jsdom pairing never rejects an aborted mocked request, so the
-    // abortability contract is asserted at the fetch boundary instead.
-    const controller = new AbortController();
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({ type: "FeatureCollection", features: [] })));
-    try {
-      await new PeliasGeocoder("https://pelias-abort.test", undefined).search("cafe", undefined, {
-        signal: controller.signal,
-      });
-      expect(fetchSpy.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
-    } finally {
-      fetchSpy.mockRestore();
-    }
+    expect(seen[0]?.searchParams.get("text")).toBe("cafe, Lisboa");
+    expect(results.map((r) => r.name)).toEqual(["Café Central", "Café do Rio"]);
+    // No street: the coarse location stands in for the address.
+    expect(results[1]).toEqual({
+      name: "Café do Rio",
+      lat: 38.7107,
+      lng: -9.1421,
+      address: "Lisboa, Portugal",
+      osmRef: { type: "way", id: "201" },
+    });
   });
 });
 

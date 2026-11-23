@@ -46,6 +46,6 @@ so the visual system is reviewed as a system rather than page by page.
 
 ## Independence
 
-Every vendor has a cheap exit: tiles are already a self-hosted Protomaps PMTiles archive, and self-hosted Photon or
-Nominatim replaces the geocoder ([Map Data & Providers](./data-sources.md)). The share service is
+Every vendor has a cheap exit: tiles are already a self-hosted Protomaps PMTiles archive, and a self-hosted index of Overture places plus OSM
+replaces the hosted geocoder ([Map Data & Providers](./data-sources.md)). The share service is
 plain Hono and runs unchanged on Node + Postgres behind the same contract.

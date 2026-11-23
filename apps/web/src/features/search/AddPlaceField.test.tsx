@@ -12,7 +12,12 @@ import { RepoProvider } from "../../data/RepoContext";
 import { resetEnrichmentAttempts } from "../place/enrichment";
 import { AddPlaceField } from "./AddPlaceField";
 
-const geocoder = vi.hoisted(() => ({ search: vi.fn(), lookup: vi.fn() }));
+const geocoder = vi.hoisted(() => ({
+  suggest: vi.fn(),
+  resolve: vi.fn(),
+  search: vi.fn(),
+  lookup: vi.fn(),
+}));
 vi.mock("../../providers", () => ({ geocoder }));
 const expandShortLink = vi.hoisted(() => vi.fn());
 vi.mock("./resolveLink", () => ({ expandShortLink }));
@@ -37,6 +42,8 @@ function renderField() {
 }
 
 beforeEach(() => {
+  geocoder.suggest.mockReset();
+  geocoder.resolve.mockReset();
   geocoder.search.mockReset();
   geocoder.lookup.mockReset();
   expandShortLink.mockReset();
@@ -56,7 +63,7 @@ describe("pasting map links", () => {
     expect(expandShortLink).toHaveBeenCalledWith("https://maps.app.goo.gl/AbCdEf123");
     expect(card.textContent).toContain("51.52163");
     expect(screen.getByTestId("confirm-name")).toHaveValue("Colonna & Small's");
-    expect(geocoder.search).not.toHaveBeenCalled();
+    expect(geocoder.suggest).not.toHaveBeenCalled();
     expect(geocoder.lookup).not.toHaveBeenCalled();
   });
 
@@ -138,6 +145,11 @@ describe("add-time enrichment of search picks", () => {
     lng: -9.1607,
     osmRef: { type: "way", id: "77" },
   };
+  const ESTRELA_SUGGESTION = {
+    id: "openstreetmap:venue:way/77",
+    name: "Jardim da Estrela",
+    osmRef: ESTRELA.osmRef,
+  };
   const IMAGE = "https://commons.wikimedia.org/wiki/Special:FilePath/Estrela.jpg?width=640";
 
   async function addSearchPick(repo: ReturnType<typeof renderField>) {
@@ -154,12 +166,13 @@ describe("add-time enrichment of search picks", () => {
     });
     await userEvent.type(screen.getByRole("combobox", { name: "Add a place" }), "estrela");
     await userEvent.click(await screen.findByRole("option", { name: /Jardim da Estrela/ }));
-    await userEvent.type(screen.getByTestId("field-list-choice"), "Lisbon");
+    await userEvent.type(await screen.findByTestId("field-list-choice"), "Lisbon");
     await userEvent.click(screen.getByTestId("field-create-option"));
   }
 
   it("fires one lookup after the add and writes the missing photo and address", async () => {
-    geocoder.search.mockResolvedValue([ESTRELA]);
+    geocoder.suggest.mockResolvedValue([ESTRELA_SUGGESTION]);
+    geocoder.resolve.mockResolvedValue(ESTRELA);
     geocoder.lookup.mockResolvedValue({
       ...ESTRELA,
       address: "Praça da Estrela, Lisboa",
@@ -179,7 +192,8 @@ describe("add-time enrichment of search picks", () => {
   });
 
   it("is best-effort: a failed lookup writes nothing and surfaces nothing", async () => {
-    geocoder.search.mockResolvedValue([ESTRELA]);
+    geocoder.suggest.mockResolvedValue([ESTRELA_SUGGESTION]);
+    geocoder.resolve.mockResolvedValue(ESTRELA);
     geocoder.lookup.mockRejectedValue(new Error("offline"));
     const repo = renderField();
     await addSearchPick(repo);
@@ -190,29 +204,64 @@ describe("add-time enrichment of search picks", () => {
 });
 
 describe("typing to search", () => {
-  it("lists geocoder results and picking one opens the confirm card with its osmRef facts", async () => {
-    geocoder.search.mockResolvedValue([
-      {
-        name: "Jardim da Estrela",
-        lat: 38.7154,
-        lng: -9.1607,
-        address: "Lisboa",
-        osmRef: { type: "way", id: "77" },
-      },
-    ]);
+  const SUGGESTION = {
+    id: "openstreetmap:venue:way/77",
+    name: "Jardim da Estrela",
+    where: "Lisboa, Portugal",
+    osmRef: { type: "way", id: "77" },
+  };
+  const RESOLVED = {
+    name: "Jardim da Estrela",
+    lat: 38.7154,
+    lng: -9.1607,
+    address: "Praça da Estrela, Lisboa",
+    osmRef: { type: "way", id: "77" },
+  };
+
+  it("lists suggestions; picking one fetches its full record and opens the confirm card", async () => {
+    geocoder.suggest.mockResolvedValue([SUGGESTION]);
+    geocoder.resolve.mockResolvedValue(RESOLVED);
     renderField();
     await userEvent.type(screen.getByRole("combobox", { name: "Add a place" }), "estrela");
     const option = await screen.findByRole("option", { name: /Jardim da Estrela/ });
+    expect(option.textContent).toContain("Lisboa, Portugal");
+    expect(geocoder.resolve).not.toHaveBeenCalled();
     await userEvent.click(option);
-    expect(screen.getByTestId("confirm-name")).toHaveValue("Jardim da Estrela");
-    expect(screen.getByTestId("add-place-confirm").textContent).toContain("38.71540");
+    expect(await screen.findByTestId("confirm-name")).toHaveValue("Jardim da Estrela");
+    expect(geocoder.resolve).toHaveBeenCalledWith("openstreetmap:venue:way/77");
+    const card = screen.getByTestId("add-place-confirm");
+    expect(card.textContent).toContain("38.71540");
+    expect(card.textContent).toContain("Praça da Estrela, Lisboa");
+  });
+
+  it("offers retry when the picked place's record cannot be fetched", async () => {
+    geocoder.suggest.mockResolvedValue([SUGGESTION]);
+    geocoder.resolve.mockRejectedValueOnce(new Error("offline"));
+    geocoder.resolve.mockResolvedValueOnce(RESOLVED);
+    renderField();
+    await userEvent.type(screen.getByRole("combobox", { name: "Add a place" }), "estrela");
+    await userEvent.click(await screen.findByRole("option", { name: /Jardim da Estrela/ }));
+    expect((await screen.findByTestId("place-resolve-error")).textContent).toContain(
+      "Could not load Jardim da Estrela",
+    );
+    await userEvent.click(screen.getByTestId("place-resolve-retry"));
+    expect(await screen.findByTestId("confirm-name")).toHaveValue("Jardim da Estrela");
+  });
+
+  it("treats a suggestion that no longer resolves as a failure, not a blank card", async () => {
+    geocoder.suggest.mockResolvedValue([SUGGESTION]);
+    geocoder.resolve.mockResolvedValue(undefined);
+    renderField();
+    await userEvent.type(screen.getByRole("combobox", { name: "Add a place" }), "estrela");
+    await userEvent.click(await screen.findByRole("option", { name: /Jardim da Estrela/ }));
+    expect(await screen.findByTestId("place-resolve-error")).toBeInTheDocument();
   });
 });
 
 describe("the results dropdown", () => {
   it("puts itself away when a press lands outside the field, and comes back on focus", async () => {
-    geocoder.search.mockResolvedValue([
-      { name: "Café do Rio", address: "Lisboa", lat: 38.7, lng: -9.1 },
+    geocoder.suggest.mockResolvedValue([
+      { id: "foursquare:venue:1", name: "Café do Rio", where: "Lisboa" },
     ]);
     renderField();
     const outside = document.createElement("button");

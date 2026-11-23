@@ -214,9 +214,10 @@ export function SettingsPage() {
           </li>
           <li>
             <strong>Geocoding:</strong> your typed search text — and, during an import, a row's
-            Title and Address — go to the geocoder. Pasted map links are parsed on this device. An
-            OSM element link triggers a lookup of that element, and a shortened Google Maps share
-            link is sent to our share service, which asks Google only where it points.
+            Title and Address — go to Stadia Maps, the search provider. Pasted map links are parsed
+            on this device. An OSM element link triggers a lookup of that element, and a shortened
+            Google Maps share link is sent to our share service, which asks Google only where it
+            points.
           </li>
           <li>
             <strong>Review photos:</strong> photos loaded with review insights are fetched from the

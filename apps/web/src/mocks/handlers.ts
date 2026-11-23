@@ -1,16 +1,18 @@
 import { createShareApp, MemoryStorage, type StoredDocument } from "@placemarks/share-service";
 import { HttpResponse, http } from "msw";
-import { OSM_API_URL, PELIAS_URL, PHOTON_URL } from "../config";
+import { OSM_API_URL, STADIA_URL } from "../config";
 import {
   osmNode101,
   osmNode102,
   osmNode599,
   osmWay201Full,
-  PELIAS_TEST_URL,
-  peliasCafeResponse,
-  photonCafeResponse,
-  photonMigradoResponse,
   SHORT_LINK_FIXTURE,
+  type StadiaPlaceFixture,
+  stadiaCafePlaces,
+  stadiaCollection,
+  stadiaFoursquarePlace,
+  stadiaMigradoPlaces,
+  stadiaSuggestion,
   wikipediaSummaryCafeCentral,
 } from "./fixtures";
 
@@ -76,6 +78,21 @@ const shareApp = createShareApp({
       : new Response("", { status: 200 }),
 });
 
+const STADIA_PLACES: StadiaPlaceFixture[] = [
+  ...stadiaCafePlaces,
+  ...stadiaMigradoPlaces,
+  stadiaFoursquarePlace,
+];
+
+/** The mock's whole matching rule: which fixture places a typed text finds. */
+function stadiaMatches(text: string): StadiaPlaceFixture[] {
+  const q = text.toLowerCase();
+  if (q.includes("migrado")) return stadiaMigradoPlaces;
+  if (q.includes("caf")) return stadiaCafePlaces;
+  if (q.includes("colonna")) return [stadiaFoursquarePlace];
+  return [];
+}
+
 export const handlers = [
   // The whole /s surface — reads, mutations, and CORS preflights.
   http.all(/\/s\/(lists|posts)(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
@@ -84,20 +101,22 @@ export const handlers = [
   // mock keeps a library in memory only, which is all one browser needs.
   http.all(/\/y\/[0-9a-f]{32}(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
 
-  // Geocoder search (Photon). Fixtures shared with providers and importer tests.
-  http.get(`${PHOTON_URL}/api`, ({ request }) => {
-    const q = new URL(request.url).searchParams.get("q") ?? "";
-    if (q.toLowerCase().includes("migrado")) return HttpResponse.json(photonMigradoResponse);
-    if (q.toLowerCase().includes("caf")) return HttpResponse.json(photonCafeResponse);
-    return HttpResponse.json({ type: "FeatureCollection", features: [] });
-  }),
-
-  // Geocoder search (Pelias-class), served when VITE_GEOCODER=pelias runs
-  // against MSW; unit tests hit the same fixtures at the fallback test URL.
-  http.get(`${PELIAS_URL ?? PELIAS_TEST_URL}/v1/autocomplete`, ({ request }) => {
+  // Place search (Stadia v2): slim suggestions while typing, the full record
+  // for a picked gid, and full results for the import ladder — one fixture
+  // world behind all three.
+  http.get(`${STADIA_URL}/v2/autocomplete`, ({ request }) => {
     const text = new URL(request.url).searchParams.get("text") ?? "";
-    if (text.toLowerCase().includes("caf")) return HttpResponse.json(peliasCafeResponse);
-    return HttpResponse.json({ type: "FeatureCollection", features: [] });
+    return HttpResponse.json(stadiaCollection(stadiaMatches(text).map(stadiaSuggestion)));
+  }),
+  http.get(`${STADIA_URL}/v2/place_details`, ({ request }) => {
+    const ids = (new URL(request.url).searchParams.get("ids") ?? "").split(",");
+    return HttpResponse.json(
+      stadiaCollection(STADIA_PLACES.filter((place) => ids.includes(place.properties.gid))),
+    );
+  }),
+  http.get(`${STADIA_URL}/v2/search`, ({ request }) => {
+    const text = new URL(request.url).searchParams.get("text") ?? "";
+    return HttpResponse.json(stadiaCollection(stadiaMatches(text)));
   }),
 
   // Geocoder lookup (OSM element API), including the error-path fixtures.

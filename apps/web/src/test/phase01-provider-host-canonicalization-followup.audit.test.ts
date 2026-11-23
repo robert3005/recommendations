@@ -15,7 +15,6 @@ function productionBuild(mapStyleUrl: string): { status: number | null; output: 
     ...process.env,
     NODE_ENV: "production",
     VITE_MAP_STYLE_URL: mapStyleUrl,
-    VITE_PHOTON_URL: "https://search.production.example",
     VITE_OSM_API_URL: "https://osm.production.example",
   };
   delete env.PLACEMARKS_STORYBOOK;
