@@ -67,6 +67,9 @@ const shareApp = createShareApp({ storage: new PersistentMemoryStorage() });
 export const handlers = [
   // The whole /s surface — reads, mutations, and CORS preflights.
   http.all(/\/s\/(lists|posts)(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
+  // The sync surface of the same service (spec/src/sync.md §The service). The
+  // mock keeps a library in memory only, which is all one browser needs.
+  http.all(/\/y\/[0-9a-f]{32}(\/.*)?$/, ({ request }) => shareApp.fetch(request.clone())),
 
   // Geocoder search (Photon). Fixtures shared with providers and importer tests.
   http.get(`${PHOTON_URL}/api`, ({ request }) => {

@@ -17,6 +17,7 @@ import {
 import { InsightsSection } from "../insights/InsightsSection";
 import { ImportSection } from "../interop/ImportSection";
 import { AUTHOR_NAME_KEY } from "../publish/publication";
+import { SyncSection } from "../sync/SyncSection";
 
 export function SettingsPage() {
   const repo = useRepo();
@@ -149,6 +150,8 @@ export function SettingsPage() {
         </p>
       </section>
 
+      <SyncSection />
+
       <section className="mt-6" data-testid="sharing-settings">
         <h2 className="text-sm font-semibold text-ink/70">Sharing</h2>
         <label className="mt-1 block text-xs text-ink/60">
@@ -224,8 +227,13 @@ export function SettingsPage() {
             explicitly publish, and serves them at their public links until you unpublish.
           </li>
           <li>
+            <strong>Sync, if you turn it on:</strong> the whole library goes to the sync service,
+            encrypted on this device with a key the service never sees. It can store the library and
+            tell your devices what changed; it cannot read a place, a note or a tag.
+          </li>
+          <li>
             <strong>Nothing else leaves the device.</strong> Post bodies and list names never go to
-            map or search providers. There are no accounts and no sync; two devices are two
+            map or search providers. There are no accounts. With sync off, two devices are two
             libraries, and the library archive is what moves one to the other.
           </li>
           <li>

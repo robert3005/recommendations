@@ -170,8 +170,9 @@ documents, never pages.
 
 ## The share service
 
-The share service is the only backend: Hono on Cloudflare Workers with D1, two tables
-(`documents` and `rate`). The protocol, in full:
+The share service is the only backend: Hono on Cloudflare Workers with D1. Publishing uses two
+tables (`documents` and `rate`); the same Worker also carries sync, with two more
+([Sync Between Devices](./sync.md) §The service). The protocol, in full:
 
 - `PUT /s/lists/:slug` and `PUT /s/posts/:slug` — Bearer; create-or-update. The first PUT claims
   the slug and binds the token hash (201); later PUTs with the same token replace the document

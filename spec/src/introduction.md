@@ -16,9 +16,10 @@ and no attempt to replicate Google Places — just import, curation, editorial, 
 
 ## Principles
 
-- **Local-first, with no accounts and no sync.** The library lives on the device and every edit
-  commits locally. Remote state is published documents and nothing else; two devices are two
-  libraries, and the library archive moves one to the other.
+- **Local-first, with no accounts.** The library lives on the device and every edit commits
+  locally. Remote state is published documents, plus — only if the owner turns sync on — an
+  encrypted copy of the library that keeps their devices in step
+  ([Sync Between Devices](./sync.md)).
 - **Open data.** Map tiles and geocoding come from OpenStreetMap-derived services, attributed
   under ODbL wherever OSM facts travel. No proprietary API calls and no scraping: pasted Google
   and Apple links are parsed, never fetched.

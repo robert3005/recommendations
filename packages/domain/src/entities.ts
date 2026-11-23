@@ -38,6 +38,9 @@ export interface Place {
   note?: string; // a short private note; published only on explicit opt-in
   rating?: PlaceRating; // 1 good · 2 great · 3 favourite
   status?: PlaceStatus; // "been" | "want"; absent = not said
+  // When each own tag was last put on or taken off — bookkeeping that lets
+  // tags merge as a set between devices (spec/src/sync.md §Merging). Never shown.
+  tagLog?: Record<string, { at: string; on: boolean }>;
   createdAt: string;
   updatedAt: string;
 }

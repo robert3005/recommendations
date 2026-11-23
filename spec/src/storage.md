@@ -56,7 +56,9 @@ but not publish control, and the prompt says so.
 
 ## What is remote
 
-Published documents. Nothing else. There is no sync and there are no accounts: two devices are two
-libraries, and the library archive is what moves one to the other. Publish control moves only
+Published documents, and — only when the owner turns sync on — the library itself, encrypted on
+the device so the service cannot read it ([Sync Between Devices](./sync.md)). There are no
+accounts. With sync off, two devices are two libraries, and the library archive is what moves one
+to the other. Publish control moves only
 inside a credentials-included export — a device restored without credentials sees its publications
 but cannot update or revoke them (see [Sharing & Publishing](./sharing.md) for token loss).

@@ -3,6 +3,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { getDefaultRepo, RepoProvider } from "./data/RepoContext";
+import { SyncRunner } from "./features/sync/SyncRunner";
 import { router } from "./router";
 import "./index.css";
 
@@ -37,6 +38,9 @@ void prepare().then(() => {
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <RepoProvider repo={getDefaultRepo()}>
+          {/* Sync runs beside the router, not inside it: it is the library's
+              business, whatever page is showing (spec/src/sync.md §The cycle). */}
+          <SyncRunner />
           <RouterProvider router={router} />
         </RepoProvider>
       </QueryClientProvider>

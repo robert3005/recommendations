@@ -4,8 +4,9 @@ Deployment notes for the hosted share service (`wrangler.toml`, `migrations/`).
 
 ## Database migrations and deployment
 
-The ordered D1 migrations are the only production schema-upgrade path. There is
-exactly one — the baseline — because the service has never been deployed:
+The ordered D1 migrations are the only production schema-upgrade path. There
+are two — the baseline and `0002-sync.sql`, which adds the sync tables — and no
+upgrade of a live predecessor yet, because the service has never been deployed:
 `wrangler.toml` still carries `REPLACE_WITH_REAL_ID`, so no database exists that
 predates the current schema. Migrations that upgrade a live predecessor start
 being written the day one exists.
@@ -36,6 +37,16 @@ retains no document body, only the slug and token hash.
 
 `rate` rows are transient fixed-window counters and may be purged at any time
 past their `reset_at`.
+
+Sync (spec/src/sync.md) adds `libraries` and `sync_rows`, created by migration
+`0002-sync.sql`. A library row is the hash of a bearer token and a sequence
+counter; a sync row is an opaque key and a ciphertext the service cannot read.
+Both persist until the owner deletes the synced copy from the app (`DELETE
+/y/:library`). There is no account to contact and no way to recover a library
+for someone who lost its key, and nothing in these tables identifies a person.
+An abandoned library can only be recognised by its rows no longer being
+written; any purge of old libraries is an operator policy to announce before
+it is applied, not something the service does on its own.
 
 ## Cache lifecycle
 

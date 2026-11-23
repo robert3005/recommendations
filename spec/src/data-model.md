@@ -74,6 +74,9 @@ interface Place {
   note?: string;                               // a short note; published only with a list that shares notes
   rating?: 1 | 2 | 3;                          // good · great · favourite
   status?: "been" | "want";                    // absent = not said
+  tagLog?: Record<string, { at: string; on: boolean }>;  // when each own tag was put on or
+                                               // taken off — lets tags merge as a set between
+                                               // devices (sync.md §Merging); never shown
   createdAt: string;
   updatedAt: string;
 }

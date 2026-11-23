@@ -12,6 +12,7 @@
 - [Review Harvest](./harvest.md)
 - [Review Insights](./reviews.md)
 - [Sharing & Publishing](./sharing.md)
+- [Sync Between Devices](./sync.md)
 - [Local Storage](./storage.md)
 - [Map Data & Providers](./data-sources.md)
 - [Tech Stack](./tech-stack.md)

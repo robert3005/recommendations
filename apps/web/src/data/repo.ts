@@ -10,7 +10,9 @@
  *  - marker uniqueness across live lists up to the 64-pair space, badged
  *    deterministic repeats beyond;
  *  - the teardown refusals (spec/src/data-model.md §Teardown);
- *  - post-target existence at creation; a post's target never changes.
+ *  - post-target existence at creation; a post's target never changes;
+ *  - every deletion of a synced row leaves a tombstone in the same
+ *    transaction, so another device can be told (spec/src/sync.md §Deletions).
  *
  * Dedup precedence everywhere (add, import, re-import): Google feature id →
  * osmRef → name + proximity, which prompts the user rather than merging
@@ -32,12 +34,14 @@ import type {
   PostTarget,
   Publication,
   SavedView,
+  SyncTable,
 } from "@placemarks/domain";
 import {
   assignMarker,
   compactFilter,
   compareByRank,
   googleFeatureId,
+  logTagChange,
   markerKey,
   normalizeName,
   normalizeTags,
@@ -318,9 +322,20 @@ export class DexieRepository implements LocalRepository {
     await this.db.transaction("rw", [this.db.places], async () => {
       const row = await this.db.places.get(id);
       if (!row) throw new Error("place not found");
-      const { tags: _t, note: _n, rating: _r, status: _s, ...rest } = stripPlaceRow(row);
+      const {
+        tags: _t,
+        tagLog: _l,
+        note: _n,
+        rating: _r,
+        status: _s,
+        ...rest
+      } = stripPlaceRow(row);
       const current = stripPlaceRow(row);
+      const stamp = nowIso();
       const tags = patch.tags !== undefined ? normalizeTags(patch.tags) : (current.tags ?? []);
+      // Each tag put on or taken off is stamped, so two devices' tag edits
+      // merge as a set instead of one overwriting the other.
+      const tagLog = patch.tags !== undefined ? logTagChange(current, tags, stamp) : current.tagLog;
       const note =
         patch.note === undefined ? current.note : patch.note === null ? undefined : patch.note;
       const rating =
@@ -338,10 +353,11 @@ export class DexieRepository implements LocalRepository {
       const next: Place = {
         ...rest,
         ...(tags.length > 0 ? { tags } : {}),
+        ...(tagLog !== undefined ? { tagLog } : {}),
         ...(note !== undefined && note.trim() !== "" ? { note: note.trim() } : {}),
         ...(rating !== undefined ? { rating } : {}),
         ...(status !== undefined ? { status } : {}),
-        updatedAt: nowIso(),
+        updatedAt: stamp,
       };
       await this.db.places.put(toPlaceRow(next));
     });
@@ -350,7 +366,7 @@ export class DexieRepository implements LocalRepository {
   async deletePlace(id: PlaceId): Promise<void> {
     await this.db.transaction(
       "rw",
-      [this.db.places, this.db.listEntries, this.db.posts],
+      [this.db.places, this.db.listEntries, this.db.posts, this.db.tombstones],
       async () => {
         if (!(await this.db.places.get(id))) return;
         // Nothing the owner wrote is deleted as a side effect.
@@ -364,9 +380,25 @@ export class DexieRepository implements LocalRepository {
             [{ kind: "place-has-posts", ids: posts.map((p) => p.id).sort() }],
           );
         }
-        await this.db.listEntries.where("placeId").equals(id).delete();
+        const at = nowIso();
+        const entryIds = await this.db.listEntries.where("placeId").equals(id).primaryKeys();
+        await this.bury("listEntries", entryIds, at);
+        await this.bury("places", [id], at);
+        await this.db.listEntries.bulkDelete(entryIds);
         await this.db.places.delete(id);
       },
+    );
+  }
+
+  /**
+   * Leave deletion markers for rows about to be deleted. Must run inside a
+   * transaction that includes `tombstones` — the marker and the delete land
+   * together or not at all.
+   */
+  private async bury(table: SyncTable, ids: readonly string[], at: string): Promise<void> {
+    if (ids.length === 0) return;
+    await this.db.tombstones.bulkPut(
+      ids.map((id) => ({ key: `${table}:${id}`, table, id, deletedAt: at })),
     );
   }
 
@@ -570,7 +602,7 @@ export class DexieRepository implements LocalRepository {
   async deleteList(id: string): Promise<void> {
     await this.db.transaction(
       "rw",
-      [this.db.lists, this.db.listEntries, this.db.posts, this.db.publications],
+      [this.db.lists, this.db.listEntries, this.db.posts, this.db.publications, this.db.tombstones],
       async () => {
         const list = await this.db.lists.get(id);
         if (!list) return;
@@ -595,7 +627,11 @@ export class DexieRepository implements LocalRepository {
           );
         }
         // The list goes; its places stay in the library.
-        await this.db.listEntries.where("listId").equals(id).delete();
+        const at = nowIso();
+        const entryIds = await this.db.listEntries.where("listId").equals(id).primaryKeys();
+        await this.bury("listEntries", entryIds, at);
+        await this.bury("lists", [id], at);
+        await this.db.listEntries.bulkDelete(entryIds);
         await this.db.lists.delete(id);
       },
     );
@@ -708,11 +744,22 @@ export class DexieRepository implements LocalRepository {
 
   async removeEntry(entryId: string): Promise<void> {
     // Leaving a list never deletes the place: the library owns it.
-    await this.db.listEntries.delete(entryId);
+    await this.db.transaction("rw", [this.db.listEntries, this.db.tombstones], async () => {
+      if (!(await this.db.listEntries.get(entryId))) return;
+      await this.bury("listEntries", [entryId], nowIso());
+      await this.db.listEntries.delete(entryId);
+    });
   }
 
   async removeFromList(listId: string, placeId: PlaceId): Promise<void> {
-    await this.db.listEntries.where("[listId+placeId]").equals([listId, placeId]).delete();
+    await this.db.transaction("rw", [this.db.listEntries, this.db.tombstones], async () => {
+      const ids = await this.db.listEntries
+        .where("[listId+placeId]")
+        .equals([listId, placeId])
+        .primaryKeys();
+      await this.bury("listEntries", ids, nowIso());
+      await this.db.listEntries.bulkDelete(ids);
+    });
   }
 
   // ---------- saved views ----------
@@ -752,7 +799,11 @@ export class DexieRepository implements LocalRepository {
   }
 
   async deleteView(id: string): Promise<void> {
-    await this.db.views.delete(id);
+    await this.db.transaction("rw", [this.db.views, this.db.tombstones], async () => {
+      if (!(await this.db.views.get(id))) return;
+      await this.bury("views", [id], nowIso());
+      await this.db.views.delete(id);
+    });
   }
 
   // ---------- posts ----------
@@ -801,20 +852,25 @@ export class DexieRepository implements LocalRepository {
   }
 
   async deletePost(id: string): Promise<void> {
-    await this.db.transaction("rw", [this.db.posts, this.db.publications], async () => {
-      const row = await this.db.posts.get(id);
-      if (!row) return;
-      const livePubs = (await this.publicationRowsFor({ kind: "post", id })).filter(
-        (p) => p.revokedAt === undefined,
-      );
-      if (livePubs.length > 0) {
-        throw new TeardownRefusedError(
-          "deleting a published post is refused until it is unpublished",
-          [{ kind: "live-publication", ids: livePubs.map((p) => p.id) }],
+    await this.db.transaction(
+      "rw",
+      [this.db.posts, this.db.publications, this.db.tombstones],
+      async () => {
+        const row = await this.db.posts.get(id);
+        if (!row) return;
+        const livePubs = (await this.publicationRowsFor({ kind: "post", id })).filter(
+          (p) => p.revokedAt === undefined,
         );
-      }
-      await this.db.posts.delete(id);
-    });
+        if (livePubs.length > 0) {
+          throw new TeardownRefusedError(
+            "deleting a published post is refused until it is unpublished",
+            [{ kind: "live-publication", ids: livePubs.map((p) => p.id) }],
+          );
+        }
+        await this.bury("posts", [id], nowIso());
+        await this.db.posts.delete(id);
+      },
+    );
   }
 
   // ---------- publications ----------
@@ -989,6 +1045,7 @@ export class DexieRepository implements LocalRepository {
         this.db.posts,
         this.db.publications,
         this.db.views,
+        this.db.tombstones,
       ],
       async () => {
         const incomingViews = a.views ?? [];
@@ -1080,11 +1137,18 @@ export class DexieRepository implements LocalRepository {
         // row, and entries pointing at a missing list or place are dropped.
         // Places on no list are kept: the library owns them.
         const allEntries = await this.db.listEntries.toArray();
-        await this.db.listEntries.bulkDelete(duplicateEntryIds(allEntries));
+        const duplicates = duplicateEntryIds(allEntries);
+        await this.bury("listEntries", duplicates, stamp);
+        await this.db.listEntries.bulkDelete(duplicates);
         const listIds = new Set((await this.db.lists.toArray()).map((l) => l.id));
         const placeIds = new Set((await this.db.places.toArray()).map((p) => p.id));
         const orphaned = (await this.db.listEntries.toArray()).filter(
           (e) => !listIds.has(e.listId) || !placeIds.has(e.placeId),
+        );
+        await this.bury(
+          "listEntries",
+          orphaned.map((e) => e.id),
+          stamp,
         );
         await this.db.listEntries.bulkDelete(orphaned.map((e) => e.id));
 

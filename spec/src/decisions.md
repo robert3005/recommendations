@@ -16,6 +16,33 @@ produces a union-of-all-designs codebase: roughly 8,500 lines of it, removed ove
 
 ---
 
+## 2026-11-23 — sync returns, small
+
+Sync between devices was built once and removed on 2026-07-26 with its transport, mutation
+outbox, hybrid logical clocks, conflict copies, Postgres service and accounts. It is back because
+the product changed: a library searched on a phone and curated on a laptop is one library, and
+"export an archive and import it over there" is not an answer for something used daily.
+
+It returns as a different, much smaller thing — see [Sync Between Devices](./sync.md):
+
+- **No accounts.** A key made on the device pairs the others, by QR link or code. The cost is
+  stated where the key is shown: no key and no archive means no recovery.
+- **The service cannot read the library.** Rows are sealed on the device; the service stores
+  ciphertext under opaque keys and gives every write a sequence number. That is its whole job,
+  so it is four routes and two tables on the Worker that already serves published pages.
+- **No outbox and no logical clock.** What needs sending is recomputed from the library each
+  cycle; ordering between devices is `updatedAt`, last writer wins — the archive restore's
+  existing rule.
+- **Tags merge as a set**, the one place whole-row ordering would lose real work. This is the
+  `Place.tags` argument the July pass let lapse "with the mechanism"; it is back with it.
+- **Deletions leave markers**, because a hard delete on one device is otherwise undone by the
+  other's copy.
+
+Also this day: a Takeout Note becomes the place's note, not a place post
+([Import & Export](./interop.md)) — the reason it was a post was that a place had no note field.
+
+---
+
 ## 2026-11-22 — the library pivot
 
 A walkthrough of the whole app against the stated goal — *the map app you already use, with
@@ -54,10 +81,9 @@ the list entry — it is the owner's judgement of the place, wherever it is list
 import rung may auto-place on corroborating evidence rather than only on a lone exact hit,
 because one row in five placing itself made Takeout import unusable at real sizes.
 
-Not yet done from the same review: sync between devices, basemap coverage outside Europe, one
-identity joining a place's Google id and its OSM ref (so review insights reach places found by
-search), running the review harvest from inside the app, and imported Notes landing in the note
-field instead of a post.
+Not yet done from the same review: basemap coverage outside Europe, one identity joining a
+place's Google id and its OSM ref (so review insights reach places found by search), and running
+the review harvest from inside the app. (Sync and imported Notes followed the next day.)
 
 ---
 

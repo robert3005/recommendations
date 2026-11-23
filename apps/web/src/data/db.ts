@@ -32,6 +32,28 @@ export type SavedViewRow = SavedView;
 export type ImportBatchRow = ImportBatch;
 export type ImportItemRow = ImportItem;
 
+/**
+ * A deleted row's marker (spec/src/sync.md §Deletions): rows are hard-deleted
+ * locally, but another device has to hear about it, so every deletion of a
+ * synced row leaves one of these. `key` is "<table>:<id>".
+ */
+export interface TombstoneRow {
+  key: string;
+  table: string;
+  id: string;
+  deletedAt: string;
+}
+
+/**
+ * What this device last exchanged with the sync service for a row, as
+ * "u:<updatedAt>" or "d:<deletedAt>". A row whose current stamp differs is
+ * waiting to be sent. Device-local bookkeeping; never synced or archived.
+ */
+export interface SyncStateRow {
+  key: string;
+  stamp: string;
+}
+
 /** Small key-value data: home map toggles, the last viewport, reminders. */
 export interface SettingRow {
   key: string;
@@ -45,6 +67,8 @@ export class PlacemarksDb extends Dexie {
   posts!: EntityTable<PostRow, "id">;
   publications!: EntityTable<PublicationRow, "id">;
   views!: EntityTable<SavedViewRow, "id">;
+  tombstones!: EntityTable<TombstoneRow, "key">;
+  syncState!: EntityTable<SyncStateRow, "key">;
   importBatches!: EntityTable<ImportBatchRow, "id">;
   importItems!: EntityTable<ImportItemRow, "id">;
   settings!: EntityTable<SettingRow, "key">;
@@ -80,5 +104,8 @@ export class PlacemarksDb extends Dexie {
     // every row. Places gained optional personal fields at the same time;
     // optional fields need no migration.
     this.version(3).stores({ ...stores, views: "id" });
+    // Version 4 adds the two stores sync needs (spec/src/sync.md): deletion
+    // markers and per-row exchange state. Additive again.
+    this.version(4).stores({ ...stores, views: "id", tombstones: "key", syncState: "key" });
   }
 }

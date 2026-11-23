@@ -55,6 +55,9 @@ A responsive web app with:
 - **Visual direction** — the quiet paper: off-white chrome beside a light map plate, eight
   bright accents, clean lines, and a small playful layer of pixel labels and pink. See
   [Visual Design](./design.md).
+- **Sync between your own devices** — off until turned on, no account, and encrypted on the
+  device so the service that carries it cannot read it. A phone joins by scanning a code. See
+  [Sync Between Devices](./sync.md).
 - **Live share links** — publish a list or post to a named public page. Nothing leaves the
   device until the owner presses Publish; from then on the page is live and follows its source,
   each change a new version, unless the owner switches that off. A shared list carries the
@@ -62,8 +65,9 @@ A responsive web app with:
 
 ## Explicit non-goals (v1)
 
-- No multi-device sync and no accounts. Two devices are two libraries; the library archive
-  ([Import & Export](./interop.md)) moves one to the other.
+- No accounts. Devices are paired by a key the owner holds
+  ([Sync Between Devices](./sync.md)); with sync off, two devices are two libraries and the
+  library archive ([Import & Export](./interop.md)) moves one to the other.
 - No social graph or feeds, and no reviews written in the app. Other people's reviews are
   classification input only, never displayed ([Review Insights](./reviews.md)).
 - No proprietary API calls and no link scraping. Parsing files the user exported of their own

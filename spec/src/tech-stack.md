@@ -35,8 +35,10 @@ so the visual system is reviewed as a system rather than page by page.
 - **Next.js** — SSR buys nothing behind a map canvas; the public viewer is a route in the same SPA.
 - **Redux** — domain truth lives in Dexie; the only client state left standing is ephemeral UI.
 - **GraphQL** — the whole backend is three REST verbs over two document kinds.
-- **Sync engines and CRDTs** (Replicache, PowerSync, Electric) — there is no sync; remote state
-  is published documents and nothing else.
+- **Sync engines and CRDTs** (Replicache, PowerSync, Electric) — sync here is last-writer-wins
+  rows plus one small set merge for tags, over four routes on the existing Worker
+  ([Sync Between Devices](./sync.md)); an engine would be most of the app's weight for a
+  problem this size.
 - **Supabase / Firebase** — their account-centred model fights per-publication bearer tokens.
 - **A media service** — posts are text plus places; images in posts are a listed future.
 - **Accounts and auth of any kind** — the editor token is the entire authorisation model

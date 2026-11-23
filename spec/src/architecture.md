@@ -76,8 +76,9 @@ search field parses pasted links with the same code. See [Import & Export](./int
   (`googleUrl`, `appleUrl`, `osmRef`) ride along as deep-link and dedup keys.
 - **Local commits never wait for a network.** Reading and editing are IndexedDB transactions;
   geocoding, tiles, and publishing are the only calls that leave the device.
-- **The only remote state is published documents.** No sync, no accounts; two devices are two
-  libraries, and the library archive moves one to the other.
+- **Remote state is published documents, and an encrypted library when sync is on.** No
+  accounts. The service stores and orders ciphertext; merging happens on the device
+  ([Sync Between Devices](./sync.md)).
 - **Public URLs are read-only.** Updating or revoking a page requires the per-publication
   editor token, held on the device that published it.
 - **Explicit publish only.** No queues, no outboxes, no background effects; retry is the button.

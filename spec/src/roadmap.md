@@ -130,6 +130,19 @@ tag or a word from my note on a phone, see two lists and a saved view on the map
 their names, and share a list whose page shows my intro and notes and updates itself after I
 edit it.
 
+## Phase 8 — Sync between devices
+
+- The sync routes on the share service: claim, push, pull-after-cursor, delete
+  ([Sync between devices](./sync.md) §The service).
+- The library key, its derived values, and sealed rows.
+- Deletion markers and per-tag stamps in the repository; the merge rules.
+- The pull–merge–push cycle, running on its own once sync is on.
+- Settings: turn on, pair by QR link or code, status, stop, delete the synced copy.
+
+**Done when** a place saved on a laptop appears on a phone that joined by scanning a code, a
+tag added on each device is on both afterwards, a place deleted on one is gone from the other,
+and the service's database contains nothing a person could read.
+
 ## Cross-cutting from day one
 
 - Attribution and licensing on every surface: the canvas always shows tile attribution, and
