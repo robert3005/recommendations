@@ -30,7 +30,6 @@ export function ReviewPage() {
   const collapse = usePaneStore((s) => s.collapse);
   const queue = useLiveQuery(() => listReviewItems(repo), [repo]);
   const [selectedId, setSelectedId] = useState<string>();
-  const [candidateChoice, setCandidateChoice] = useState("");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,7 +58,6 @@ export function ReviewPage() {
   }, [items, selectedId]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: a different review row can share coordinates but must still reset its candidate choice and stale state.
   useEffect(() => {
-    setCandidateChoice("");
     setLatitude(selectedItem?.coords?.lat.toString() ?? "");
     setLongitude(selectedItem?.coords?.lng.toString() ?? "");
     setConflict(undefined);
@@ -90,7 +88,6 @@ export function ReviewPage() {
           });
         }
         if (outcome.status === "resolved") {
-          setCandidateChoice("");
           setConflict(undefined);
           setPlacing(false);
           if (outcome.droppedNote) {
@@ -214,43 +211,35 @@ export function ReviewPage() {
               {underReview ? (
                 <div className="mt-1.5 flex flex-wrap items-center gap-2">
                   {(item.candidates ?? []).length > 0 ? (
-                    <div className="flex items-center gap-1">
-                      <select
-                        className="rounded-pill border border-hairline px-2 py-1 text-xs"
-                        value={candidateChoice}
-                        aria-label={`Link ${item.raw.title} to a candidate`}
-                        data-testid="review-candidates"
-                        onChange={(event) => {
-                          setCandidateChoice(event.target.value);
-                          setError(undefined);
-                        }}
-                      >
-                        <option value="">Link to…</option>
-                        {(item.candidates ?? []).map((candidate, index) => (
-                          <option
-                            key={`${index.toString()}-${candidate.name}`}
-                            value={index.toString()}
+                    // Each candidate is one press, with its address in full:
+                    // the choice is usually made on the address.
+                    <ul
+                      className="w-full space-y-1"
+                      aria-label={`Candidates for ${item.raw.title}`}
+                      data-testid="review-candidates"
+                    >
+                      {(item.candidates ?? []).map((candidate, index) => (
+                        <li key={`${index.toString()}-${candidate.name}`}>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            className="flex w-full items-baseline gap-2 rounded-crisp border border-hairline px-2 py-1 text-left text-xs hover:bg-hover disabled:opacity-40"
+                            data-testid="review-try-candidate"
+                            onClick={() => void resolve(item.id, { kind: "candidate", index })}
                           >
-                            {String.fromCharCode(65 + index)} — {candidate.name}
-                            {candidate.address ? ` — ${candidate.address}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        className="rounded-pill border border-hairline px-2 py-1 text-xs font-medium text-ink/70 disabled:opacity-40"
-                        disabled={busy || candidateChoice === ""}
-                        data-testid="review-try-candidate"
-                        onClick={() =>
-                          void resolve(item.id, {
-                            kind: "candidate",
-                            index: Number(candidateChoice),
-                          })
-                        }
-                      >
-                        Try
-                      </button>
-                    </div>
+                            <span className="font-mono font-medium text-ink">
+                              {String.fromCharCode(65 + index)}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="font-medium text-ink">{candidate.name}</span>
+                              {candidate.address ? (
+                                <span className="block text-ink/60">{candidate.address}</span>
+                              ) : null}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   ) : null}
                   <div className="flex items-center gap-1" data-testid="review-coordinate-entry">
                     <input
