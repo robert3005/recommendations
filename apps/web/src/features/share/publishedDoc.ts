@@ -9,7 +9,7 @@ import {
   type PublishedPost,
   parsePublishedDocument,
 } from "@placemarks/schemas";
-import { SHARE_API_URL } from "../../config";
+import { shareDocumentUrl } from "./shareUrl";
 
 export type ViewerFailure = "gone" | "not-found" | "unreachable";
 
@@ -23,14 +23,9 @@ export class PublishedDocumentError extends Error {
   }
 }
 
-/**
- * The share-service URL for a document. SHARE_API_URL empty means same-origin;
- * resolving against the current location keeps fetch happy in every runtime.
- */
-export function shareDocumentUrl(kind: "list" | "post", slug: string): string {
-  const path = `${SHARE_API_URL}/s/${kind === "list" ? "lists" : "posts"}/${encodeURIComponent(slug)}`;
-  return typeof window === "undefined" ? path : new URL(path, window.location.href).toString();
-}
+// Kept in its own module so the always-mounted live publisher can build
+// share URLs without pulling the document schemas (and zod) into the shell.
+export { shareDocumentUrl };
 
 async function fetchDocument(kind: "list" | "post", slug: string, signal?: AbortSignal) {
   let response: Response;

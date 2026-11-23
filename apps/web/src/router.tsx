@@ -10,23 +10,17 @@ import {
   createRoute,
   createRouter,
   Link,
+  lazyRouteComponent,
   Outlet,
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { useReviewingCount } from "./data/hooks";
-import { ReviewPage } from "./features/interop/ReviewPage";
-import { ListPage } from "./features/lists/ListPage";
 import { ListsPage } from "./features/lists/ListsPage";
 import { PlaceColumn, PlaceSheet } from "./features/place/PlaceSheet";
-import { PostEditorPage } from "./features/posts/PostEditorPage";
-import { PostPage } from "./features/posts/PostPage";
 import { LivePublisher } from "./features/publish/LivePublisher";
 import { AddPlaceField } from "./features/search/AddPlaceField";
-import { SettingsPage } from "./features/settings/SettingsPage";
-import { PublishedListView } from "./features/share/PublishedListView";
-import { PublishedPostView } from "./features/share/PublishedPostView";
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -34,9 +28,22 @@ import {
   PanelCloseIcon,
   PanelOpenIcon,
 } from "./lib/icons";
-import { MapCanvas } from "./map/MapCanvas";
 import { type DesktopPane, type SheetDetent, usePaneStore } from "./state/pane";
 import { useSelectionStore } from "./state/projection";
+
+/**
+ * Load-time budget (spec/src/roadmap.md): the notebook must not wait for the
+ * map stack. MapLibre and the plate (~290 KB compressed, ~1 MB to parse) load
+ * as their own chunk once the shell has rendered; the import starts at module
+ * evaluation so the download overlaps the first render instead of following
+ * it. Routes other than the home load on demand — Markdown, the import
+ * parsers, the export zipper and the published-document schemas stay off the
+ * first launch. The service worker still precaches every chunk, so the
+ * offline shell keeps them all.
+ */
+const loadMapCanvas = () => import("./map/MapCanvas");
+const MapCanvas = lazy(() => loadMapCanvas().then((m) => ({ default: m.MapCanvas })));
+if (typeof window !== "undefined") void loadMapCanvas();
 
 /** Notebook geometry: mobile sheet detents × desktop split/collapsed. On md+
  *  the shell is a flex row — notebook, place column, canvas — so the notebook
@@ -133,7 +140,11 @@ function RootLayout() {
         data-testid="map-viewport"
         data-map-layout={desktop === "split" ? "beside-pane" : "full-bleed"}
       >
-        <MapCanvas />
+        {/* Until the map chunk arrives the canvas is the bare plate — the
+            same paper the notebook sits on — never a spinner. */}
+        <Suspense fallback={<div className="h-full w-full bg-paper" data-testid="map-loading" />}>
+          <MapCanvas />
+        </Suspense>
         {/* Collapsed notebook: a floating reopen affordance on the canvas.
             A lifted paper pill — solid paper, hairline, soft shadow — like
             every control floating over the map plate
@@ -295,20 +306,20 @@ const homeRoute = createRoute({
 const listRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/list/$listId",
-  component: ListPage,
+  component: lazyRouteComponent(() => import("./features/lists/ListPage"), "ListPage"),
 });
 
 // Posts (spec/src/posts.md): reading, and the Markdown editor.
 const postRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/post/$postId",
-  component: PostPage,
+  component: lazyRouteComponent(() => import("./features/posts/PostPage"), "PostPage"),
 });
 
 const postEditorRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/post/$postId/edit",
-  component: PostEditorPage,
+  component: lazyRouteComponent(() => import("./features/posts/PostEditorPage"), "PostEditorPage"),
 });
 
 // The import review queue is a notebook route; the item under review projects
@@ -316,26 +327,32 @@ const postEditorRoute = createRoute({
 const reviewRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/review",
-  component: ReviewPage,
+  component: lazyRouteComponent(() => import("./features/interop/ReviewPage"), "ReviewPage"),
 });
 
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings",
-  component: SettingsPage,
+  component: lazyRouteComponent(() => import("./features/settings/SettingsPage"), "SettingsPage"),
 });
 
 // Public viewers (spec/src/sharing.md): published documents under named slugs.
 const publishedListRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/l/$slug",
-  component: PublishedListView,
+  component: lazyRouteComponent(
+    () => import("./features/share/PublishedListView"),
+    "PublishedListView",
+  ),
 });
 
 const publishedPostRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/p/$slug",
-  component: PublishedPostView,
+  component: lazyRouteComponent(
+    () => import("./features/share/PublishedPostView"),
+    "PublishedPostView",
+  ),
 });
 
 export const routeTree = rootRoute.addChildren([

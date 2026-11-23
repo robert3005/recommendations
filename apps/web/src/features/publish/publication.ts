@@ -29,7 +29,7 @@ import {
 } from "@placemarks/domain";
 import { SHARE_API_URL } from "../../config";
 import { nowIso } from "../../lib/time";
-import { shareDocumentUrl } from "../share/publishedDoc";
+import { shareDocumentUrl } from "../share/shareUrl";
 
 /**
  * The slice of the LocalRepository contract (src/data/repo.ts) that publishing

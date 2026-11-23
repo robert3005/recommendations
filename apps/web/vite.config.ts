@@ -1,6 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 /**
@@ -32,7 +32,40 @@ const DEVELOPMENT_ONLY_HOSTS = [
   "protomaps.github.io",
 ] as const;
 
+/**
+ * Warm the connection to the basemap host while the app bundle is still
+ * downloading: the plate's first request (the PMTiles header, glyphs, sprite)
+ * otherwise pays DNS + TCP + TLS only after the map chunk has loaded — three
+ * round trips, over 1.5 s on a 3G link. Only absolute, cross-origin URLs get
+ * a hint; a same-origin path needs none.
+ */
+function basemapPreconnect(urls: (string | undefined)[]): Plugin {
+  const origins = [
+    ...new Set(
+      urls.flatMap((value) => {
+        if (!value || !/^https?:\/\//i.test(value)) return [];
+        try {
+          return [new URL(value).origin];
+        } catch {
+          return [];
+        }
+      }),
+    ),
+  ];
+  return {
+    name: "placemarks-basemap-preconnect",
+    transformIndexHtml: () =>
+      origins.map((href) => ({
+        tag: "link",
+        // MapLibre fetches tiles in CORS mode without credentials.
+        attrs: { rel: "preconnect", href, crossorigin: "anonymous" },
+        injectTo: "head" as const,
+      })),
+  };
+}
+
 export default defineConfig(({ command, mode }) => {
+  const hintEnv = { ...process.env, ...loadEnv(mode, process.cwd(), "VITE_") };
   // Storybook's static build is a component workshop, never a deployment.
   if (command === "build" && mode === "production" && !process.env.PLACEMARKS_STORYBOOK) {
     const env = loadEnv(mode, process.cwd(), "VITE_");
@@ -105,6 +138,12 @@ export default defineConfig(({ command, mode }) => {
   }
   return {
     plugins: [
+      basemapPreconnect([
+        hintEnv.VITE_MAP_PMTILES_URL,
+        hintEnv.VITE_MAP_GLYPHS_URL?.replace(/\{[^}]*\}/g, "x"),
+        hintEnv.VITE_MAP_SPRITE_URL,
+        hintEnv.VITE_MAP_STYLE_URL,
+      ]),
       react(),
       tailwindcss(),
       VitePWA({
@@ -131,11 +170,16 @@ export default defineConfig(({ command, mode }) => {
       rollupOptions: {
         output: {
           // Split the heavyweights so each precached file stays well under the
-          // workbox 2 MiB limit and the map/markdown stacks load in parallel.
+          // workbox 2 MiB limit. Only libraries the first launch needs belong
+          // in a group here: naming a library pins it into that chunk, so
+          // grouping a lazy-only dependency (zod, fflate) with a launch one
+          // (dexie) would drag it back onto the critical path. Markdown has no
+          // group on purpose: a group hoists shared modules such as
+          // react/jsx-runtime into it, which made the entry preload the whole
+          // Markdown stack. Rollup's own split keeps it with the lazy routes.
           manualChunks: {
             maplibre: ["maplibre-gl"],
-            markdown: ["react-markdown", "remark-gfm", "rehype-sanitize"],
-            data: ["dexie", "dexie-react-hooks", "fflate", "zod"],
+            data: ["dexie", "dexie-react-hooks"],
           },
         },
       },

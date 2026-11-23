@@ -13,7 +13,7 @@ import { useRepo } from "../data/RepoContext";
 import { useLibraryFacets } from "../features/library/facets";
 import { MarkerGlyph } from "../features/lists/MarkerGlyph";
 import { type Viewport, viewportFromTimezone } from "../lib/viewport";
-import { mapStyleProvider } from "../providers";
+import { mapStyleProvider } from "../providers/mapStyle";
 import { editorBridge } from "../state/editorBridge";
 import { useLibraryStore } from "../state/library";
 import { paneCovered, paneLayoutKey, usePaneStore } from "../state/pane";
