@@ -64,6 +64,37 @@ function basemapPreconnect(urls: (string | undefined)[]): Plugin {
   };
 }
 
+/**
+ * The map canvas is a lazy chunk so the notebook paints first, but waiting
+ * for the entry to evaluate before even requesting it puts a full round trip
+ * plus the entry's download in front of the map. A low-priority modulepreload
+ * lets the browser fetch MapLibre while the shell loads, without competing
+ * with the shell's own scripts for the link.
+ */
+function lowPriorityMapPreload(): Plugin {
+  return {
+    name: "placemarks-map-preload",
+    apply: "build",
+    transformIndexHtml(_html, ctx) {
+      const bundle = ctx.bundle;
+      if (!bundle) return [];
+      const chunks = Object.values(bundle).filter((c) => c.type === "chunk");
+      const canvas = chunks.find((c) => c.facadeModuleId?.endsWith("/src/map/MapCanvas.tsx"));
+      if (!canvas) return [];
+      const files = [...new Set([...canvas.imports, canvas.fileName])].filter((file) => {
+        const chunk = bundle[file];
+        // Shared chunks the entry already preloads need no second hint.
+        return chunk?.type === "chunk" && !chunk.isEntry && !ctx.chunk?.imports.includes(file);
+      });
+      return files.map((file) => ({
+        tag: "link",
+        attrs: { rel: "modulepreload", href: `/${file}`, fetchpriority: "low", crossorigin: "" },
+        injectTo: "head" as const,
+      }));
+    },
+  };
+}
+
 export default defineConfig(({ command, mode }) => {
   const hintEnv = { ...process.env, ...loadEnv(mode, process.cwd(), "VITE_") };
   // Storybook's static build is a component workshop, never a deployment.
@@ -144,6 +175,7 @@ export default defineConfig(({ command, mode }) => {
         hintEnv.VITE_MAP_SPRITE_URL,
         hintEnv.VITE_MAP_STYLE_URL,
       ]),
+      lowPriorityMapPreload(),
       react(),
       tailwindcss(),
       VitePWA({
