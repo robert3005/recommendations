@@ -5,7 +5,15 @@
  * suffixes, unpublish tombstones, republish gets a new slug.
  */
 import { describe, expect, it } from "vitest";
-import { currentDocumentHash, publishList, publishPost, unpublish } from "./publication";
+import {
+  AUTHOR_NAME_KEY,
+  currentDocumentHash,
+  publishList,
+  publishPost,
+  republish,
+  stalePublications,
+  unpublish,
+} from "./publication";
 import { getHosted, minimalListDoc, putHosted, StubRepo } from "./testSupport";
 
 const PLACES = [
@@ -158,5 +166,101 @@ describe("publishPost", () => {
     };
     expect(doc.list).toBeUndefined();
     expect(doc.places.map((p) => p.name)).toEqual(["Café Central"]);
+  });
+});
+
+describe("live, versioned pages", () => {
+  it("stamps each publish with the next version without changing the content hash", async () => {
+    const repo = new StubRepo();
+    const list = repo.seedList("Versioned Weekend", PLACES);
+
+    const first = await publishList(repo, list.id);
+    expect(first.version).toBe(1);
+    const hosted = (await (await getHosted("lists", first.slug)).json()) as {
+      version?: number;
+      updatedAt?: string;
+    };
+    expect(hosted.version).toBe(1);
+    expect(hosted.updatedAt).toBeDefined();
+    // The stamp is on the wire copy only: the unchanged list is not "behind".
+    expect(await currentDocumentHash(repo, { kind: "list", id: list.id })).toBe(
+      first.lastPublishedHash,
+    );
+    expect(await stalePublications(repo)).toEqual([]);
+
+    const second = await publishList(repo, list.id);
+    expect(second.version).toBe(2);
+    expect(second.lastPublishedHash).toBe(first.lastPublishedHash);
+  });
+
+  it("lists a changed live page as behind, and republish brings it up to date", async () => {
+    const repo = new StubRepo();
+    const list = repo.seedList("Live Weekend", PLACES);
+    const first = await publishList(repo, list.id);
+
+    repo.lists.set(list.id, { ...list, description: "Now with an intro." });
+    const stale = await stalePublications(repo);
+    expect(stale.map((s) => s.publication.id)).toEqual([first.id]);
+
+    const updated = await republish(repo, first);
+    expect(updated.version).toBe(2);
+    expect(await stalePublications(repo)).toEqual([]);
+    const hosted = (await (await getHosted("lists", first.slug)).json()) as {
+      description?: string;
+    };
+    expect(hosted.description).toBe("Now with an intro.");
+  });
+
+  it("never lists a page switched to manual, or one this device cannot update", async () => {
+    const repo = new StubRepo();
+    const list = repo.seedList("Manual Weekend", PLACES);
+    const publication = await publishList(repo, list.id);
+    repo.lists.set(list.id, { ...list, name: "Manual Weekend, edited" });
+
+    const row = repo.publications.find((p) => p.id === publication.id);
+    if (!row) throw new Error("no row");
+    row.live = false;
+    expect(await stalePublications(repo)).toEqual([]);
+
+    row.live = true;
+    delete row.editorToken;
+    expect(await stalePublications(repo)).toEqual([]);
+  });
+});
+
+describe("the curator's voice", () => {
+  it("publishes the intro, the name, and each place's note, tags and rating", async () => {
+    const repo = new StubRepo();
+    const list = repo.seedList("Voiced Weekend", PLACES);
+    repo.lists.set(list.id, { ...list, description: "Where I take visitors." });
+    repo.settings.set(AUTHOR_NAME_KEY, "  Robert ");
+    const [first] = [...repo.places.values()];
+    if (!first) throw new Error("no place");
+    repo.places.set(first.id, { ...first, note: "Ask for the bica.", tags: ["coffee"], rating: 3 });
+
+    const publication = await publishList(repo, list.id);
+    const doc = (await (await getHosted("lists", publication.slug)).json()) as {
+      author?: string;
+      description?: string;
+      places: { note?: string; tags?: string[]; rating?: number }[];
+    };
+    expect(doc.author).toBe("Robert");
+    expect(doc.description).toBe("Where I take visitors.");
+    expect(doc.places[0]).toMatchObject({ note: "Ask for the bica.", tags: ["coffee"], rating: 3 });
+  });
+
+  it("a list that opted out publishes no notes, tags or ratings", async () => {
+    const repo = new StubRepo();
+    const list = repo.seedList("Quiet Weekend", PLACES);
+    repo.lists.set(list.id, { ...list, shareNotes: false });
+    const [first] = [...repo.places.values()];
+    if (!first) throw new Error("no place");
+    repo.places.set(first.id, { ...first, note: "Private.", tags: ["mine"], rating: 2 });
+
+    const publication = await publishList(repo, list.id);
+    const text = await (await getHosted("lists", publication.slug)).text();
+    expect(text).not.toContain("Private.");
+    expect(text).not.toContain("mine");
+    expect(text).not.toContain("rating");
   });
 });

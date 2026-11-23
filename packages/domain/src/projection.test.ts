@@ -146,3 +146,33 @@ describe("stableStringify", () => {
     expect(stableStringify(doc1)).toBe(stableStringify(doc2));
   });
 });
+
+describe("the curator's layer", () => {
+  const voiced = place("p1", { note: "Order the turbot.", tags: ["date night"], rating: 3 });
+
+  it("a list shares notes, tags and ratings unless it opted out", () => {
+    expect(projectList(list, [voiced], []).places[0]).toMatchObject({
+      note: "Order the turbot.",
+      tags: ["date night"],
+      rating: 3,
+    });
+    const quiet = projectList({ ...list, shareNotes: false }, [voiced], []).places[0];
+    expect(quiet).not.toHaveProperty("note");
+    expect(quiet).not.toHaveProperty("tags");
+    expect(quiet).not.toHaveProperty("rating");
+  });
+
+  it("carries the intro and a trimmed author name, and omits both when unset", () => {
+    const doc = projectList({ ...list, description: "Three days." }, [], [], { author: " Ana " });
+    expect(doc).toMatchObject({ description: "Three days.", author: "Ana" });
+    const bare = projectList(list, [], [], { author: "  " });
+    expect(bare).not.toHaveProperty("description");
+    expect(bare).not.toHaveProperty("author");
+  });
+
+  it("a post document never carries the owner's notes", () => {
+    const doc = projectPost(post, [voiced], { postUrls: new Map() });
+    expect(doc.places[0]).not.toHaveProperty("note");
+    expect(doc.places[0]).not.toHaveProperty("tags");
+  });
+});

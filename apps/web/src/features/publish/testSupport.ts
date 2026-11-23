@@ -129,10 +129,22 @@ export class StubRepo implements PublishRepo {
     return row;
   }
 
-  async recordPublished(id: string, lastPublishedHash: string, now: string): Promise<void> {
+  settings = new Map<string, unknown>();
+
+  async getSetting<T>(key: string): Promise<T | undefined> {
+    return this.settings.get(key) as T | undefined;
+  }
+
+  async recordPublished(
+    id: string,
+    lastPublishedHash: string,
+    now: string,
+    version?: number,
+  ): Promise<void> {
     const row = this.publications.find((p) => p.id === id);
     if (!row) throw new Error(`no publication ${id}`);
     row.lastPublishedHash = lastPublishedHash;
+    row.version = version ?? (row.version ?? 0) + 1;
     row.publishedAt = now;
     row.updatedAt = now;
   }

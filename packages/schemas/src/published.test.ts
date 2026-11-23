@@ -149,3 +149,32 @@ describe("slugs", () => {
     }
   });
 });
+
+describe("the curator's layer and the version stamp", () => {
+  const voiced = {
+    ...listDoc,
+    description: "Where I take visitors.",
+    author: "Robert",
+    version: 3,
+    updatedAt: "2026-11-22T22:00:00.000Z",
+    places: [{ ...place, note: "Order the turbot.", tags: ["date night"], rating: 3 }],
+  };
+
+  it("accepts an intro, an author, a stamp, and per-place note, tags and rating", () => {
+    expect(parsePublishedDocument("list", voiced)).toEqual(voiced);
+    expect(parsePublishedDocument("post", { ...postDoc, version: 2 })).toMatchObject({
+      version: 2,
+    });
+  });
+
+  it("stays optional — a document written before these fields still parses", () => {
+    expect(parsePublishedDocument("list", listDoc)).toEqual(listDoc);
+  });
+
+  it("refuses an out-of-range rating, a zero version, and an oversized note", () => {
+    const withPlace = (extra: object) => ({ ...listDoc, places: [{ ...place, ...extra }] });
+    expect(() => parsePublishedDocument("list", withPlace({ rating: 4 }))).toThrow();
+    expect(() => parsePublishedDocument("list", withPlace({ note: "x".repeat(601) }))).toThrow();
+    expect(() => parsePublishedDocument("list", { ...listDoc, version: 0 })).toThrow();
+  });
+});
