@@ -30,3 +30,38 @@ test("a production build rejects the known development/demo provider path", () =
     rmSync(outDir, { recursive: true, force: true });
   }
 }, 30_000);
+
+test("a test deployment may search with the demo geocoders, never draw a demo basemap", () => {
+  const outDir = mkdtempSync(join(tmpdir(), "placemarks-test-deploy-build-"));
+  const base: Record<string, string | undefined> = {
+    ...process.env,
+    NODE_ENV: "production",
+    PLACEMARKS_TEST_DEPLOY: "1",
+    VITE_MAP_STYLE_URL: "https://tiles.example/style.json",
+    VITE_PHOTON_URL: "https://photon.komoot.io",
+    VITE_OSM_API_URL: "https://api.openstreetmap.org",
+  };
+  delete base.PLACEMARKS_STORYBOOK;
+  const build = (env: Record<string, string | undefined>) => {
+    const result = spawnSync(
+      "pnpm",
+      ["exec", "vite", "build", "--emptyOutDir", "--outDir", outDir],
+      { cwd: process.cwd(), encoding: "utf8", env },
+    );
+    return { status: result.status, output: [result.stdout, result.stderr].join("\n") };
+  };
+
+  try {
+    const geocoders = build(base);
+    expect(geocoders.status, geocoders.output).toBe(0);
+
+    const basemap = build({
+      ...base,
+      VITE_MAP_STYLE_URL: "https://tiles.openfreemap.org/styles/bright",
+    });
+    expect(basemap.status, basemap.output).not.toBe(0);
+    expect(basemap.output).toMatch(/VITE_MAP_STYLE_URL/);
+  } finally {
+    rmSync(outDir, { recursive: true, force: true });
+  }
+}, 60_000);

@@ -48,7 +48,9 @@ debouncing, cancellation, result normalisation, and retry; callers see plain can
 Public endpoints such as photon.komoot.io and nominatim.openstreetmap.org carry strict usage
 policies and are development-only configurations. Production configuration is explicit and fails
 closed with either geocoder kind: a production build with any capability unconfigured refuses to
-run against public defaults.
+run against public defaults. A personal test deployment counts as a development configuration:
+building with `PLACEMARKS_TEST_DEPLOY=1` lets search and lookup point at the public demo
+geocoders, at development volumes. The basemap never qualifies.
 
 ## Wikipedia summaries
 

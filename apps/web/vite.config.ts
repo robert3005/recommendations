@@ -156,9 +156,24 @@ export default defineConfig(({ command, mode }) => {
           "point every VITE_ provider variable at a contracted or self-hosted deployment.",
       );
     }
-    const demo = requiredProviderVars.filter((key) =>
-      DEVELOPMENT_ONLY_HOSTS.some((host) => hostnameOf(providerValue(key)) === host),
+    // A personal test deployment is a development configuration
+    // (spec/src/data-sources.md): PLACEMARKS_TEST_DEPLOY=1 lets search and
+    // lookup use the public demo geocoders there, at development volumes.
+    // The basemap never qualifies, and the flag is a build-time variable that
+    // never reaches the client.
+    const testDeploy = process.env.PLACEMARKS_TEST_DEPLOY === "1";
+    const demoGeocoderVars = new Set(["VITE_PHOTON_URL", "VITE_OSM_API_URL"]);
+    const demo = requiredProviderVars.filter(
+      (key) =>
+        !(testDeploy && demoGeocoderVars.has(key)) &&
+        DEVELOPMENT_ONLY_HOSTS.some((host) => hostnameOf(providerValue(key)) === host),
     );
+    if (testDeploy) {
+      console.warn(
+        "PLACEMARKS_TEST_DEPLOY=1: search and lookup may use public demo geocoders — " +
+          "test deployments only, never production.",
+      );
+    }
     if (demo.length > 0) {
       throw new Error(
         `production build fails closed: ${demo.join(", ")} point at development/demo provider ` +
