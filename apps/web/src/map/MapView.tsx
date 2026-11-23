@@ -112,6 +112,23 @@ let scene: PlateScene = PLATE_SCENE.paper;
 const MARK_LABEL = "#FCFCF9";
 
 /** Sprite id for a marker variant — parsed back by the sprite painter. */
+/**
+ * Padding for fitting a set of pins. On a phone the notebook sheet rises over
+ * the lower half of the canvas, so the pins frame in the strip above it.
+ */
+function fitPadding(
+  container: HTMLElement | null,
+  layoutKey: string | undefined,
+): maplibregl.PaddingOptions {
+  const height = container?.clientHeight ?? 0;
+  if (layoutKey?.startsWith("mobile") && height > 0) {
+    const bottom = Math.round(height * 0.5) + 24;
+    const top = Math.min(72, Math.max(16, height - bottom - 48));
+    return { top, bottom, left: 40, right: 40 };
+  }
+  return { top: 72, bottom: 72, left: 72, right: 72 };
+}
+
 function markerImageId(pin: PlacePinFeature): string {
   const stacked = pin.stackedMarker
     ? `${pin.stackedMarker.shape}|${pin.stackedMarker.color}`
@@ -278,6 +295,13 @@ export function MapView({
     zoom: number;
     offset: [number, number];
   } | null>(null);
+  // The last fitted frame, re-fitted when the canvas changes size before the
+  // user moves the map (a resize stops an in-flight camera animation).
+  /** The canvas box MapLibre last measured, as `WxH`. */
+  const measuredBoxRef = useRef<string | null>(null);
+  const layoutKeyRef = useRef(layoutKey);
+  layoutKeyRef.current = layoutKey;
+  const fitAnchorRef = useRef<{ bounds: [[number, number], [number, number]] } | null>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the initial camera/style apply once at singleton creation; later changes reconcile in effects below without recreating the map.
   useEffect(() => {
@@ -291,6 +315,7 @@ export function MapView({
       attributionControl: false,
     });
     mapRef.current = map;
+    measuredBoxRef.current = `${containerRef.current.clientWidth}x${containerRef.current.clientHeight}`;
 
     // OSM attribution is a licensing requirement on every map surface.
     map.addControl(new maplibregl.AttributionControl({ compact: false }));
@@ -531,7 +556,10 @@ export function MapView({
     // Only a user gesture releases a selection's centre anchor; the app's own
     // camera moves carry no originalEvent.
     map.on("movestart", (event: { originalEvent?: unknown }) => {
-      if (event.originalEvent) centreAnchorRef.current = null;
+      if (event.originalEvent) {
+        centreAnchorRef.current = null;
+        fitAnchorRef.current = null;
+      }
     });
 
     // Debounced viewport reporting — the persisted camera, not discovery.
@@ -560,6 +588,12 @@ export function MapView({
       if (moveTimer) clearTimeout(moveTimer);
       map.remove();
       mapRef.current = null;
+      // A new map (a remount) owes its own camera move: forget what the
+      // removed one applied.
+      appliedFlyTo.current = null;
+      appliedFitKey.current = null;
+      centreAnchorRef.current = null;
+      fitAnchorRef.current = null;
     };
   }, []);
 
@@ -573,6 +607,8 @@ export function MapView({
     }
     if (!wasCoveredRef.current) return;
     wasCoveredRef.current = false;
+    const container = containerRef.current;
+    if (container) measuredBoxRef.current = `${container.clientWidth}x${container.clientHeight}`;
     mapRef.current?.resize();
     mapRef.current?.triggerRepaint();
   }, [covered]);
@@ -642,8 +678,16 @@ export function MapView({
   // explicitly without recreating the persistent map instance.
   useEffect(() => {
     if (covered) return;
-    if (containerRef.current && layoutKey) containerRef.current.dataset.layout = layoutKey;
-    mapRef.current?.resize();
+    const container = containerRef.current;
+    if (container && layoutKey) container.dataset.layout = layoutKey;
+    const map = mapRef.current;
+    if (!map || !container) return;
+    // Only a real change of box: resize() stops any camera flight in progress,
+    // and a sheet detent or form-factor switch often leaves the box as it was.
+    const box = `${container.clientWidth}x${container.clientHeight}`;
+    if (measuredBoxRef.current === box) return;
+    measuredBoxRef.current = box;
+    map.resize();
   }, [covered, layoutKey]);
 
   useEffect(() => {
@@ -721,11 +765,22 @@ export function MapView({
       width = container.clientWidth;
       height = container.clientHeight;
       if (coveredRef.current) return;
+      measuredBoxRef.current = `${width}x${height}`;
       map.resize();
-      const anchor = centreAnchorRef.current;
-      if (!anchor) return;
       const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-      map.easeTo({ ...anchor, duration: reduceMotion ? 0 : 250 });
+      const anchor = centreAnchorRef.current;
+      if (anchor) {
+        map.easeTo({ ...anchor, duration: reduceMotion ? 0 : 250 });
+        return;
+      }
+      const fit = fitAnchorRef.current;
+      if (fit) {
+        map.fitBounds(fit.bounds, {
+          padding: fitPadding(container, layoutKeyRef.current),
+          maxZoom: 16,
+          duration: reduceMotion ? 0 : 250,
+        });
+      }
     });
     observer.observe(container);
     return () => {
@@ -759,6 +814,9 @@ export function MapView({
       // starts (its contents load asynchronously), shrinking the canvas, and
       // the container observer below re-centres on the anchor when it does.
       centreAnchorRef.current = camera;
+      fitAnchorRef.current = null;
+      const box = containerRef.current;
+      if (box) measuredBoxRef.current = `${box.clientWidth}x${box.clientHeight}`;
       map.resize();
       map.flyTo({ ...camera, duration: reduceMotion ? 0 : 700 });
       return;
@@ -766,13 +824,13 @@ export function MapView({
     if (!fitTo || appliedFitKey.current === fitTo.key) return;
     appliedFitKey.current = fitTo.key;
     centreAnchorRef.current = null;
-    map.fitBounds(
-      [
-        [fitTo.bounds.west, fitTo.bounds.south],
-        [fitTo.bounds.east, fitTo.bounds.north],
-      ],
-      { padding: 72, maxZoom: 16, duration: reduceMotion ? 0 : 700 },
-    );
+    const bounds: [[number, number], [number, number]] = [
+      [fitTo.bounds.west, fitTo.bounds.south],
+      [fitTo.bounds.east, fitTo.bounds.north],
+    ];
+    const padding = fitPadding(containerRef.current, layoutKey);
+    fitAnchorRef.current = { bounds };
+    map.fitBounds(bounds, { padding, maxZoom: 16, duration: reduceMotion ? 0 : 700 });
     if (containerRef.current) containerRef.current.dataset.fitKey = fitTo.key;
   }, [fitTo, flyTo, covered, layoutKey]);
 
@@ -804,3 +862,4 @@ export function MapView({
     </div>
   );
 }
+

@@ -84,8 +84,8 @@ export function PreflightDialog({
       <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-ink/70">
         {places.map((place) => (
           <li key={place.id} data-testid="preflight-place">
-            <span className="font-medium text-ink">{place.name}</span> · {String(place.lat)},{" "}
-            {String(place.lng)}
+            <span className="font-medium text-ink">{place.name}</span> · {coord(place.lat)},{" "}
+            {coord(place.lng)}
             {place.address ? <span className="text-ink/60"> · {place.address}</span> : null}
             {place.note || place.tags?.length || place.stars ? (
               <span className="block text-ink/80" data-testid="preflight-personal">
@@ -153,4 +153,9 @@ export function PreflightDialog({
       </div>
     </div>
   );
+}
+
+/** Five decimals (about a metre) — what is published, without float noise. */
+function coord(value: number): string {
+  return String(Number(value.toFixed(5)));
 }
