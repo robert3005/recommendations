@@ -9,5 +9,5 @@ compatibility_date = "2026-07-01"
 [[d1_databases]]
 binding = "SHARE_DB"
 database_name = "placemarks-share"
-database_id = "REPLACE_WITH_REAL_ID"
+database_id = "803072ab-a67c-4012-beb5-af8d299235da"
 migrations_dir = "migrations"

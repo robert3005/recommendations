@@ -6,9 +6,8 @@ Deployment notes for the hosted share service (`wrangler.toml`, `migrations/`).
 
 The ordered D1 migrations are the only production schema-upgrade path. There
 are two — the baseline and `0002-sync.sql`, which adds the sync tables — and no
-upgrade of a live predecessor yet, because the service has never been deployed:
-`wrangler.toml` still carries `REPLACE_WITH_REAL_ID`, so no database exists that
-predates the current schema. Migrations that upgrade a live predecessor start
+upgrade of a live predecessor yet, because the first deployment (a test one, 2026-11-23) was created with both
+already written, so no database exists that predates the current schema. Migrations that upgrade a live predecessor start
 being written the day one exists.
 
 From `services/share`:
@@ -19,7 +18,13 @@ pnpm db:migrate:remote  # production D1
 pnpm deploy             # runs the remote migration first via predeploy
 ```
 
-Replace `REPLACE_WITH_REAL_ID` in `wrangler.toml` before a remote operation.
+A test deployment exists since 2026-11-23:
+`https://placemarks-share.together-in-girona.workers.dev`, on the D1 database
+whose id is in `wrangler.toml`. Both migrations are applied to it.
+
+Deploy with `pnpm deploy`, not a bare `wrangler deploy`: only the pnpm script
+runs the remote migration first. A Worker deployed ahead of its migrations
+answers 500 on every route that touches a table.
 Once the service is live, back up the production D1 database before applying any
 migration and verify the command reports it applied before deploying the Worker.
 
