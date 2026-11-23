@@ -1,0 +1,11 @@
+# Tile service (spec/src/data-sources.md §Map tiles): serves the self-hosted
+# Protomaps archive one tile per URL so browsers and Cloudflare's edge can
+# cache each tile, which range requests into one 49 GB file never allowed.
+# Also fronts the plate's glyphs and sprite with long cache lifetimes.
+name = "placemarks-tiles"
+main = "src/worker.ts"
+compatibility_date = "2026-11-19"
+
+[[r2_buckets]]
+binding = "TILES_BUCKET"
+bucket_name = "placemarks-tiles"

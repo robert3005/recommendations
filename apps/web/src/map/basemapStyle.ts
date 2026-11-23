@@ -13,8 +13,10 @@ import { type Flavor, layers, namedFlavor } from "@protomaps/basemaps";
 import maplibregl, { type StyleSpecification } from "maplibre-gl";
 import { Protocol } from "pmtiles";
 
-// The plate is a single PMTiles archive read by HTTP range request
-// (spec/src/data-sources.md §Map tiles); MapLibre learns the scheme once.
+// The plate reads either the tile service's per-tile URLs (preferred: each
+// tile is its own cacheable response) or a PMTiles archive directly by HTTP
+// range request (spec/src/data-sources.md §Map tiles); for the latter
+// MapLibre learns the pmtiles:// scheme once.
 let pmtilesRegistered = false;
 function ensurePmtilesProtocol() {
   if (pmtilesRegistered) return;
@@ -215,9 +217,14 @@ export const PLATE_OVERLAY_FONT = "Noto Sans Medium";
 /** Layers that would compete with the user's pins. */
 const DROPPED_LAYER_IDS = new Set(["pois", "roads_shields"]);
 
+/** Protomaps builds stop at z15; MapLibre overzooms beyond it. */
+export const PLATE_MAX_ZOOM = 15;
+
 export interface PlateStyleOptions {
-  /** Absolute URL of the Protomaps-schema .pmtiles archive. */
-  pmtilesUrl: string;
+  /** Absolute URL of the Protomaps-schema .pmtiles archive, read by range request. */
+  pmtilesUrl?: string;
+  /** Tile URL template (`{z}/{x}/{y}`) of the tile service; wins over pmtilesUrl. */
+  tilesUrl?: string;
   /** MapLibre glyphs template (`{fontstack}` / `{range}`). */
   glyphsUrl: string;
   /** MapLibre sprite base URL (one-way arrows, town dots). */
@@ -243,26 +250,26 @@ export function plateLayers(scheme: PlateScheme, lang = "en"): StyleSpecificatio
     ) as StyleSpecification["layers"];
 }
 
-/** The complete MapLibre style for the plate, sourced from a PMTiles archive. */
+/** The complete MapLibre style for the plate, from the tile service or a PMTiles archive. */
 export function plateStyle({
   pmtilesUrl,
+  tilesUrl,
   glyphsUrl,
   spriteUrl,
   attribution,
   scheme = "paper",
   lang = "en",
 }: PlateStyleOptions): StyleSpecification {
-  ensurePmtilesProtocol();
+  if (!tilesUrl && !pmtilesUrl) throw new Error("plateStyle needs tilesUrl or pmtilesUrl");
+  if (!tilesUrl) ensurePmtilesProtocol();
   return {
     version: 8,
     glyphs: glyphsUrl,
     sprite: spriteUrl,
     sources: {
-      protomaps: {
-        type: "vector",
-        url: `pmtiles://${pmtilesUrl}`,
-        attribution,
-      },
+      protomaps: tilesUrl
+        ? { type: "vector", tiles: [tilesUrl], maxzoom: PLATE_MAX_ZOOM, attribution }
+        : { type: "vector", url: `pmtiles://${pmtilesUrl}`, attribution },
     },
     layers: plateLayers(scheme, lang),
   };

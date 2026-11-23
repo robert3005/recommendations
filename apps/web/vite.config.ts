@@ -12,14 +12,11 @@ import { VitePWA } from "vite-plugin-pwa";
 const BASE_REQUIRED_PROVIDER_VARS = ["VITE_OSM_API_URL"] as const;
 
 /**
- * The basemap is either our own plate over a self-hosted PMTiles archive —
- * which then also needs self-hosted glyphs and sprite — or a hosted style URL.
+ * The basemap is either our own plate — over the tile service's per-tile URLs
+ * or a self-hosted PMTiles archive, either way with self-hosted glyphs and
+ * sprite — or a hosted style URL.
  */
-const PLATE_PROVIDER_VARS = [
-  "VITE_MAP_PMTILES_URL",
-  "VITE_MAP_GLYPHS_URL",
-  "VITE_MAP_SPRITE_URL",
-] as const;
+const PLATE_ASSET_VARS = ["VITE_MAP_GLYPHS_URL", "VITE_MAP_SPRITE_URL"] as const;
 
 /** The community/demo hosts the spec designates development-only. */
 const DEVELOPMENT_ONLY_HOSTS = [
@@ -106,9 +103,11 @@ export default defineConfig(({ command, mode }) => {
     // public demo, so VITE_GEOCODER=pelias demands VITE_PELIAS_URL.
     const searchVar =
       providerValue("VITE_GEOCODER") === "pelias" ? "VITE_PELIAS_URL" : "VITE_PHOTON_URL";
-    const basemapVars = providerValue("VITE_MAP_PMTILES_URL")
-      ? PLATE_PROVIDER_VARS
-      : (["VITE_MAP_STYLE_URL"] as const);
+    const basemapVars = providerValue("VITE_MAP_TILES_URL")
+      ? (["VITE_MAP_TILES_URL", ...PLATE_ASSET_VARS] as const)
+      : providerValue("VITE_MAP_PMTILES_URL")
+        ? (["VITE_MAP_PMTILES_URL", ...PLATE_ASSET_VARS] as const)
+        : (["VITE_MAP_STYLE_URL"] as const);
     const requiredProviderVars = [...basemapVars, ...BASE_REQUIRED_PROVIDER_VARS, searchVar];
     const missing = requiredProviderVars.filter((key) => !providerValue(key));
     if (missing.length > 0) {
@@ -185,6 +184,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [
       basemapPreconnect([
+        hintEnv.VITE_MAP_TILES_URL?.replace(/\{[^}]*\}/g, "0"),
         hintEnv.VITE_MAP_PMTILES_URL,
         hintEnv.VITE_MAP_GLYPHS_URL?.replace(/\{[^}]*\}/g, "x"),
         hintEnv.VITE_MAP_SPRITE_URL,

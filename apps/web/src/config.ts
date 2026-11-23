@@ -4,29 +4,38 @@
  * or self-hosted deployments via VITE_* env configuration (the build fails closed).
  */
 /**
- * Our tile bucket (Cloudflare R2, public r2.dev URL): the Protomaps Europe
- * archive plus the plate's glyphs and sprite (spec/src/data-sources.md §Map tiles).
+ * Our tile service (services/tiles, a Cloudflare Worker over the R2 bucket):
+ * the Protomaps Europe archive served one tile per URL, plus the plate's
+ * glyphs and sprite — every response cacheable by browsers and the edge, and
+ * CORS-open to any origin (spec/src/data-sources.md §Map tiles).
  */
-const TILE_BUCKET = "https://pub-a5fdf113afab4f329db5d4a74129b60d.r2.dev";
+const TILE_SERVICE = "https://placemarks-tiles.together-in-girona.workers.dev";
 
 /**
- * Basemap, preferred path: our own plate style (src/map/basemapStyle.ts) built
- * from a Protomaps-schema PMTiles archive — self-hosted static storage, no
- * per-view billing. Defaults to the bucket's archive unless a hosted style is
- * chosen explicitly with VITE_MAP_STYLE_URL (e2e's network-free fixture does
- * this). Relative paths resolve against the app's origin.
+ * Basemap, preferred path: our own plate style (src/map/basemapStyle.ts) over
+ * the tile service's per-tile URLs. VITE_MAP_PMTILES_URL instead reads a
+ * PMTiles archive directly by range request (no tile service; e.g. a local
+ * extract in public/); VITE_MAP_STYLE_URL picks a hosted style (e2e's
+ * network-free fixture does this). Precedence: tiles, then PMTiles, then
+ * style. Relative paths resolve against the app's origin.
  */
-export const MAP_PMTILES_URL: string | undefined =
-  import.meta.env.VITE_MAP_PMTILES_URL ||
-  (import.meta.env.VITE_MAP_STYLE_URL ? undefined : `${TILE_BUCKET}/europe.pmtiles`);
+export const MAP_TILES_URL: string | undefined =
+  import.meta.env.VITE_MAP_TILES_URL ||
+  (import.meta.env.VITE_MAP_PMTILES_URL || import.meta.env.VITE_MAP_STYLE_URL
+    ? undefined
+    : `${TILE_SERVICE}/europe/{z}/{x}/{y}.mvt`);
 
-/** Glyphs for the plate style, served beside the archive. */
+export const MAP_PMTILES_URL: string | undefined = MAP_TILES_URL
+  ? undefined
+  : import.meta.env.VITE_MAP_PMTILES_URL || undefined;
+
+/** Glyphs for the plate style, served beside the tiles. */
 export const MAP_GLYPHS_URL: string =
-  import.meta.env.VITE_MAP_GLYPHS_URL ?? `${TILE_BUCKET}/fonts/{fontstack}/{range}.pbf`;
+  import.meta.env.VITE_MAP_GLYPHS_URL ?? `${TILE_SERVICE}/fonts/{fontstack}/{range}.pbf`;
 
-/** Sprite for the plate style, served beside the archive. */
+/** Sprite for the plate style, served beside the tiles. */
 export const MAP_SPRITE_URL: string =
-  import.meta.env.VITE_MAP_SPRITE_URL ?? `${TILE_BUCKET}/sprites/v4/light`;
+  import.meta.env.VITE_MAP_SPRITE_URL ?? `${TILE_SERVICE}/sprites/v4/light`;
 
 /**
  * Hosted basemap, used only when VITE_MAP_STYLE_URL is set — e.g. OpenFreeMap

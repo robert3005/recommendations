@@ -46,3 +46,21 @@ test("the plate fails closed on the development-only glyph host", () => {
   expect(status, output).not.toBe(0);
   expect(output).toMatch(/VITE_MAP_GLYPHS_URL/);
 }, 60_000);
+
+test("a plate over the tile service's per-tile URLs builds without an archive or style URL", () => {
+  const { status, output } = build({
+    VITE_MAP_TILES_URL: "https://tiles.example/europe/{z}/{x}/{y}.mvt",
+    VITE_MAP_GLYPHS_URL: "https://tiles.example/fonts/{fontstack}/{range}.pbf",
+    VITE_MAP_SPRITE_URL: "https://tiles.example/sprites/light",
+  });
+  expect(status, output).toBe(0);
+}, 60_000);
+
+test("a tile-service plate still needs its own glyphs", () => {
+  const { status, output } = build({
+    VITE_MAP_TILES_URL: "https://tiles.example/europe/{z}/{x}/{y}.mvt",
+    VITE_MAP_SPRITE_URL: "https://tiles.example/sprites/light",
+  });
+  expect(status, output).not.toBe(0);
+  expect(output).toMatch(/VITE_MAP_GLYPHS_URL/);
+}, 60_000);

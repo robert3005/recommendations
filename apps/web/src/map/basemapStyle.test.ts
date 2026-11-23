@@ -16,6 +16,21 @@ describe("basemap plate", () => {
     });
   });
 
+  it("prefers the tile service's per-tile URLs, capped at the archive's z15", () => {
+    const viaService = plateStyle({
+      tilesUrl: "https://tiles.example/europe/{z}/{x}/{y}.mvt",
+      pmtilesUrl: "https://tiles.example/world.pmtiles",
+      glyphsUrl: "https://tiles.example/fonts/{fontstack}/{range}.pbf",
+      spriteUrl: "https://tiles.example/sprites/light",
+      attribution: "Protomaps",
+    });
+    expect(viaService.sources.protomaps).toMatchObject({
+      type: "vector",
+      tiles: ["https://tiles.example/europe/{z}/{x}/{y}.mvt"],
+      maxzoom: 15,
+    });
+  });
+
   it("drops POI icons and road shields so only the user's pins mark places", () => {
     const ids = style.layers.map((layer) => layer.id);
     expect(ids).not.toContain("pois");

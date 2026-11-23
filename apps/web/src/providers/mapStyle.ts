@@ -10,6 +10,7 @@ import {
   MAP_PMTILES_URL,
   MAP_SPRITE_URL,
   MAP_STYLE_URL,
+  MAP_TILES_URL,
   OSM_ATTRIBUTION,
 } from "../config";
 import { PLATE_OVERLAY_FONT, type PlateScheme, plateLayers, plateStyle } from "../map/basemapStyle";
@@ -20,6 +21,16 @@ import { PLATE_OVERLAY_FONT, type PlateScheme, plateLayers, plateStyle } from ".
  * style URL. The plate follows the chrome theme; a hosted style has one look,
  * so its scene stays the light plate's.
  */
+/** Our own plate, over the tile service or a PMTiles archive. */
+const PLATE = Boolean(MAP_TILES_URL || MAP_PMTILES_URL);
+
+/** A relative template resolves against the app; `{z}` braces must survive URL parsing. */
+function absoluteTemplate(template: string): string {
+  return /^https?:\/\//i.test(template)
+    ? template
+    : `${window.location.origin}${template.startsWith("/") ? "" : "/"}${template}`;
+}
+
 let cachedStyle: string | StyleSpecification | undefined;
 const cachedPlateLayers = new Map<PlateScheme, StyleSpecification["layers"]>();
 
@@ -28,9 +39,11 @@ const cachedPlateLayers = new Map<PlateScheme, StyleSpecification["layers"]>();
  * Later theme changes repaint the plate's layers instead (`basemapLayers`). */
 function basemapStyle(scheme: PlateScheme): string | StyleSpecification {
   if (cachedStyle === undefined) {
-    cachedStyle = MAP_PMTILES_URL
+    cachedStyle = PLATE
       ? plateStyle({
-          pmtilesUrl: new URL(MAP_PMTILES_URL, window.location.origin).href,
+          ...(MAP_TILES_URL
+            ? { tilesUrl: absoluteTemplate(MAP_TILES_URL) }
+            : { pmtilesUrl: new URL(MAP_PMTILES_URL ?? "", window.location.origin).href }),
           glyphsUrl: MAP_GLYPHS_URL,
           spriteUrl: new URL(MAP_SPRITE_URL, window.location.origin).href,
           // The canvas's own linked OSM credit is always shown beside this, so
@@ -44,7 +57,7 @@ function basemapStyle(scheme: PlateScheme): string | StyleSpecification {
 }
 
 function basemapLayers(scheme: PlateScheme): StyleSpecification["layers"] | undefined {
-  if (!MAP_PMTILES_URL) return undefined;
+  if (!PLATE) return undefined;
   let layers = cachedPlateLayers.get(scheme);
   if (!layers) {
     layers = plateLayers(scheme);
@@ -64,13 +77,13 @@ export const mapStyleProvider = {
     overlayFont: string | undefined;
     attribution: string;
   } => {
-    const scheme: PlateScheme = MAP_PMTILES_URL ? theme : "paper";
+    const scheme: PlateScheme = PLATE ? theme : "paper";
     return {
       style: basemapStyle(scheme),
       scheme,
       basemapLayers: basemapLayers(scheme),
       // The plate's glyph server holds one font per folder (no combined stacks).
-      overlayFont: MAP_PMTILES_URL ? PLATE_OVERLAY_FONT : undefined,
+      overlayFont: PLATE ? PLATE_OVERLAY_FONT : undefined,
       attribution: OSM_ATTRIBUTION,
     };
   },
