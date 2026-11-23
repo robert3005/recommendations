@@ -8,10 +8,15 @@
  */
 import type { GeocoderCandidate } from "./entities";
 
-/** NFKC, lowercased, punctuation collapsed to single spaces. */
+/**
+ * NFKC, accents folded ("Zédel" is "Zedel" — sources disagree on them),
+ * lowercased, punctuation collapsed to single spaces.
+ */
 export function normalizeName(s: string): string {
   return s
     .normalize("NFKC")
+    .normalize("NFD")
+    .replace(/\p{M}+/gu, "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
@@ -102,6 +107,29 @@ function kmBetween(a: { lat: number; lng: number }, b: { lat: number; lng: numbe
   return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+/** Two same-named results this close are one venue listed twice (OSM and Foursquare, say). */
+const SAME_VENUE_KM = 0.15;
+
+/**
+ * Drops results that repeat another: the same name within SAME_VENUE_KM, from
+ * a source without an osmRef. The OSM-sourced copy is kept.
+ */
+function withoutDuplicates(candidates: GeocoderCandidate[]): GeocoderCandidate[] {
+  const ordered = [...candidates.filter((c) => c.osmRef), ...candidates.filter((c) => !c.osmRef)];
+  const kept: GeocoderCandidate[] = [];
+  for (const candidate of ordered) {
+    const name = normalizeName(candidate.name);
+    // Two distinct OSM elements stay two: only a copy from another source
+    // (no osmRef of its own) is folded into an earlier listing.
+    const repeat =
+      !candidate.osmRef &&
+      kept.some((k) => normalizeName(k.name) === name && kmBetween(k, candidate) <= SAME_VENUE_KM);
+    if (!repeat) kept.push(candidate);
+  }
+  // Original order among the survivors: callers read the first as the best.
+  return candidates.filter((c) => kept.includes(c));
+}
+
 /** A candidate this close to a place already on the list is plausibly the one meant. */
 export const NEAR_LIST_KM = 40;
 
@@ -142,11 +170,13 @@ export function autoPlaceDecision(
 ): { kind: "auto"; candidate: GeocoderCandidate } | { kind: "review" } {
   const rowName = normalizeName(row.title);
   if (rowName === "") return { kind: "review" };
-  const qualifying = candidates.filter(
-    (candidate) =>
-      namesMatch(rowName, candidate) && !addressesContradict(row.address, candidate.address),
+  const qualifying = withoutDuplicates(
+    candidates.filter(
+      (candidate) =>
+        namesMatch(rowName, candidate) && !addressesContradict(row.address, candidate.address),
+    ),
   );
-  if (candidates.length === 1 && qualifying.length === 1) {
+  if (withoutDuplicates(candidates).length === 1 && qualifying.length === 1) {
     return { kind: "auto", candidate: qualifying[0] as GeocoderCandidate };
   }
 

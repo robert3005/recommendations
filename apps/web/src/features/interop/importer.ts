@@ -16,6 +16,35 @@ import { type ParsedItem, type ParsedList, parseImportFile } from "./parse";
 export interface ImportDeps {
   /** The ladder needs every result's position, so it uses the full `search`. */
   geocoder: Pick<Geocoder, "search">;
+  /** Rows handled so far out of the file's total, for a progress line. */
+  onProgress?: (done: number, total: number) => void;
+}
+
+/** Geocode requests kept in flight ahead of the row being placed. */
+const GEOCODE_LOOKAHEAD = 4;
+
+/**
+ * A search cache that lets the importer ask about the next rows while it
+ * places the current one — one request at a time made a 500-row Takeout take
+ * minutes. Keyed by text: a row is searched with the list's centre as it was
+ * when it was first asked about, a few rows earlier, which only differs while
+ * the list's first places are going down. Failures are cached too, so a
+ * prefetch error reaches the row that needs it as a direct call would.
+ */
+function prefetchingGeocoder(geocoder: Pick<Geocoder, "search">): Pick<Geocoder, "search"> {
+  const cache = new Map<string, Promise<GeocoderCandidate[]>>();
+  return {
+    search(text, bias) {
+      let pending = cache.get(text);
+      if (!pending) {
+        pending = geocoder.search(text, bias);
+        // Fetched ahead and maybe never awaited (the row converged instead).
+        pending.catch(() => {});
+        cache.set(text, pending);
+      }
+      return pending;
+    },
+  };
 }
 
 export interface ImportReport {
@@ -260,6 +289,8 @@ export async function runImport(
     droppedNotes: 0,
   };
 
+  const geocoder = prefetchingGeocoder(deps.geocoder);
+  const totalRows = parsed.lists.reduce((n, l) => n + l.items.length + l.unusable.length, 0);
   const newItems: ImportItem[] = [];
   const newItemIds = new Set<string>();
   const touchedBatches = new Set<string>();
@@ -322,7 +353,7 @@ export async function runImport(
     let decision: Decision;
     try {
       ({ candidates, decision } = await geocodeAndDecide(
-        deps.geocoder,
+        geocoder,
         { title: item.title, ...(item.address ? { address: item.address } : {}) },
         anchorsOf(targetListId),
       ));
@@ -387,7 +418,24 @@ export async function runImport(
       for (const item of list.items) if (item.coords) anchors.push(item.coords);
     }
 
-    for (const item of list.items) {
+    // Ask ahead for rows that will reach the geocode rung: the request the
+    // rung makes first (title + address, or the bare title).
+    // Rows that will converge (placed by an earlier import, or a Google id
+    // already in the library) are not asked about: a re-import stays free.
+    const prefetch = async (index: number) => {
+      const ahead = list.items[index];
+      if (!ahead || ahead.coords || geocoderDown || !target) return;
+      if (placedByKey.has(rawKey(target.id, rawOf(ahead)))) return;
+      const fid = ahead.url ? googleFeatureId(ahead.url) : undefined;
+      if (fid && (await repo.findByGoogleFeatureId(fid))) return;
+      const text = ahead.address ? `${ahead.title}, ${ahead.address}` : ahead.title;
+      await geocoder.search(text, listBias(anchorsOf(target.id)));
+    };
+    for (let i = 0; i < GEOCODE_LOOKAHEAD; i++) void prefetch(i).catch(() => {});
+
+    for (const [index, item] of list.items.entries()) {
+      void prefetch(index + GEOCODE_LOOKAHEAD).catch(() => {});
+      deps.onProgress?.(report.rows, totalRows);
       report.rows += 1;
       const row: ImportItem = {
         id: newId(),

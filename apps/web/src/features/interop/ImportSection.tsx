@@ -32,18 +32,25 @@ export function ImportSection() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [message, setMessage] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number }>();
   const queue = useLiveQuery(() => listReviewItems(repo), [repo]);
 
   const doImport = async (file: File) => {
     setBusy(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const report = await runImport(repo, { name: file.name, bytes }, { geocoder }, nowIso());
+      const report = await runImport(
+        repo,
+        { name: file.name, bytes },
+        { geocoder, onProgress: (done, total) => setProgress({ done, total }) },
+        nowIso(),
+      );
       setMessage(reportLine(report));
     } catch (err) {
       setMessage(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setBusy(false);
+      setProgress(undefined);
     }
   };
 
@@ -65,7 +72,11 @@ export function ImportSection() {
           className="rounded-pill bg-ink px-3 py-1.5 text-sm font-medium text-paper disabled:opacity-40"
           data-testid="import-places"
         >
-          {busy ? "Importing…" : "Import places…"}
+          {busy
+            ? progress && progress.total > 0
+              ? `Importing… ${progress.done} of ${progress.total}`
+              : "Importing…"
+            : "Import places…"}
         </button>
         <input
           ref={fileRef}

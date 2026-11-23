@@ -114,6 +114,49 @@ describe("parseTakeoutZip", () => {
     expect(leftovers?.items.map((i) => i.title)).toEqual(["Geo Only"]);
   });
 
+  it("reads the current lower-case Saved Places shape and joins its cid links to CSV feature ids", () => {
+    // 0x…:0x2a → cid 42: the same listing named two ways.
+    const csvUrl = "https://www.google.com/maps/place/Kiln/data=!4m2!3m1!1s0x48761b:0x2a";
+    const current = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [-0.1344, 51.5113] },
+          properties: {
+            date: "2024-05-01T10:00:00Z",
+            google_maps_url: "http://maps.google.com/?cid=42",
+            location: { name: "Kiln", address: "58 Brewer St, London", country_code: "GB" },
+          },
+        },
+        {
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [-0.1, 51.52] },
+          properties: {
+            google_maps_url: "http://maps.google.com/?cid=7",
+            location: { name: "Starred only", address: "London" },
+          },
+        },
+      ],
+    };
+    const zip = zipSync({
+      "Takeout/Saved/London.csv": strToU8(`Title,Note,URL,Tags,Comment\n"Kiln",,"${csvUrl}",,\n`),
+      "Takeout/Maps (your places)/Saved Places.json": strToU8(JSON.stringify(current)),
+    });
+    const parsed = parseTakeoutZip(zip);
+    expect(parsed.lists[0]?.items[0]?.coords).toEqual({ lat: 51.5113, lng: -0.1344 });
+    const leftovers = parsed.lists[1];
+    expect(leftovers?.items).toEqual([
+      {
+        title: "Starred only",
+        url: "http://maps.google.com/?cid=7",
+        address: "London",
+        coords: { lat: 51.52, lng: -0.1 },
+      },
+    ]);
+    expect(leftovers?.unusable).toEqual([]);
+  });
+
   it("refuses an archive with no recognized entries", () => {
     const zip = zipSync({ "Takeout/Mail/inbox.mbox": strToU8("nope") });
     expect(() => parseTakeoutZip(zip)).toThrow(/no recognized Takeout entries/);

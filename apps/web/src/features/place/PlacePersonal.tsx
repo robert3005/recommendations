@@ -53,6 +53,7 @@ export function PlacePersonal({
     setNote(incoming);
   }, [place.note]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: each keystroke restarts the pause.
   useEffect(() => {
     const timer = setTimeout(saveNote, 600);
     return () => clearTimeout(timer);
@@ -126,9 +127,7 @@ export function PlacePersonal({
             <OwnTag
               key={tag}
               tag={tag}
-              onRemove={() =>
-                void repo.updatePlacePersonal(place.id, { removeTags: [tag] })
-              }
+              onRemove={() => void repo.updatePlacePersonal(place.id, { removeTags: [tag] })}
             />
           ))}
           <input

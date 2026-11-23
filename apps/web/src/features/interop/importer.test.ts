@@ -376,7 +376,9 @@ describe("geocoder errors pause the rung", () => {
     const report = await runImport(repo.asRepo(), file, { geocoder: down }, NOW);
     expect(report.review).toBe(2);
     expect(report.geocodePending).toBe(2);
-    expect(down.calls).toHaveLength(1); // the rung paused after the first error
+    // The rung paused after the first error: only rows already asked about
+    // ahead of it (a lookahead of a few) reached the geocoder.
+    expect(down.calls.length).toBeLessThanOrEqual(2);
     expect([...repo.batches.values()][0]?.status).toBe("reviewing");
 
     const up = geocoderStub({
@@ -595,5 +597,37 @@ describe("idempotent re-import", () => {
     expect(repo.posts).toHaveLength(0);
     expect(repo.places.get(noted?.id ?? "")?.note).toBe("edited locally"); // local edits are canon
     expect([...repo.batches.values()].every((b) => b.status === "done")).toBe(true);
+  });
+});
+
+describe("geocoding ahead", () => {
+  it("asks about upcoming rows while placing the current one, without asking twice", async () => {
+    const repo = new MemoryRepo();
+    const titles = ["One", "Two", "Three", "Four", "Five", "Six"];
+    const csv = ["Title,Note,URL,Address", ...titles.map((t) => `"${t}",,,`)].join("\n");
+    let inFlight = 0;
+    let peak = 0;
+    const asked: string[] = [];
+    const slow = {
+      async search(text: string) {
+        asked.push(text);
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return [{ name: text, lat: 38.7, lng: -9.1, osmRef: { type: "node" as const, id: text } }];
+      },
+    };
+    const progress: number[] = [];
+    const report = await runImport(
+      repo.asRepo(),
+      { name: "six.csv", bytes: strToU8(csv) },
+      { geocoder: slow, onProgress: (done) => progress.push(done) },
+      NOW,
+    );
+    expect(report.placed).toBe(6);
+    expect(peak).toBeGreaterThan(1);
+    expect([...asked].sort()).toEqual([...titles].sort());
+    expect(progress).toEqual([0, 1, 2, 3, 4, 5]);
   });
 });

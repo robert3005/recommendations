@@ -147,11 +147,14 @@ function savedPlacesFeatureToItem(feature: GeoJsonFeature): ParsedItem | undefin
   if (feature.geometry?.type !== "Point") return undefined;
   const [lng, lat] = feature.geometry.coordinates ?? [];
   const props = feature.properties ?? {};
-  const location = (props.Location ?? {}) as Record<string, unknown>;
-  const title = str(props.Title) ?? str(location["Business Name"]);
+  // Two shapes in the wild: the older Title / "Google Maps URL" / Location
+  // keys, and the current lower-case google_maps_url / location.name (whose
+  // URL is a `?cid=` link rather than a feature id).
+  const location = (props.Location ?? props.location ?? {}) as Record<string, unknown>;
+  const title = str(props.Title) ?? str(location["Business Name"]) ?? str(location.name);
   if (!title) return undefined;
-  const url = str(props["Google Maps URL"]);
-  const address = str(location.Address);
+  const url = str(props["Google Maps URL"]) ?? str(props.google_maps_url);
+  const address = str(location.Address) ?? str(location.address);
   // Google's known [0, 0] bug: zero-island geometry is treated as absent.
   const hasCoords =
     typeof lat === "number" &&
@@ -176,7 +179,10 @@ export function parseSavedPlacesJson(text: string, sourceKey: string): ParsedLis
   for (const feature of body.features ?? []) {
     const item = savedPlacesFeatureToItem(feature);
     if (item) items.push(item);
-    else unusable.push({ title: str(feature.properties?.Title) ?? "" });
+    else {
+      const location = (feature.properties?.location ?? {}) as Record<string, unknown>;
+      unusable.push({ title: str(feature.properties?.Title) ?? str(location.name) ?? "" });
+    }
   }
   return { name: SAVED_PLACES_LIST_NAME, sourceKey, items, unusable };
 }
@@ -346,6 +352,23 @@ export function parseKml(text: string, fallbackName: string): ParsedList[] {
  * auto-created "Saved places" list, so an import can always be seen and
  * re-imported as one group (spec/src/interop.md).
  */
+/**
+ * The key a CSV row and a Saved Places entry are joined on. A feature id
+ * `0xA:0xB` and a `?cid=` link name the same listing when B (hex) is the cid
+ * (decimal): current Takeouts write feature ids in the CSVs and cid links in
+ * Saved Places.json, so both reduce to the cid.
+ */
+function joinKey(url: string | undefined): string | undefined {
+  const fid = url ? googleFeatureId(url) : undefined;
+  if (!fid || fid.startsWith("cid:")) return fid;
+  const low = fid.split(":")[1];
+  try {
+    return low ? `cid:${BigInt(low).toString()}` : fid;
+  } catch {
+    return fid;
+  }
+}
+
 export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
   const entries = unzipSync(bytes);
   const recognized = Object.keys(entries).some(
@@ -367,7 +390,7 @@ export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
     savedPlaces = parseSavedPlacesJson(strFromU8(fileBytes), fileName(path));
     for (const item of savedPlaces.items) {
       if (!item.coords || !item.url) continue;
-      const fid = googleFeatureId(item.url);
+      const fid = joinKey(item.url);
       // Joins are by Google id only — names are never identity (same-name
       // places in different cities must not collide).
       if (fid) coordsByFid.set(fid, item.coords);
@@ -379,7 +402,7 @@ export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
     if (!/(^|\/)Saved\/[^/]+\.csv$/i.test(path)) continue;
     const list = parseSavedCsv(strFromU8(fileBytes), baseName(path), fileName(path));
     for (const item of list.items) {
-      const fid = item.url ? googleFeatureId(item.url) : undefined;
+      const fid = joinKey(item.url);
       if (fid) referencedFids.add(fid);
       if (item.coords || !fid) continue;
       const coords = coordsByFid.get(fid);
@@ -391,7 +414,7 @@ export function parseTakeoutZip(bytes: Uint8Array): ParsedImport {
   // Geometry rows nothing referenced keep their own list (also the no-CSVs case).
   if (savedPlaces) {
     const leftover = savedPlaces.items.filter((item) => {
-      const fid = item.url ? googleFeatureId(item.url) : undefined;
+      const fid = joinKey(item.url);
       return !(fid && referencedFids.has(fid));
     });
     // Unusable geometry rows are accounted for even when every usable row was

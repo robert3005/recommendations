@@ -862,4 +862,3 @@ export function MapView({
     </div>
   );
 }
-

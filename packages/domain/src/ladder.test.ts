@@ -11,9 +11,10 @@ const ramiro: GeocoderCandidate = {
 };
 
 describe("normalizeName", () => {
-  it("folds case and collapses punctuation, keeping letters of any script", () => {
+  it("folds case and accents and collapses punctuation, keeping letters of any script", () => {
     expect(normalizeName("Cervejaria — RAMIRO!")).toBe("cervejaria ramiro");
-    expect(normalizeName("  Café  São João ")).toBe("café são joão");
+    expect(normalizeName("  Café  São João ")).toBe("cafe sao joao");
+    expect(normalizeName("Ресторан Пушкинъ")).toBe("ресторан пушкинъ");
     expect(normalizeName("...")).toBe("");
   });
 });
@@ -194,5 +195,37 @@ describe("autoPlaceDecision — a longer name at the row's address", () => {
     expect(
       autoPlaceDecision({ title: "Manteigaria", address: "Rua Augusta 2, Lisboa" }, [factory]).kind,
     ).toBe("review");
+  });
+});
+
+describe("autoPlaceDecision — accents and listings repeated across sources", () => {
+  const anchor = [{ lat: 51.52, lng: -0.1 }];
+
+  it("matches a name whatever the accents", () => {
+    const zedel: GeocoderCandidate = { name: "Brasserie Zedel", lat: 51.5103, lng: -0.1355 };
+    const venue: GeocoderCandidate = { name: "Live at Zédel", lat: 51.5103, lng: -0.1356 };
+    expect(
+      autoPlaceDecision({ title: "Brasserie Zédel" }, [zedel, venue], { near: anchor }),
+    ).toEqual({ kind: "auto", candidate: zedel });
+  });
+
+  it("treats the same name a few metres apart as one venue, keeping the OSM copy", () => {
+    const foursquare: GeocoderCandidate = { name: "Andrew Edmunds", lat: 51.5128, lng: -0.1376 };
+    const osm: GeocoderCandidate = {
+      name: "Andrew Edmunds",
+      lat: 51.51282,
+      lng: -0.13762,
+      osmRef: { type: "node", id: "1" },
+    };
+    expect(autoPlaceDecision({ title: "Andrew Edmunds" }, [foursquare, osm])).toEqual({
+      kind: "auto",
+      candidate: osm,
+    });
+  });
+
+  it("still reviews two same-named places in different streets", () => {
+    const a: GeocoderCandidate = { name: "Gymkhana", lat: 51.5095, lng: -0.1424 };
+    const b: GeocoderCandidate = { name: "Gymkhana", lat: 51.55, lng: -0.3 };
+    expect(autoPlaceDecision({ title: "Gymkhana" }, [a, b], { near: anchor }).kind).toBe("review");
   });
 });

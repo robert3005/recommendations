@@ -12,14 +12,62 @@ import type {
   Publication,
   SavedView,
 } from "@placemarks/domain";
+import { liveQuery } from "dexie";
 import { useLiveQuery } from "dexie-react-hooks";
+import { useEffect, useRef, useState } from "react";
 import { useDexieRepo, useRepo } from "./RepoContext";
-import type { PlaceView } from "./repo";
+import type { LocalRepository, PlaceView } from "./repo";
+
+/** The most often a library-wide query hands React a new result. */
+const LIBRARY_QUERY_INTERVAL_MS = 250;
+
+/**
+ * useLiveQuery for queries over the whole library, delivering at most one
+ * new result per LIBRARY_QUERY_INTERVAL_MS. Every delivery re-derives facets
+ * and redraws every pin, so an import writing hundreds of rows spent its time
+ * re-rendering after each one. The first result after a quiet spell arrives
+ * at once, so a single edit still shows immediately; the last one always
+ * arrives.
+ */
+function useLibraryQuery<T>(repo: LocalRepository, querier: () => Promise<T>): T | undefined {
+  const [value, setValue] = useState<T>();
+  const querierRef = useRef(querier);
+  querierRef.current = querier;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a different repository is a different query; the querier itself is read through the ref.
+  useEffect(() => {
+    let lastDelivery = Number.NEGATIVE_INFINITY;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let latest: { value: T } | undefined;
+    const deliver = () => {
+      timer = undefined;
+      if (!latest) return;
+      const next = latest.value;
+      latest = undefined;
+      lastDelivery = performance.now();
+      setValue(() => next);
+    };
+    const subscription = liveQuery(() => querierRef.current()).subscribe({
+      next: (result) => {
+        latest = { value: result };
+        if (timer !== undefined) return;
+        const wait = lastDelivery + LIBRARY_QUERY_INTERVAL_MS - performance.now();
+        if (wait <= 0) deliver();
+        else timer = setTimeout(deliver, wait);
+      },
+      error: (err) => console.error(err),
+    });
+    return () => {
+      subscription.unsubscribe();
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [repo]);
+  return value;
+}
 
 /** Every place in the library, with the lists it is on (possibly none). */
 export function usePlaceViews(): PlaceView[] | undefined {
   const repo = useRepo();
-  return useLiveQuery(() => repo.listPlaceViews(), [repo]);
+  return useLibraryQuery(repo, () => repo.listPlaceViews());
 }
 
 export function usePlaceView(placeId: PlaceId | undefined): PlaceView | undefined {
@@ -62,11 +110,11 @@ export function useListEntries(
 /** placeId → listIds for pin marker resolution on the map. */
 export function useListMembership(): Record<string, string[]> | undefined {
   const repo = useRepo();
-  return useLiveQuery(async () => {
+  return useLibraryQuery(repo, async () => {
     const membership: Record<string, string[]> = {};
     for (const view of await repo.listPlaceViews()) membership[view.place.id] = view.listIds;
     return membership;
-  }, [repo]);
+  });
 }
 
 export function usePosts(): Post[] | undefined {
@@ -107,7 +155,7 @@ export interface ListPreview {
 
 export function useListPreviews(): ListPreview[] | undefined {
   const repo = useRepo();
-  return useLiveQuery(async () => {
+  return useLibraryQuery(repo, async () => {
     const lists = await repo.listLists();
     return Promise.all(
       lists.map(async (list): Promise<ListPreview> => {
@@ -115,7 +163,7 @@ export function useListPreviews(): ListPreview[] | undefined {
         return { list, placeCount: entries.length };
       }),
     );
-  }, [repo]);
+  });
 }
 
 export function useImportBatches(): ImportBatch[] | undefined {
