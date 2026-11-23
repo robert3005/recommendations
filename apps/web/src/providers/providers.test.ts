@@ -70,6 +70,50 @@ describe("PhotonGeocoder.search", () => {
   });
 });
 
+describe("PhotonGeocoder back-off", () => {
+  const feature = {
+    type: "Feature",
+    geometry: { type: "Point", coordinates: [-0.12, 51.5] },
+    properties: { osm_type: "N", osm_id: 9, name: "Café Patient" },
+  };
+
+  it("stands off and retries once after a rate limit", async () => {
+    const baseUrl = "https://photon-429.test";
+    let requests = 0;
+    server.use(
+      http.get(`${baseUrl}/api`, () => {
+        requests += 1;
+        return requests === 1
+          ? HttpResponse.text("slow down", { status: 429 })
+          : HttpResponse.json({ features: [feature] });
+      }),
+    );
+    const results = await new PhotonGeocoder(baseUrl, 0).search("cafe");
+    expect(requests).toBe(2);
+    expect(results[0]?.name).toBe("Café Patient");
+  });
+
+  it("retries once when the network drops the request — a browser's view of a bare rate limit", async () => {
+    const baseUrl = "https://photon-drop.test";
+    let requests = 0;
+    server.use(
+      http.get(`${baseUrl}/api`, () => {
+        requests += 1;
+        return requests === 1 ? HttpResponse.error() : HttpResponse.json({ features: [feature] });
+      }),
+    );
+    const results = await new PhotonGeocoder(baseUrl, 0).search("cafe");
+    expect(requests).toBe(2);
+    expect(results).toHaveLength(1);
+  });
+
+  it("gives up after the one retry", async () => {
+    const baseUrl = "https://photon-down.test";
+    server.use(http.get(`${baseUrl}/api`, () => HttpResponse.text("no", { status: 429 })));
+    await expect(new PhotonGeocoder(baseUrl, 0).search("cafe")).rejects.toThrow("photon 429");
+  });
+});
+
 describe("PeliasGeocoder.search", () => {
   it("records osmRef only for openstreetmap-sourced features, filtering nameless ones", async () => {
     const results = await new PeliasGeocoder(PELIAS_TEST_URL, undefined).search("cafe");

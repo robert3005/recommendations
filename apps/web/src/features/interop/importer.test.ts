@@ -88,6 +88,16 @@ class MemoryRepo {
     this.lists.push(list);
     return Promise.resolve(list);
   }
+  entriesOf(listId: string): Promise<{ entry: { id: string }; place: Place }[]> {
+    return Promise.resolve(
+      this.entries
+        .filter((e) => e.listId === listId)
+        .flatMap((e) => {
+          const place = this.places.get(e.placeId);
+          return place ? [{ entry: { id: e.id }, place }] : [];
+        }),
+    );
+  }
   findListBySourceKey(key: string): Promise<List | undefined> {
     return Promise.resolve(this.lists.find((l) => l.sourceKey === key));
   }
@@ -307,8 +317,28 @@ describe("the coordinate ladder", () => {
     expect(batch?.status).toBe("done");
   });
 
+  it("one of several same-named results auto-places when only its address corroborates the row", async () => {
+    const elsewhere: GeocoderCandidate = {
+      name: "Mystery Bar",
+      lat: 40,
+      lng: -8,
+      address: "Far 7",
+    };
+    const geocoder = geocoderStub({ "Mystery Bar, Nowhere 1": [elsewhere, MYSTERY] });
+    const report = await runImport(repo.asRepo(), takeoutZip(), { geocoder }, NOW);
+    expect(report.review).toBe(0);
+    const mystery = [...repo.places.values()].find((p) => p.name === "Mystery Bar");
+    expect(mystery?.osmRef).toEqual({ type: "node", id: "77" });
+  });
+
+  // Two results the row's address corroborates equally: a tie is a review.
   it("multiple candidates go to review with their osmRefs recorded", async () => {
-    const other: GeocoderCandidate = { name: "Mystery Bar", lat: 40, lng: -8 };
+    const other: GeocoderCandidate = {
+      name: "Mystery Bar",
+      lat: 40,
+      lng: -8,
+      address: "Nowhere 1",
+    };
     const geocoder = geocoderStub({ "Mystery Bar, Nowhere 1": [MYSTERY, other] });
     const report = await runImport(repo.asRepo(), takeoutZip(), { geocoder }, NOW);
     expect(report.review).toBe(1);
@@ -398,7 +428,10 @@ describe("review resolution", () => {
 
   it("picking a candidate places the row with the result's facts and its osmRef", async () => {
     const geocoder = geocoderStub({
-      "Mystery Bar, Nowhere 1": [MYSTERY, { name: "Mystery Bar", lat: 40, lng: -8 }],
+      "Mystery Bar, Nowhere 1": [
+        MYSTERY,
+        { name: "Mystery Bar", lat: 40, lng: -8, address: "Nowhere 1" },
+      ],
     });
     await runImport(repo.asRepo(), reviewFile, { geocoder }, NOW);
     const [entry] = await listReviewItems(repo.asRepo());
@@ -519,7 +552,10 @@ describe("idempotent re-import", () => {
   it("import → resolve review → re-import converges: nothing new, notes dropped, binding survives renames", async () => {
     const repo = new MemoryRepo();
     const geocoder = geocoderStub({
-      "Mystery Bar, Nowhere 1": [MYSTERY, { name: "Mystery Bar", lat: 40, lng: -8 }],
+      "Mystery Bar, Nowhere 1": [
+        MYSTERY,
+        { name: "Mystery Bar", lat: 40, lng: -8, address: "Nowhere 1" },
+      ],
     });
 
     const first = await runImport(repo.asRepo(), takeoutZip(), { geocoder }, NOW);

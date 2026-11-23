@@ -7,7 +7,7 @@
  * Saved Places entry is accounted for: placed, in review, or skipped.
  */
 import type { GeocoderCandidate, ImportBatch, ImportItem, List, Place } from "@placemarks/domain";
-import { autoPlaceDecision, googleFeatureId, parsePastedLink } from "@placemarks/domain";
+import { autoPlaceDecision, googleFeatureId, listBias, parsePastedLink } from "@placemarks/domain";
 import type { LocalRepository, NewPlaceFacts } from "../../data/repo";
 import { newId } from "../../lib/id";
 import type { Geocoder } from "../../providers";
@@ -132,15 +132,43 @@ async function importNote(
   return "created";
 }
 
-/** Title(+address) through the geocoder; an empty joint query retries the bare title. */
-async function geocodeRow(
+type Point = { lat: number; lng: number };
+type Decision = ReturnType<typeof autoPlaceDecision>;
+
+function candidateKey(c: GeocoderCandidate): string {
+  return c.osmRef ? `${c.osmRef.type}/${c.osmRef.id}` : `${c.name}@${c.lat},${c.lng}`;
+}
+
+/**
+ * The geocode rung for one row (spec/src/interop.md §The coordinate ladder):
+ * ask with title + address, leaning toward the list's placed rows, and decide.
+ * A geocoder asked for a name AND an address often answers with whatever sits
+ * at the address, so when that does not settle it the bare title is asked too
+ * and the two answers are judged together. At most two requests per row, and
+ * only one when the first settles it.
+ */
+async function geocodeAndDecide(
   geocoder: Geocoder,
   row: { title: string; address?: string },
-): Promise<GeocoderCandidate[]> {
-  const query = [row.title, row.address].filter(Boolean).join(", ");
-  const results = await geocoder.search(query);
-  if (results.length > 0 || !row.address) return results;
-  return geocoder.search(row.title);
+  anchors: readonly Point[] = [],
+): Promise<{ decision: Decision; candidates: GeocoderCandidate[] }> {
+  const bias = listBias(anchors);
+  const decide = (candidates: GeocoderCandidate[]) =>
+    autoPlaceDecision(row, candidates, { near: anchors });
+  if (!row.address) {
+    const candidates = await geocoder.search(row.title, bias);
+    return { decision: decide(candidates), candidates };
+  }
+  const joint = await geocoder.search(`${row.title}, ${row.address}`, bias);
+  const first = decide(joint);
+  if (first.kind === "auto") return { decision: first, candidates: joint };
+  const seen = new Set(joint.map(candidateKey));
+  const byTitle = (await geocoder.search(row.title, bias)).filter(
+    (c) => !seen.has(candidateKey(c)),
+  );
+  // Title matches lead: they are the likelier picks in the review queue.
+  const candidates = [...byTitle, ...joint];
+  return { decision: decide(candidates), candidates };
 }
 
 /**
@@ -229,6 +257,19 @@ export async function runImport(
   const touchedBatches = new Set<string>();
   let geocoderDown = false;
 
+  // Where each list's rows already are: what a coordinate-less row is
+  // geocoded toward, and the evidence that picks one of several same-named
+  // results (spec/src/interop.md §The coordinate ladder).
+  const anchorsByList = new Map<string, Point[]>();
+  const anchorsOf = (listId: string): Point[] => {
+    let anchors = anchorsByList.get(listId);
+    if (!anchors) {
+      anchors = [];
+      anchorsByList.set(listId, anchors);
+    }
+    return anchors;
+  };
+
   const placeRow = async (targetListId: string, item: ParsedItem): Promise<RowOutcome> => {
     const key = rawKey(targetListId, rawOf(item));
     const googleUrl = retainedGoogleUrl(item.url);
@@ -270,21 +311,23 @@ export async function runImport(
     // the batch's remaining rows; only genuine empty results fall to review.
     if (geocoderDown) return { kind: "pending" };
     let candidates: GeocoderCandidate[];
+    let decision: Decision;
     try {
-      candidates = await geocodeRow(deps.geocoder, item);
+      ({ candidates, decision } = await geocodeAndDecide(
+        deps.geocoder,
+        { title: item.title, ...(item.address ? { address: item.address } : {}) },
+        anchorsOf(targetListId),
+      ));
     } catch {
       geocoderDown = true;
       return { kind: "pending" };
     }
-    const decision = autoPlaceDecision(
-      { title: item.title, ...(item.address ? { address: item.address } : {}) },
-      candidates,
-    );
     if (decision.kind === "review") {
       return { kind: "review", candidates: candidates.slice(0, MAX_REVIEW_CANDIDATES) };
     }
     // Geocoder results are OSM data: auto-placement records the osmRef.
     const c = decision.candidate;
+    anchorsOf(targetListId).push({ lat: c.lat, lng: c.lng });
     const outcome = await materialise(
       repo,
       targetListId,
@@ -324,6 +367,16 @@ export async function runImport(
       });
       report.rows += 1;
       report.skipped += 1;
+    }
+
+    // Seed the list's anchors: places it already holds, and every row of this
+    // file that carries its own coordinates.
+    if (target) {
+      const anchors = anchorsOf(target.id);
+      for (const { place } of await repo.entriesOf(target.id)) {
+        anchors.push({ lat: place.lat, lng: place.lng });
+      }
+      for (const item of list.items) if (item.coords) anchors.push(item.coords);
     }
 
     for (const item of list.items) {
@@ -426,6 +479,18 @@ export async function resumeImport(
     droppedNotes: 0,
   };
   let geocoderDown = false;
+  const anchorCache = new Map<string, Point[]>();
+  const listAnchors = async (listId: string): Promise<Point[]> => {
+    let anchors = anchorCache.get(listId);
+    if (!anchors) {
+      anchors = (await repo.entriesOf(listId)).map(({ place }) => ({
+        lat: place.lat,
+        lng: place.lng,
+      }));
+      anchorCache.set(listId, anchors);
+    }
+    return anchors;
+  };
   const batches = (await repo.listImportBatches()).filter((b) => b.status === "reviewing");
   for (const batch of batches) {
     const origin = originOf(batch.source);
@@ -436,14 +501,18 @@ export async function resumeImport(
         continue;
       }
       let candidates: GeocoderCandidate[];
+      let decision: Decision;
       try {
-        candidates = await geocodeRow(deps.geocoder, item.raw);
+        ({ candidates, decision } = await geocodeAndDecide(
+          deps.geocoder,
+          item.raw,
+          await listAnchors(item.targetListId),
+        ));
       } catch {
         geocoderDown = true;
         report.geocodePending += 1;
         continue;
       }
-      const decision = autoPlaceDecision(item.raw, candidates);
       if (decision.kind === "review") {
         await repo.updateImportItem({
           ...item,

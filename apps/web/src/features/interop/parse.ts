@@ -60,16 +60,20 @@ const coordsValid = (lat: number, lng: number): boolean =>
   lng <= 180;
 
 /**
- * Literal coordinates embedded in a dropped-pin URL — the ladder's first rung
- * (spec/src/interop.md §The coordinate ladder). Deliberately narrower than the
- * domain link parser: a place URL's `@lat,lng` camera is NOT literal source
- * coordinates and must fall through to the later rungs.
+ * Literal coordinates embedded in a URL — the ladder's first rung
+ * (spec/src/interop.md §The coordinate ladder): a dropped pin, or a place
+ * URL's own `!3d!4d` pin. Deliberately narrower than the domain link parser:
+ * a place URL's `@lat,lng` camera is NOT literal source coordinates and must
+ * fall through to the later rungs.
  */
 export function droppedPinCoords(
   url: string | undefined,
 ): { lat: number; lng: number } | undefined {
   if (!url) return undefined;
   const match =
+    // A place URL's `!3d<lat>!4d<lng>` is the pin itself — the place's own
+    // position, as literal as a dropped pin (unlike the `@` camera).
+    url.match(/!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)(?![\d.])/) ??
     url.match(/\/maps\/search\/(-?\d{1,3}(?:\.\d+)?),\s*\+?(-?\d{1,3}(?:\.\d+)?)(?![\d.])/) ??
     url.match(/[?&](?:q|ll|query)=(-?\d{1,3}(?:\.\d+)?)(?:,|%2C)\s*(-?\d{1,3}(?:\.\d+)?)(?![\d.])/);
   if (!match?.[1] || !match[2]) return undefined;

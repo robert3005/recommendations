@@ -48,8 +48,16 @@ function toCandidate(feature: PhotonFeature): GeocoderCandidate | undefined {
   };
 }
 
+/** How long to stand off after a rate limit or a dropped request before the one retry. */
+export const PHOTON_BACKOFF_MS = 1500;
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export class PhotonGeocoder {
-  constructor(private readonly baseUrl: string = PHOTON_URL) {}
+  constructor(
+    private readonly baseUrl: string = PHOTON_URL,
+    private readonly backoffMs: number = PHOTON_BACKOFF_MS,
+  ) {}
 
   async search(
     text: string,
@@ -63,11 +71,25 @@ export class PhotonGeocoder {
       url.searchParams.set("lat", String(bias.lat));
       url.searchParams.set("lon", String(bias.lng));
     }
-    // One retry for a transient upstream failure — adapter policy, so callers
-    // do not recreate it (spec/src/data-sources.md: the adapter owns retry).
-    let response = await fetch(url, { signal: opts?.signal ?? null });
-    if (response.status >= 500) {
-      response = await fetch(url, { signal: opts?.signal ?? null });
+    // One retry — adapter policy, so callers do not recreate it
+    // (spec/src/data-sources.md: the adapter owns retry). A server error
+    // retries at once; a rate limit, or a request the network dropped (how a
+    // browser sees a rate limit that carries no CORS headers), retries after
+    // a short stand-off, which is what lets a long import run to the end.
+    const attempt = () => fetch(url, { signal: opts?.signal ?? null });
+    let response: Response;
+    try {
+      response = await attempt();
+    } catch (err) {
+      if (opts?.signal?.aborted) throw err;
+      await wait(this.backoffMs);
+      response = await attempt();
+    }
+    if (response.status === 429) {
+      await wait(this.backoffMs);
+      response = await attempt();
+    } else if (response.status >= 500) {
+      response = await attempt();
     }
     if (!response.ok) throw new Error(`photon ${response.status}`);
     const body = (await response.json()) as { features?: PhotonFeature[] };
